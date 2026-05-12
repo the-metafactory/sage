@@ -1,0 +1,17 @@
+{
+  "_comment": "Template pi.dev runtime config. Copied to project root by `sage init`.",
+  "bus": {
+    "enabled": true,
+    "natsUrl": "nats://localhost:4222",
+    "credentials": "~/.config/nats/creds/sage.creds",
+    "agentId": "sage",
+    "did": "did:mf:sage",
+    "capabilities": ["code-review"],
+    "sovereignty": "selective"
+  },
+  "substrate": {
+    "binary": "pi",
+    "provider": "anthropic",
+    "model": "anthropic/claude-sonnet-4-6"
+  }
+}

@@ -5,3 +5,5 @@ dist/
 .env.local
 .DS_Store
 bun.lockb
+.pi/
+pi.settings.json
