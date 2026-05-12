@@ -26,6 +26,5 @@ nats pub "local.${ORG}.agents.sage.draining" "{}" --count=1 >/dev/null 2>&1 || t
 # 30s is enough for the median review under load; long-tail reviews are
 # abandoned (the publisher will see dispatch.task.failed via the consumer
 # group's ack_wait timeout in cortex).
-sleep "$TIMEOUT" &
-wait $!
+sleep "$TIMEOUT"
 exit 0

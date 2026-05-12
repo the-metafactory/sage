@@ -76,8 +76,17 @@ program
         await bridge.close();
         process.exit(0);
       };
-      process.on("SIGINT", () => void shutdown("SIGINT"));
-      process.on("SIGTERM", () => void shutdown("SIGTERM"));
+      const onSignal = (signal: string) => () => {
+        shutdown(signal).catch((err: unknown) => {
+          const m = err instanceof Error ? err.stack ?? err.message : String(err);
+          console.error(`[sage] shutdown failed during ${signal}: ${m}`);
+          // Force exit so the OS supervisor can restart cleanly rather than
+          // leaving a hung process.
+          process.exit(1);
+        });
+      };
+      process.on("SIGINT", onSignal("SIGINT"));
+      process.on("SIGTERM", onSignal("SIGTERM"));
       await bridge.connection.closed();
     },
   );

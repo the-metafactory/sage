@@ -77,6 +77,9 @@ class Semaphore {
   }
 
   release(): void {
+    if (this.active <= 0) {
+      throw new Error("Semaphore released more times than acquired");
+    }
     this.active--;
     const next = this.waiters.shift();
     if (next) next();
@@ -107,8 +110,16 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   log(`bridge: subscribed ${directSubject(subjects)}`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
-  void consumeSubscription(broadcast, "broadcast", cfg, nc, sem);
-  void consumeSubscription(direct, "direct", cfg, nc, sem);
+  const onLoopFailure = (which: string) => (err: unknown) => {
+    const m = err instanceof Error ? err.message : String(err);
+    log(`bridge: FATAL — ${which} consumer loop died: ${m}`);
+    // Exit non-zero so launchd / systemd restart the daemon cleanly.
+    // The KeepAlive contract assumes silent loop death = bug, not a
+    // graceful drain.
+    process.exit(1);
+  };
+  void consumeSubscription(broadcast, "broadcast", cfg, nc, sem).catch(onLoopFailure("broadcast"));
+  void consumeSubscription(direct, "direct", cfg, nc, sem).catch(onLoopFailure("direct"));
 
   return {
     connection: nc,

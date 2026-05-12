@@ -60,14 +60,29 @@ export function renderReviewBody(verdict: ReviewVerdict): string {
       lens.findings.length === 0
         ? "_No findings._"
         : lens.findings
-            .map(
-              (f) =>
-                `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${
-                  f.suggestion ? `\n  \n  Suggestion:\n  \`\`\`\n  ${f.suggestion}\n  \`\`\`` : ""
-                }`,
-            )
+            .map((f) => {
+              const head = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}`;
+              if (!f.suggestion) return head;
+              const fence = pickFence(f.suggestion);
+              return `${head}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
+            })
             .join("\n\n");
     return `### ${lens.lens}\n${lens.summary}\n\n${body}`;
   });
   return [head, ...sections, "\n---\n_Posted by Sage on pi.dev substrate._"].join("\n\n");
+}
+
+/**
+ * Pick a code-fence delimiter longer than any run of backticks inside the
+ * content. Prevents triple-backtick injection when an LLM-supplied
+ * `suggestion` contains its own fenced code block.
+ */
+function pickFence(content: string): string {
+  let maxRun = 0;
+  const re = /`+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    if (m[0].length > maxRun) maxRun = m[0].length;
+  }
+  return "`".repeat(Math.max(3, maxRun + 1));
 }

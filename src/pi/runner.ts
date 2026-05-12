@@ -100,8 +100,10 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
 }
 
 /**
- * Run pi expecting a JSON object response. Strips fenced code blocks if pi
- * wraps the JSON in ```json ... ``` markdown.
+ * Run pi expecting a JSON object response. Handles three common wrapper
+ * shapes in order: (1) raw JSON, (2) JSON inside ```json … ``` fences,
+ * (3) JSON preceded/followed by prose. The lens prompt asks for raw JSON
+ * but model outputs vary, so the extractor is forgiving.
  */
 export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw: PiRunResult }> {
   const raw = await runPi(opts);
@@ -109,28 +111,51 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
     throw new Error(`pi exited with code ${raw.exitCode}: ${raw.stderr || raw.stdout}`);
   }
 
-  const text = stripFences(raw.stdout).trim();
+  const text = raw.stdout.trim();
   if (!text) throw new Error("pi returned empty output");
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`pi output is not valid JSON: ${msg}\n--- output ---\n${text}`);
+  const parsed = extractJson<T>(text);
+  if (parsed === undefined) {
+    throw new Error(
+      `pi output is not valid JSON (tried raw, fenced, and prose-wrapped extraction)\n--- output ---\n${text}`,
+    );
   }
 
-  return { result: parsed as T, raw };
+  return { result: parsed, raw };
 }
 
 /**
- * Strip a single outer ```json … ``` (or ```…```) wrapper from pi's output,
- * if present. Greedy match captures from the first opening fence to the
- * LAST closing fence, so inner code blocks inside JSON `suggestion` fields
- * don't truncate the payload.
+ * Pull a JSON object out of an arbitrary pi response. Tries three shapes
+ * before giving up:
+ *
+ *   1. The whole string parses cleanly.
+ *   2. A ```json … ``` (or ```…```) fenced block parses cleanly. Uses a
+ *      greedy match anchored on the LAST closing fence so inline ``` blocks
+ *      inside the JSON body don't truncate the payload.
+ *   3. The slice from the first `{` to the last `}` parses cleanly — covers
+ *      "Here is the review: { … }" style preambles.
+ *
+ * Returns `undefined` if none of the three produce a parseable object.
  */
-function stripFences(s: string): string {
+function extractJson<T>(text: string): T | undefined {
+  const candidates: string[] = [text];
+
   const fence = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
-  const m = s.trim().match(fence);
-  return m ? (m[1] ?? s) : s;
+  const fenceMatch = text.match(fence);
+  if (fenceMatch && fenceMatch[1]) candidates.push(fenceMatch[1]);
+
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) {
+    candidates.push(text.slice(first, last + 1));
+  }
+
+  for (const c of candidates) {
+    try {
+      return JSON.parse(c) as T;
+    } catch {
+      // Try next candidate.
+    }
+  }
+  return undefined;
 }
