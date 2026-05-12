@@ -148,12 +148,12 @@ function extractJson<T>(text: string): T | undefined {
   const g = text.match(fenceGreedy);
   if (g && g[1]) candidates.push(g[1]);
 
-  // 2) Brace slice.
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  if (first !== -1 && last !== -1 && last > first) {
-    candidates.push(text.slice(first, last + 1));
-  }
+  // 2) Brace slice with balanced-depth walk. Starts at the first `{` and
+  //    advances until depth returns to zero, respecting string literals and
+  //    escape sequences. Avoids feeding the parser a multi-megabyte string
+  //    when pi emits diagnostic prose alongside the JSON.
+  const balanced = findBalancedObject(text);
+  if (balanced) candidates.push(balanced);
 
   // 3) Non-greedy fence.
   const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
@@ -165,6 +165,40 @@ function extractJson<T>(text: string): T | undefined {
       return JSON.parse(c) as T;
     } catch {
       // Try next candidate.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Walk from the first `{` and return the smallest balanced object span.
+ * Respects string literals (so `{` inside `"…"` doesn't increment depth)
+ * and backslash escapes. Returns undefined if the braces are unbalanced.
+ */
+function findBalancedObject(text: string): string | undefined {
+  const start = text.indexOf("{");
+  if (start === -1) return undefined;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
     }
   }
   return undefined;

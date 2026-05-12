@@ -87,7 +87,11 @@ export async function prView(ref: PrRef): Promise<PrMetadata> {
     raw = JSON.parse(out.stdout);
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh pr view returned non-JSON output: ${m}`);
+    const sample = out.stdout.slice(0, 200).replace(/\s+/g, " ");
+    const truncated = out.stdout.length > 200 ? "…" : "";
+    throw new Error(
+      `gh pr view returned non-JSON output: ${m}\n  first 200 chars: "${sample}${truncated}"`,
+    );
   }
 
   const parsed = PrMetadataSchema.safeParse(raw);

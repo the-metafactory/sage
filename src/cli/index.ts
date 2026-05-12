@@ -77,8 +77,20 @@ program
         queueGroup: opts.queue,
       });
 
+      let shuttingDown = false;
       const shutdown = async (signal: string) => {
+        if (shuttingDown) {
+          console.error(`[sage] ${signal} received while already draining — ignoring`);
+          return;
+        }
+        shuttingDown = true;
         console.error(`[sage] received ${signal}, draining...`);
+        // Deregister handlers so a second signal can't re-enter even if the
+        // shuttingDown check is somehow bypassed. A third signal (or a
+        // truly-stuck drain) gets default kill behavior, which is what
+        // an impatient operator actually wants at that point.
+        process.removeAllListeners("SIGINT");
+        process.removeAllListeners("SIGTERM");
         await bridge.close();
         process.exit(0);
       };

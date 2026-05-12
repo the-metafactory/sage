@@ -54,7 +54,7 @@ export async function reviewCodeQuality(input: {
 
   const findings = (result.findings ?? []).map<Finding>((f) => ({
     path: f.path,
-    line: typeof f.line === "string" ? Number(f.line) || 0 : (f.line ?? 0),
+    line: normalizeLine(f.line),
     severity: (f.severity as Finding["severity"]) ?? "suggestion",
     title: f.title,
     rationale: f.rationale ?? "",
@@ -67,6 +67,19 @@ export async function reviewCodeQuality(input: {
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+/**
+ * Coerce an LLM-supplied line number into a finite positive int, falling back
+ * to 0 (file-level) on anything we cannot trust. Explicit about each failure
+ * shape so a reader doesn't need to mentally trace the `NaN || 0` chain.
+ */
+function normalizeLine(raw: number | string | undefined): number {
+  if (raw === undefined || raw === null) return 0;
+  const parsed = typeof raw === "string" ? parseInt(raw, 10) : raw;
+  if (!Number.isFinite(parsed)) return 0;
+  if (parsed < 0) return 0;
+  return parsed;
 }
 
 function buildPrompt(pr: PrMetadata, diff: string): string {

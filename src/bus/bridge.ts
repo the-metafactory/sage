@@ -16,7 +16,7 @@ import {
   verdictSubject,
   type SubjectConfig,
 } from "./subjects.ts";
-import { parsePrRef } from "../github/gh.ts";
+import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
 
 const td = new TextDecoder();
@@ -233,9 +233,28 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     return;
   }
   const payload = payloadResult.data;
-  const ref = payload.pr_url
-    ? parsePrRef(payload.pr_url)
-    : { owner: payload.owner!, repo: payload.repo!, number: payload.number! };
+  const ref = resolvePrRef(payload);
+  if (!ref) {
+    // Defensive — Zod's `.refine()` does not narrow the output type, so the
+    // compiler cannot prove non-null on `owner/repo/number`. The schema
+    // refinement above already guarantees at least one branch is present.
+    // If a future refactor breaks that, this catches it at the boundary
+    // instead of producing an undefined-ref TypeError downstream.
+    await publish(
+      nc,
+      buildEnvelope({
+        source: cfg.source,
+        type: "dispatch.task.failed",
+        correlationId: env.correlation_id ?? env.id,
+        payload: {
+          reason: "invalid-payload",
+          detail: "payload had neither pr_url nor complete owner/repo/number",
+        },
+      }),
+      dispatchSubject({ org: cfg.org }, "failed"),
+    );
+    return;
+  }
 
   await publish(
     nc,
@@ -320,6 +339,20 @@ async function publish(
     const m = err instanceof Error ? err.message : String(err);
     log(`bridge: publish failed for ${subject} (${envelope.id}): ${m}`);
   }
+}
+
+/**
+ * Narrow the Zod-refined task payload into a concrete PrRef without `!`
+ * non-null assertions. Returns undefined when neither branch is satisfied
+ * (the schema's refine layer should already reject these — this is the
+ * compiler-visible guarantee).
+ */
+function resolvePrRef(payload: ReviewTaskPayload): PrRef | undefined {
+  if (payload.pr_url) return parsePrRef(payload.pr_url);
+  if (payload.owner && payload.repo && payload.number !== undefined) {
+    return { owner: payload.owner, repo: payload.repo, number: payload.number };
+  }
+  return undefined;
 }
 
 function resolveCredsPath(raw: string | undefined): string | undefined {
