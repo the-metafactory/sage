@@ -52,6 +52,8 @@ program
     (v) => parseInt(v, 10),
     Number(process.env.SAGE_MAX_CONCURRENT ?? 3),
   )
+  .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
+  .option("--queue <name>", "NATS queue-group for competing-consumer", "sage-review")
   .action(
     async (opts: {
       nats: string;
@@ -60,6 +62,8 @@ program
       did: string;
       post: boolean;
       maxConcurrent: number;
+      creds?: string;
+      queue: string;
     }) => {
       console.error(`[sage] serve — connecting to ${opts.nats} as ${opts.did}`);
       const bridge = await startBridge({
@@ -69,6 +73,8 @@ program
         did: opts.did,
         postReviews: opts.post,
         maxConcurrentTasks: opts.maxConcurrent,
+        ...(opts.creds ? { credsFile: opts.creds } : {}),
+        queueGroup: opts.queue,
       });
 
       const shutdown = async (signal: string) => {
@@ -100,53 +106,57 @@ program
     const piSettings = join(cwd, "pi.settings.json");
     const envFile = join(cwd, ".env");
 
-    if (existsSync(piSettings) && !opts.force) {
-      console.error(`refusing to overwrite ${piSettings} (use --force)`);
-    } else {
-      writeFileSync(
-        piSettings,
-        JSON.stringify(
-          {
-            bus: {
-              enabled: true,
-              natsUrl: process.env.NATS_URL ?? "nats://localhost:4222",
-              credentials: "~/.config/nats/creds/sage.creds",
-              agentId: "sage",
-              capabilities: ["code-review"],
-              sovereignty: "selective",
-            },
-            substrate: {
-              binary: "pi",
-              provider: process.env.PI_PROVIDER ?? "anthropic",
-              model: process.env.PI_MODEL ?? "anthropic/claude-sonnet-4-6",
-            },
-          },
-          null,
-          2,
-        ),
-      );
-      console.error(`wrote ${piSettings}`);
+    const piSettingsContent = JSON.stringify(
+      {
+        bus: {
+          enabled: true,
+          natsUrl: process.env.NATS_URL ?? "nats://localhost:4222",
+          credentials: "~/.config/nats/creds/sage.creds",
+          agentId: "sage",
+          capabilities: ["code-review"],
+          sovereignty: "selective",
+        },
+        substrate: {
+          binary: "pi",
+          provider: process.env.PI_PROVIDER ?? "anthropic",
+          model: process.env.PI_MODEL ?? "anthropic/claude-sonnet-4-6",
+        },
+      },
+      null,
+      2,
+    );
+
+    const envContent = [
+      "NATS_URL=nats://localhost:4222",
+      "SAGE_AGENT_ID=sage",
+      "SAGE_DID=did:mf:sage",
+      "SAGE_SOURCE=metafactory.sage.local",
+      "SAGE_ORG=metafactory",
+      "SAGE_DATA_RESIDENCY=CH",
+      "PI_BIN=pi",
+      "PI_PROVIDER=anthropic",
+      "PI_MODEL=anthropic/claude-sonnet-4-6",
+      "",
+    ].join("\n");
+
+    const writes: Array<{ path: string; content: string }> = [
+      { path: piSettings, content: piSettingsContent },
+      { path: envFile, content: envContent },
+    ];
+
+    // Pre-flight all conflicts so init fails atomically — no half-written
+    // state where one file is created and the other is refused.
+    const conflicts = writes.filter((w) => existsSync(w.path));
+    if (conflicts.length > 0 && !opts.force) {
+      for (const c of conflicts) {
+        console.error(`refusing to overwrite ${c.path} (use --force)`);
+      }
+      process.exit(1);
     }
 
-    if (existsSync(envFile) && !opts.force) {
-      console.error(`refusing to overwrite ${envFile} (use --force)`);
-    } else {
-      writeFileSync(
-        envFile,
-        [
-          "NATS_URL=nats://localhost:4222",
-          "SAGE_AGENT_ID=sage",
-          "SAGE_DID=did:mf:sage",
-          "SAGE_SOURCE=metafactory.sage.local",
-          "SAGE_ORG=metafactory",
-          "SAGE_DATA_RESIDENCY=CH",
-          "PI_BIN=pi",
-          "PI_PROVIDER=anthropic",
-          "PI_MODEL=anthropic/claude-sonnet-4-6",
-          "",
-        ].join("\n"),
-      );
-      console.error(`wrote ${envFile}`);
+    for (const w of writes) {
+      writeFileSync(w.path, w.content);
+      console.error(`wrote ${w.path}`);
     }
   });
 

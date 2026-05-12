@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 
+import { buildGhEnv } from "./env.ts";
+
 /**
  * gh CLI wrapper. Piggybacks on the user's existing `gh auth` login — no token
  * juggling, no Octokit. Read-only by default; the `review` op posts comments
@@ -148,8 +150,9 @@ interface RunGhResult {
 
 async function runGh(args: string[], opts: { allowNonZero?: boolean } = {}): Promise<RunGhResult> {
   const bin = process.env.GH_BIN ?? "gh";
+  const childEnv = buildGhEnv();
   return new Promise<RunGhResult>((resolve, reject) => {
-    const child = spawn(bin, args, { env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, args, { env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (c: Buffer) => {

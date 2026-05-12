@@ -61,10 +61,10 @@ export function renderReviewBody(verdict: ReviewVerdict): string {
         ? "_No findings._"
         : lens.findings
             .map((f) => {
-              const head = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}`;
-              if (!f.suggestion) return head;
+              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}`;
+              if (!f.suggestion) return findingHead;
               const fence = pickFence(f.suggestion);
-              return `${head}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
+              return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
             })
             .join("\n\n");
     return `### ${lens.lens}\n${lens.summary}\n\n${body}`;

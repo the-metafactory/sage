@@ -1,4 +1,6 @@
-import { connect, type NatsConnection, type Subscription } from "nats";
+import { connect, credsAuthenticator, type NatsConnection, type Subscription } from "nats";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { z } from "zod";
 
 import {
@@ -53,6 +55,18 @@ export interface BridgeConfig {
    * JetStream consumer group `max_ack_pending`.
    */
   maxConcurrentTasks?: number;
+  /**
+   * Path to a NATS user `.creds` file (nsc-generated). When set, the bridge
+   * authenticates with the broker. Falls back to `NATS_CREDS_FILE` env var.
+   * Unauthenticated when neither is set (dev / local broker only).
+   */
+  credsFile?: string;
+  /**
+   * NATS queue-group name for the broadcast + direct subscriptions. Multiple
+   * Sage instances joining the same group share work via competing-consumer
+   * semantics (only one delivery per message). Defaults to `sage-review`.
+   */
+  queueGroup?: string;
 }
 
 class Semaphore {
@@ -96,18 +110,29 @@ export interface RunningBridge {
 }
 
 export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
-  const nc = await connect({ servers: cfg.natsUrl });
-  const subjects: SubjectConfig = { org: cfg.org, did: cfg.did };
+  const connectOpts: Parameters<typeof connect>[0] = { servers: cfg.natsUrl };
 
-  const broadcast = nc.subscribe(broadcastSubject(subjects));
-  const direct = nc.subscribe(directSubject(subjects));
+  const credsPath = resolveCredsPath(cfg.credsFile ?? process.env.NATS_CREDS_FILE);
+  if (credsPath) {
+    connectOpts.authenticator = credsAuthenticator(readFileSync(credsPath));
+    log(`bridge: using NATS creds at ${credsPath}`);
+  } else {
+    log(`bridge: connecting unauthenticated (no NATS_CREDS_FILE / cfg.credsFile)`);
+  }
+
+  const nc = await connect(connectOpts);
+  const subjects: SubjectConfig = { org: cfg.org, did: cfg.did };
+  const queue = cfg.queueGroup ?? "sage-review";
+
+  const broadcast = nc.subscribe(broadcastSubject(subjects), { queue });
+  const direct = nc.subscribe(directSubject(subjects), { queue });
 
   const concurrencyLimit = cfg.maxConcurrentTasks ?? 3;
   const sem = new Semaphore(concurrencyLimit);
 
   log(`bridge: connected ${cfg.natsUrl}`);
-  log(`bridge: subscribed ${broadcastSubject(subjects)}`);
-  log(`bridge: subscribed ${directSubject(subjects)}`);
+  log(`bridge: subscribed ${broadcastSubject(subjects)} (queue=${queue})`);
+  log(`bridge: subscribed ${directSubject(subjects)} (queue=${queue})`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
   const onLoopFailure = (which: string) => (err: unknown) => {
@@ -257,8 +282,24 @@ async function publish(
   subjectOverride?: string,
 ): Promise<void> {
   const subject = subjectOverride ?? deriveSubject(envelope);
-  nc.publish(subject, te.encode(JSON.stringify(envelope)));
-  log(`bridge: published ${subject} (${envelope.id})`);
+  try {
+    nc.publish(subject, te.encode(JSON.stringify(envelope)));
+    log(`bridge: published ${subject} (${envelope.id})`);
+  } catch (err) {
+    // nats.js publish is fire-and-forget; failures surface synchronously
+    // only when the client refuses (e.g., over max payload size or after
+    // close). Connection-drop failures fire as `'error'` events on the
+    // connection, not exceptions here — those need a separate listener.
+    // Phase 2: switch lifecycle envelopes to JetStream publish with ack.
+    const m = err instanceof Error ? err.message : String(err);
+    log(`bridge: publish failed for ${subject} (${envelope.id}): ${m}`);
+  }
+}
+
+function resolveCredsPath(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (raw.startsWith("~/")) return raw.replace(/^~/, homedir());
+  return raw;
 }
 
 function log(msg: string): void {

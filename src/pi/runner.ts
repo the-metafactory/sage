@@ -140,10 +140,23 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
 function extractJson<T>(text: string): T | undefined {
   const candidates: string[] = [text];
 
-  const fence = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
-  const fenceMatch = text.match(fence);
-  if (fenceMatch && fenceMatch[1]) candidates.push(fenceMatch[1]);
+  // 1) Non-greedy fence: captures the FIRST fenced block only. Safe when
+  //    the LLM emits two separate fenced blocks (e.g., a code snippet
+  //    followed by the review JSON) — only the first is tried.
+  const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
+  const ng = text.match(fenceNonGreedy);
+  if (ng && ng[1]) candidates.push(ng[1]);
 
+  // 2) Greedy fence: captures from the first opening fence to the LAST
+  //    closing fence. Safe when the JSON body itself contains inline ```
+  //    blocks inside `suggestion` fields. Tradeoff vs non-greedy is that
+  //    multi-block output would over-capture — fallback (3) recovers.
+  const fenceGreedy = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
+  const g = text.match(fenceGreedy);
+  if (g && g[1]) candidates.push(g[1]);
+
+  // 3) Brace slice: first `{` to last `}`. Covers "Here is the review:
+  //    { … }" preambles and any other prose framing.
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
