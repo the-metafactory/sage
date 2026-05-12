@@ -1,0 +1,113 @@
+# sage — code reviewer agent on the pi.dev substrate.
+#
+# Shape: standalone worked example from docs/design-arc-agent-bots.md §3.2
+# (in the the-metafactory/cortex repo). Installs into cortex's HostAdapter
+# per arc#117 (identity fragment + persona + NATS creds) AND into the
+# darwin-launchd HostAdapter (binary + plist).
+#
+# Sage runs as its own daemon (pi.dev process) and connects to the same
+# NATS bus cortex is on. Cortex sees Sage only via the fragment in
+# agents.d/, the NATS capability registry, and the envelopes Sage publishes.
+
+schema: arc/v1
+name: sage
+version: 0.1.0
+type: agent
+targets: [cortex, darwin-launchd]
+description: >-
+  Code review agent on the pi.dev substrate. Subscribes to Myelin
+  code-review tasks, reviews PRs through composable lenses, posts via gh,
+  publishes verdict envelopes back to the bus.
+license: MIT
+tier: official
+author:
+  name: Jens-Christian Fischer
+  github: jcfischer
+
+runtime:
+  substrate: pi-dev
+  mode: standalone
+  capabilities:
+    - code-review
+    - typescript
+    - github-pr-review
+
+identity:
+  id: sage
+  did: did:mf:sage
+  displayName: Sage
+  roles: [agent-restricted]
+  trust: [luna, holly, ivy, pilot, fern]
+
+# No presence block — Sage has no chat surface in v0.1. Verdicts surface
+# via the bus → cortex dashboard render path.
+
+depends_on:
+  tools:
+    - name: bun
+      version: ">=1.1.0"
+    - name: pi
+      version: ">=0.1.0"
+    - name: gh
+      version: ">=2.0.0"
+
+provides:
+  files:
+    persona.md: ~/.config/cortex/personas/sage.md
+    agent.yaml: ~/.config/cortex/agents.d/sage.yaml
+  binary: bin/sage                                # → ~/bin/sage launcher wrapper
+  plist: services/ai.meta-factory.sage.plist     # → ~/Library/LaunchAgents/
+
+scripts:
+  postinstall: bun install                       # pull deps into the install copy
+
+lifecycle:
+  preinstall:
+    - scripts/check-cortex-version.sh    # cortex CLI on PATH (arc CortexHostAdapter.detect parity)
+    - scripts/check-pi-installed.sh      # pi.dev binary on PATH — Sage cannot function without it
+  postinstall:
+    - scripts/signal-cortex-reload.sh    # FIRST — daemon registers sage from agents.d/ BEFORE creds issue
+    - scripts/issue-nats-creds.sh        # THEN — cortex creds issue sage (scoped to declared capabilities)
+    - scripts/start-daemon.sh            # LAST — launchctl load the plist; daemon connects bus + self-registers capabilities
+  preuninstall:
+    - scripts/stop-daemon.sh             # FIRST — launchctl unload; daemon nak's pending tasks
+    - scripts/drain-tasks.sh             # publish draining signal; bounded wait on dispatch.task.completed
+    - scripts/signal-cortex-reload.sh    # LAST — cortex drops sage from registry (creds revoked in removeArtifact per D7)
+
+capabilities:
+  filesystem:
+    read:
+      - ~/.config/cortex/
+      - ~/.config/nats/
+      - ~/work/
+    write:
+      - ~/Library/Logs/sage/        # daemon log file
+  network:
+    - domain: localhost
+      reason: NATS bus connection (nats://127.0.0.1:4222)
+    - domain: api.github.com
+      reason: gh CLI fetches PR diff and posts review (auth piggybacks on user's gh login)
+    - domain: api.openrouter.ai
+      reason: pi.dev subprocess uses OpenRouter as primary provider (when configured)
+    - domain: api.anthropic.com
+      reason: pi.dev subprocess provider option
+    - domain: api.openai.com
+      reason: pi.dev subprocess provider option
+  bash:
+    allowed: true
+    restricted_to:
+      - pi              # LLM substrate subprocess
+      - gh              # GitHub CLI
+      - git             # repo introspection
+      - bun             # runtime
+      - launchctl       # daemon lifecycle (install/uninstall scripts only)
+  secrets:
+    - name: OPENROUTER_API_KEY
+      optional: true
+      reason: pi.dev provider auth — forwarded to subprocess via buildPiEnv allow-list
+    - name: ANTHROPIC_API_KEY
+      optional: true
+      reason: alternate pi.dev provider
+    - name: OPENAI_API_KEY
+      optional: true
+      reason: alternate pi.dev provider

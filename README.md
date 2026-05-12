@@ -12,6 +12,28 @@ Sage reviews GitHub pull requests through composable lenses (CodeQuality first; 
 
 ## Install
 
+### Via arc (recommended)
+
+Once cortex is running and `arc` is on PATH:
+
+```bash
+arc install github:the-metafactory/sage
+```
+
+This single command:
+
+1. Clones sage to `~/.config/metafactory/pkg/repos/sage/`
+2. Drops `persona.md` into `~/.config/cortex/personas/sage.md`
+3. Renders `agent.yaml` into `~/.config/cortex/agents.d/sage.yaml` (identity + trust + capabilities)
+4. Signals cortex to reload (`cortex agents reload` or SIGHUP fallback)
+5. Mints sage's NATS credentials (`cortex creds issue sage`) scoped to the declared `runtime.capabilities`
+6. Installs the launchd plist to `~/Library/LaunchAgents/ai.meta-factory.sage.plist`
+7. `launchctl bootstrap`s the daemon — it connects the bus, registers capabilities in NATS KV, and starts claiming review tasks
+
+See `arc-manifest.yaml` for the full spec and `scripts/` for the lifecycle hooks. Architecture context: `cortex/docs/design-arc-agent-bots.md` §3.2.
+
+### Manual (for development)
+
 ```bash
 cd ~/work/sage
 bun install

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# sage launcher — resolves the install root and dispatches to the CLI.
+#
+# When arc installs sage, it symlinks ~/bin/sage to this script inside
+# ~/.config/metafactory/pkg/repos/sage/bin/sage. The launcher must find
+# the repo root regardless of how it was invoked.
+
+set -euo pipefail
+
+# Resolve symlinks to find the real script directory.
+SCRIPT="$0"
+while [[ -L "$SCRIPT" ]]; do
+  DIR="$(cd -P "$(dirname "$SCRIPT")" && pwd)"
+  SCRIPT="$(readlink "$SCRIPT")"
+  [[ "$SCRIPT" != /* ]] && SCRIPT="$DIR/$SCRIPT"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT")" && pwd)"
+REPO_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "sage: 'bun' not on PATH — install from https://bun.sh" >&2
+  exit 1
+fi
+
+exec bun run "$REPO_ROOT/src/cli/index.ts" "$@"

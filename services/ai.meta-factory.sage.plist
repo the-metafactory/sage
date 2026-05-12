@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Sage daemon launchd unit.
+
+  Installed by arc to ~/Library/LaunchAgents/ai.meta-factory.sage.plist.
+  start-daemon.sh / stop-daemon.sh manage the load/unload lifecycle.
+
+  Runtime: `sage serve` subscribes to Myelin code-review subjects and
+  publishes verdict envelopes back to the bus. Provider API keys reach
+  the pi.dev subprocess via the buildPiEnv() allow-list — anything in
+  the daemon's environment (set below) propagates through.
+
+  Token replacements performed by arc at install time:
+    {{SAGE_BIN}}              → path to the installed sage launcher
+    {{NATS_URL}}              → operator's NATS broker URL
+    {{SAGE_ORG}}              → org segment for subject derivation
+    {{SAGE_DID}}              → DID used for the @principal direct subject
+    {{LOG_DIR}}               → ~/Library/Logs/sage (created by arc)
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.meta-factory.sage</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{SAGE_BIN}}</string>
+    <string>serve</string>
+    <string>--nats</string>
+    <string>{{NATS_URL}}</string>
+    <string>--org</string>
+    <string>{{SAGE_ORG}}</string>
+    <string>--did</string>
+    <string>{{SAGE_DID}}</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>Crashed</key>
+    <true/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!--
+    Environment forwarded to the daemon (and from there, via buildPiEnv()'s
+    allow-list, to the pi.dev subprocess). Provider API keys live in the
+    operator's secret store; arc renders the actual values into this plist
+    at install time. Anything not listed here will not reach pi.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NATS_URL</key>
+    <string>{{NATS_URL}}</string>
+    <key>NATS_CREDS_FILE</key>
+    <string>{{HOME}}/.config/nats/creds/sage.creds</string>
+    <key>SAGE_ORG</key>
+    <string>{{SAGE_ORG}}</string>
+    <key>SAGE_DID</key>
+    <string>{{SAGE_DID}}</string>
+    <key>SAGE_SOURCE</key>
+    <string>{{SAGE_ORG}}.sage.local</string>
+    <key>SAGE_DATA_RESIDENCY</key>
+    <string>CH</string>
+    <key>PI_PROVIDER</key>
+    <string>anthropic</string>
+    <key>PI_MODEL</key>
+    <string>anthropic/claude-sonnet-4-6</string>
+    <!-- Provider keys (uncomment + render at install time):
+    <key>OPENROUTER_API_KEY</key>
+    <string>{{OPENROUTER_API_KEY}}</string>
+    <key>ANTHROPIC_API_KEY</key>
+    <string>{{ANTHROPIC_API_KEY}}</string>
+    -->
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>{{LOG_DIR}}/sage.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG_DIR}}/sage.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>{{HOME}}/.config/metafactory/pkg/repos/sage</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
