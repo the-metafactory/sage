@@ -37,7 +37,11 @@ export interface PiRunResult {
   durationMs: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+// 10 minutes. Big PRs (multi-commit, large diffs) often need >5min on
+// mid-tier providers; the previous 5min default surfaced as opaque
+// timeouts on real reviews. Overridable per call or via `PI_TIMEOUT_MS`
+// env var (read in runPi below).
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
   const bin = process.env.PI_BIN ?? "pi";
@@ -70,10 +74,14 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
     let stdout = "";
     let stderr = "";
 
+    const envTimeoutMs = Number(process.env.PI_TIMEOUT_MS);
+    const effectiveTimeoutMs =
+      opts.timeoutMs ??
+      (Number.isFinite(envTimeoutMs) && envTimeoutMs > 0 ? envTimeoutMs : DEFAULT_TIMEOUT_MS);
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error(`pi runner timed out after ${opts.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`));
-    }, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      reject(new Error(`pi runner timed out after ${effectiveTimeoutMs}ms`));
+    }, effectiveTimeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");

@@ -6,6 +6,8 @@ export interface ReviewOptions {
   ref: PrRef;
   /** Post the review back to GitHub via gh CLI. Default: false (dry-run). */
   post?: boolean;
+  /** Per-lens pi runner timeout. Falls back to `PI_TIMEOUT_MS` env or 10min. */
+  timeoutMs?: number;
   /** Progress callback fired after each lens completes — used for envelope emission in serve mode. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
 }
@@ -21,7 +23,11 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const lensReports: LensReport[] = [];
 
-  const cq = await reviewCodeQuality({ pr, diff });
+  const cq = await reviewCodeQuality({
+    pr,
+    diff,
+    ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
+  });
   lensReports.push(cq);
   // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
   // — a publish failure must not discard a completed review. Log and move on.

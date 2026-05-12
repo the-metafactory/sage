@@ -43,6 +43,7 @@ export async function reviewCodeQuality(input: {
   pr: PrMetadata;
   diff: string;
   lensName?: string;
+  timeoutMs?: number;
 }): Promise<LensReport> {
   const lens = input.lensName ?? "CodeQuality";
   const started = Date.now();
@@ -50,7 +51,10 @@ export async function reviewCodeQuality(input: {
   const userPrompt = buildPrompt(input.pr, input.diff);
   const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;
 
-  const { result } = await runPiJson<RawLensOutput>({ prompt: fullPrompt });
+  const { result } = await runPiJson<RawLensOutput>({
+    prompt: fullPrompt,
+    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+  });
 
   const findings = (result.findings ?? []).map<Finding>((f) => ({
     path: f.path,

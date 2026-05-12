@@ -19,7 +19,13 @@ program
   .description("Review a single PR offline (no bus). Prints rendered review to stdout.")
   .argument("<pr-ref>", "PR URL or OWNER/REPO#N")
   .option("--post", "Post the review back to the PR via gh", false)
-  .action(async (prRef: string, opts: { post: boolean }) => {
+  .option(
+    "--timeout <seconds>",
+    "Per-lens pi timeout in seconds (default 600 / 10min)",
+    (v) => parseInt(v, 10),
+    Number(process.env.SAGE_REVIEW_TIMEOUT ?? 600),
+  )
+  .action(async (prRef: string, opts: { post: boolean; timeout: number }) => {
     const ref = parsePrRef(prRef);
     const auth = await ghAuthStatus();
     if (!auth.ok) {
@@ -28,8 +34,14 @@ program
       process.exit(2);
     }
 
-    console.error(`[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number}`);
-    const result = await reviewPr({ ref, post: opts.post });
+    console.error(
+      `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} (timeout=${opts.timeout}s)`,
+    );
+    const result = await reviewPr({
+      ref,
+      post: opts.post,
+      timeoutMs: opts.timeout * 1000,
+    });
     const body = renderReviewBody(result.verdict);
     console.log(body);
     console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
