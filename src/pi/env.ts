@@ -88,21 +88,22 @@ export function buildPiEnv(opts: BuildPiEnvOptions = {}): Record<string, string>
   const parentAllow = parseEnvList(parent.PI_ENV_ALLOW);
   const parentDeny = parseEnvList(parent.PI_ENV_DENY);
 
+  // Build the default allow-list from the safe lists only. SENSITIVE
+  // keys are deliberately omitted from SHELL_ESSENTIALS / PROVIDER_KEYS;
+  // they re-enter the set ONLY when the caller's `allow` or the parent's
+  // `PI_ENV_ALLOW` explicitly names them. This positive-add structure
+  // makes the opt-in-only semantics self-evident.
   const allowSet = new Set<string>([
     ...SHELL_ESSENTIALS,
     ...PROVIDER_KEYS,
     ...(opts.allow ?? []),
     ...parentAllow,
   ]);
-
-  // Sensitive keys must be opted IN explicitly via PI_ENV_ALLOW or the
-  // caller's `allow` list — they're not in SHELL_ESSENTIALS. This is the
-  // enforcement that makes SENSITIVE_OPT_IN_KEYS load-bearing rather than
-  // a documentation comment.
   for (const key of SENSITIVE_OPT_IN_KEYS) {
     const explicitlyAllowed =
       parentAllow.includes(key) || (opts.allow?.includes(key) ?? false);
-    if (!explicitlyAllowed) allowSet.delete(key);
+    if (explicitlyAllowed) allowSet.add(key);
+    // else: not added — sensitive keys are off by default, no delete needed.
   }
 
   const denySet = new Set<string>([

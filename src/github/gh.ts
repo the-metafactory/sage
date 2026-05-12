@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -154,6 +154,12 @@ export async function postReview(input: PostReviewInput): Promise<void> {
       unlinkSync(bodyPath);
     } catch {
       // Best-effort cleanup; tempdir is in OS-managed /tmp anyway.
+    }
+    try {
+      rmdirSync(tmpDir);
+    } catch {
+      // Empty-directory cleanup is best-effort; another process may have
+      // written into it (unlikely under the mkdtemp pattern, but safe).
     }
   }
 }
