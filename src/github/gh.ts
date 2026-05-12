@@ -120,16 +120,19 @@ export async function postReview(input: PostReviewInput): Promise<void> {
         ? "--request-changes"
         : "--comment";
 
-  await runGh([
-    "pr",
-    "review",
-    String(input.ref.number),
-    "--repo",
-    formatRepo(input.ref),
-    flag,
-    "--body",
-    input.body,
-  ]);
+  await runGh(
+    [
+      "pr",
+      "review",
+      String(input.ref.number),
+      "--repo",
+      formatRepo(input.ref),
+      flag,
+      "--body",
+      input.body,
+    ],
+    { timeoutMs: 60_000 },
+  );
 }
 
 export async function ghAuthStatus(): Promise<{ ok: boolean; output: string }> {
@@ -148,21 +151,47 @@ interface RunGhResult {
   exitCode: number;
 }
 
-async function runGh(args: string[], opts: { allowNonZero?: boolean } = {}): Promise<RunGhResult> {
+const DEFAULT_GH_TIMEOUT_MS = 30_000;
+
+async function runGh(
+  args: string[],
+  opts: { allowNonZero?: boolean; timeoutMs?: number } = {},
+): Promise<RunGhResult> {
   const bin = process.env.GH_BIN ?? "gh";
   const childEnv = buildGhEnv();
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS;
+
   return new Promise<RunGhResult>((resolve, reject) => {
     const child = spawn(bin, args, { env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+
+    // Hard timeout so a hung gh (SSH prompt, credential-helper dialog,
+    // network partition) cannot block a semaphore slot forever in daemon
+    // mode. SIGKILL because some gh subcommands trap SIGTERM for their
+    // own cleanup and would hang anyway.
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+
     child.stdout.on("data", (c: Buffer) => {
       stdout += c.toString("utf8");
     });
     child.stderr.on("data", (c: Buffer) => {
       stderr += c.toString("utf8");
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
     child.on("close", (code: number | null) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`gh ${args.join(" ")} timed out after ${timeoutMs}ms`));
+        return;
+      }
       const exitCode = code ?? -1;
       if (exitCode !== 0 && !opts.allowNonZero) {
         reject(new Error(`gh ${args.join(" ")} failed (exit ${exitCode}): ${stderr || stdout}`));

@@ -135,12 +135,20 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   log(`bridge: subscribed ${directSubject(subjects)} (queue=${queue})`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
-  const onLoopFailure = (which: string) => (err: unknown) => {
+  const onLoopFailure = (which: string) => async (err: unknown) => {
     const m = err instanceof Error ? err.message : String(err);
     log(`bridge: FATAL — ${which} consumer loop died: ${m}`);
-    // Exit non-zero so launchd / systemd restart the daemon cleanly.
-    // The KeepAlive contract assumes silent loop death = bug, not a
-    // graceful drain.
+    log(`bridge: draining surviving connections before exit (max ~10s)`);
+    // Drain lets the other consumer loop finish its in-flight task so its
+    // semaphore slot can release cleanly — abandoned work is the cost of
+    // a hard process.exit. Bounded by NATS's internal drain timeout.
+    try {
+      await nc.drain();
+    } catch (drainErr) {
+      const dm = drainErr instanceof Error ? drainErr.message : String(drainErr);
+      log(`bridge: drain on FATAL failed: ${dm}`);
+    }
+    // launchd / systemd restart the daemon on this non-zero exit.
     process.exit(1);
   };
   void consumeSubscription(broadcast, "broadcast", cfg, nc, sem).catch(onLoopFailure("broadcast"));

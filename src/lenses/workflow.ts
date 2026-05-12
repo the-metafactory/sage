@@ -23,7 +23,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const cq = await reviewCodeQuality({ pr, diff });
   lensReports.push(cq);
-  await opts.onLensComplete?.(cq);
+  // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
+  // — a publish failure must not discard a completed review. Log and move on.
+  try {
+    await opts.onLensComplete?.(cq);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    console.error(`[sage] onLensComplete (CodeQuality) failed: ${m}`);
+  }
 
   // Future lenses (Security, Architecture, EcosystemCompliance, Performance)
   // plug in here. Each becomes an additional report appended to lensReports.

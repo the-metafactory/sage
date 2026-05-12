@@ -54,8 +54,15 @@ export const SHELL_ESSENTIALS = [
   "LC_ALL",
   "TZ",
   "TERM",
-  "NODE_OPTIONS",
 ] as const;
+
+/**
+ * Keys that are useful for some pi runtimes but carry injection risk in
+ * production. `NODE_OPTIONS` can `--require` arbitrary files into pi's Node
+ * runtime if the parent env was poisoned. NOT forwarded by default.
+ * Operators who genuinely need it must opt in via `PI_ENV_ALLOW=NODE_OPTIONS`.
+ */
+export const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
 
 export interface BuildPiEnvOptions {
   /** Caller-supplied extra env vars; merged last and win on conflict. */

@@ -140,28 +140,29 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
 function extractJson<T>(text: string): T | undefined {
   const candidates: string[] = [text];
 
-  // 1) Non-greedy fence: captures the FIRST fenced block only. Safe when
-  //    the LLM emits two separate fenced blocks (e.g., a code snippet
-  //    followed by the review JSON) — only the first is tried.
-  const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
-  const ng = text.match(fenceNonGreedy);
-  if (ng && ng[1]) candidates.push(ng[1]);
-
-  // 2) Greedy fence: captures from the first opening fence to the LAST
-  //    closing fence. Safe when the JSON body itself contains inline ```
-  //    blocks inside `suggestion` fields. Tradeoff vs non-greedy is that
-  //    multi-block output would over-capture — fallback (3) recovers.
+  // 1) Greedy fence FIRST: captures the first opening fence to the LAST
+  //    closing fence. Handles the common case where the JSON body contains
+  //    inline ``` blocks inside `suggestion` fields. Cold path: zero parse
+  //    failures here when pi obeys the system prompt.
   const fenceGreedy = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
   const g = text.match(fenceGreedy);
   if (g && g[1]) candidates.push(g[1]);
 
-  // 3) Brace slice: first `{` to last `}`. Covers "Here is the review:
-  //    { … }" preambles and any other prose framing.
+  // 2) Brace slice: first `{` to last `}`. Covers "Here is the review:
+  //    { … }" preambles and any other prose framing — also recovers when
+  //    the greedy fence over-captured (two fenced blocks).
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
     candidates.push(text.slice(first, last + 1));
   }
+
+  // 3) Non-greedy fence LAST: captures the FIRST fenced block only.
+  //    Final fallback for the rare "two separate fenced blocks, JSON
+  //    is the first one" shape where greedy would have over-captured.
+  const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
+  const ng = text.match(fenceNonGreedy);
+  if (ng && ng[1]) candidates.push(ng[1]);
 
   for (const c of candidates) {
     try {
