@@ -125,41 +125,37 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
 }
 
 /**
- * Pull a JSON object out of an arbitrary pi response. Tries three shapes
- * before giving up:
+ * Pull a JSON object out of an arbitrary pi response. Tries four shapes in
+ * order, returning the first that parses cleanly:
  *
- *   1. The whole string parses cleanly.
- *   2. A ```json … ``` (or ```…```) fenced block parses cleanly. Uses a
- *      greedy match anchored on the LAST closing fence so inline ``` blocks
- *      inside the JSON body don't truncate the payload.
- *   3. The slice from the first `{` to the last `}` parses cleanly — covers
- *      "Here is the review: { … }" style preambles.
+ *   0. Raw — the whole response is valid JSON (the system-prompt-obeyed case).
+ *   1. Greedy fence — first opening ```json fence to LAST closing ```.
+ *      Handles JSON bodies that contain inline ``` blocks inside
+ *      `suggestion` fields (common in review output).
+ *   2. Brace slice — first `{` to last `}`. Recovers from prose preambles
+ *      ("Here is the review: {…}") and from greedy-fence over-capture.
+ *   3. Non-greedy fence — first ```json fence to FIRST closing ```. Last
+ *      resort for the rare two-separate-fenced-blocks shape.
  *
- * Returns `undefined` if none of the three produce a parseable object.
+ * Returns `undefined` if all four fail.
  */
 function extractJson<T>(text: string): T | undefined {
+  // 0) Raw text — preserves the happy path.
   const candidates: string[] = [text];
 
-  // 1) Greedy fence FIRST: captures the first opening fence to the LAST
-  //    closing fence. Handles the common case where the JSON body contains
-  //    inline ``` blocks inside `suggestion` fields. Cold path: zero parse
-  //    failures here when pi obeys the system prompt.
+  // 1) Greedy fence.
   const fenceGreedy = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
   const g = text.match(fenceGreedy);
   if (g && g[1]) candidates.push(g[1]);
 
-  // 2) Brace slice: first `{` to last `}`. Covers "Here is the review:
-  //    { … }" preambles and any other prose framing — also recovers when
-  //    the greedy fence over-captured (two fenced blocks).
+  // 2) Brace slice.
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first !== -1 && last !== -1 && last > first) {
     candidates.push(text.slice(first, last + 1));
   }
 
-  // 3) Non-greedy fence LAST: captures the FIRST fenced block only.
-  //    Final fallback for the rare "two separate fenced blocks, JSON
-  //    is the first one" shape where greedy would have over-captured.
+  // 3) Non-greedy fence.
   const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
   const ng = text.match(fenceNonGreedy);
   if (ng && ng[1]) candidates.push(ng[1]);

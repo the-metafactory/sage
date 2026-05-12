@@ -92,7 +92,17 @@ class Semaphore {
 
   release(): void {
     if (this.active <= 0) {
-      throw new Error("Semaphore released more times than acquired");
+      // Log-and-noop instead of throwing. release() is called inside
+      // `.finally(() => sem.release())` on a void-ed promise chain; a
+      // throw there becomes an unhandled rejection and crashes the
+      // event loop. The invariant violation is still surfaced via the
+      // stack trace, just not by killing the daemon.
+      // eslint-disable-next-line no-console
+      console.error(
+        new Error("Semaphore released more times than acquired").stack ??
+          "Semaphore underflow",
+      );
+      return;
     }
     this.active--;
     const next = this.waiters.shift();
@@ -121,6 +131,14 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   }
 
   const nc = await connect(connectOpts);
+  // Register connection-level event listeners BEFORE any subscribe/publish.
+  // The nats.js client emits 'error' on the connection (not via thrown
+  // exceptions) for transport-level failures during fire-and-forget
+  // publish, plus normal status events for reconnect cycles. Without an
+  // 'error' listener Node.js's EventEmitter would throw and crash the
+  // daemon.
+  void watchConnectionStatus(nc);
+
   const subjects: SubjectConfig = { org: cfg.org, did: cfg.did };
   const queue = cfg.queueGroup ?? "sage-review";
 
@@ -308,6 +326,24 @@ function resolveCredsPath(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   if (raw.startsWith("~/")) return raw.replace(/^~/, homedir());
   return raw;
+}
+
+/**
+ * Stream NATS connection status events to the log so a transport hiccup
+ * surfaces as a log line rather than an unhandled 'error' EventEmitter
+ * crash. status() yields disconnect, reconnect, error, ldm (lameDuck),
+ * update (server list), and pingTimer events.
+ */
+async function watchConnectionStatus(nc: NatsConnection): Promise<void> {
+  try {
+    for await (const s of nc.status()) {
+      const detail = typeof s.data === "string" ? s.data : JSON.stringify(s.data);
+      log(`bridge: nats ${s.type} — ${detail}`);
+    }
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    log(`bridge: nats status iterator ended: ${m}`);
+  }
 }
 
 function log(msg: string): void {

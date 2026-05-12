@@ -148,7 +148,7 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
 | `src/lenses/code-quality.ts` | The first lens (CodeQuality). |
 | `src/lenses/workflow.ts` | Per-PR orchestration: fetch → lenses → verdict → optional post |
-| `config/persona.md` | Sage's reviewing voice and principles |
+| `persona.md` | Sage's reviewing voice and principles (root copy shipped by arc) |
 | `ISA.md` | Ideal State Articulation (E3 tier) |
 
 ## Provider keys
