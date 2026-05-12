@@ -75,16 +75,41 @@ export interface BuildPiEnvOptions {
   parent?: NodeJS.ProcessEnv;
 }
 
+/**
+ * Sage-internal `PI_*` keys that configure Sage's own forwarding behavior.
+ * They must NEVER reach the pi subprocess — leaking the parent's security
+ * policy is operational metadata pi has no business with.
+ */
+const SAGE_INTERNAL_PI_KEYS = new Set<string>(["PI_ENV_ALLOW", "PI_ENV_DENY"]);
+
 export function buildPiEnv(opts: BuildPiEnvOptions = {}): Record<string, string> {
   const parent = opts.parent ?? process.env;
+
+  const parentAllow = parseEnvList(parent.PI_ENV_ALLOW);
+  const parentDeny = parseEnvList(parent.PI_ENV_DENY);
 
   const allowSet = new Set<string>([
     ...SHELL_ESSENTIALS,
     ...PROVIDER_KEYS,
     ...(opts.allow ?? []),
-    ...parseEnvList(parent.PI_ENV_ALLOW),
+    ...parentAllow,
   ]);
-  const denySet = new Set<string>([...(opts.deny ?? []), ...parseEnvList(parent.PI_ENV_DENY)]);
+
+  // Sensitive keys must be opted IN explicitly via PI_ENV_ALLOW or the
+  // caller's `allow` list — they're not in SHELL_ESSENTIALS. This is the
+  // enforcement that makes SENSITIVE_OPT_IN_KEYS load-bearing rather than
+  // a documentation comment.
+  for (const key of SENSITIVE_OPT_IN_KEYS) {
+    const explicitlyAllowed =
+      parentAllow.includes(key) || (opts.allow?.includes(key) ?? false);
+    if (!explicitlyAllowed) allowSet.delete(key);
+  }
+
+  const denySet = new Set<string>([
+    ...(opts.deny ?? []),
+    ...parentDeny,
+    ...SAGE_INTERNAL_PI_KEYS,
+  ]);
 
   const out: Record<string, string> = {};
 
@@ -96,6 +121,8 @@ export function buildPiEnv(opts: BuildPiEnvOptions = {}): Record<string, string>
   }
 
   // Forward any key prefixed with PI_ — pi.dev's own configuration namespace.
+  // Sage-internal config (PI_ENV_ALLOW / PI_ENV_DENY) is denied above so the
+  // subprocess does not see the parent's forwarding policy.
   for (const [key, value] of Object.entries(parent)) {
     if (!key.startsWith("PI_")) continue;
     if (denySet.has(key)) continue;

@@ -7,13 +7,14 @@ interface RawLensOutput {
   findings: Array<Partial<Finding> & { path: string; line: number | string; title: string }>;
 }
 
-const SYSTEM_PROMPT = `You are Sage, a senior code reviewer in the metafactory ecosystem. You evaluate one
-pull request through a single lens at a time. Be direct, evidence-based, and concise.
+const PROMPT_INSTRUCTION = `You are Sage, a senior code reviewer in the metafactory ecosystem. Review the
+PR data provided on stdin through the CodeQuality lens. Be direct,
+evidence-based, and concise.
 
-CRITICAL OUTPUT CONTRACT: your response MUST be a single JSON object. The first
-character of your response MUST be \`{\` and the last character MUST be \`}\`.
-No preamble like "Here is the review:". No postamble. No markdown fences. No
-prose outside the JSON. Anything else breaks the downstream parser.
+CRITICAL OUTPUT CONTRACT: your response MUST be a single JSON object. The
+first character of your response MUST be \`{\` and the last character MUST
+be \`}\`. No preamble, no postamble, no markdown fences, no prose. Anything
+else breaks the downstream parser.
 
 JSON shape:
 
@@ -48,18 +49,20 @@ export async function reviewCodeQuality(input: {
   const lens = input.lensName ?? "CodeQuality";
   const started = Date.now();
 
-  const userPrompt = buildPrompt(input.pr, input.diff);
-  const fullPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${userPrompt}`;
+  // PR content goes on stdin (can be very large — diffs frequently exceed
+  // macOS ARG_MAX of ~256 KB). The short instruction stays in argv.
+  const stdinContent = buildStdinContent(input.pr, input.diff);
 
   const { result } = await runPiJson<RawLensOutput>({
-    prompt: fullPrompt,
+    prompt: PROMPT_INSTRUCTION,
+    stdin: stdinContent,
     ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
   });
 
   const findings = (result.findings ?? []).map<Finding>((f) => ({
     path: f.path,
     line: normalizeLine(f.line),
-    severity: (f.severity as Finding["severity"]) ?? "suggestion",
+    severity: normalizeSeverity(f.severity),
     title: f.title,
     rationale: f.rationale ?? "",
     ...(f.suggestion ? { suggestion: f.suggestion } : {}),
@@ -71,6 +74,25 @@ export async function reviewCodeQuality(input: {
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+const SEVERITY_VALUES = ["blocker", "important", "suggestion", "nit"] as const;
+const SEVERITY_SET = new Set<string>(SEVERITY_VALUES);
+
+/**
+ * Coerce an LLM-supplied severity to a known value. The system prompt
+ * constrains the model but prompt adherence is not guaranteed — `"blocking"`
+ * or `"BLOCKER"` would silently misclassify a blocker as a comment.
+ * Lowercase + lookup; unknown values fall back to `suggestion` with a
+ * log so the operator can see the deviation.
+ */
+function normalizeSeverity(raw: unknown): Finding["severity"] {
+  if (typeof raw !== "string") return "suggestion";
+  const lower = raw.trim().toLowerCase();
+  if (SEVERITY_SET.has(lower)) return lower as Finding["severity"];
+  // eslint-disable-next-line no-console
+  console.error(`[sage] unknown severity from LLM: "${raw}" — defaulting to "suggestion"`);
+  return "suggestion";
 }
 
 /**
@@ -86,7 +108,7 @@ function normalizeLine(raw: number | string | undefined): number {
   return parsed;
 }
 
-function buildPrompt(pr: PrMetadata, diff: string): string {
+function buildStdinContent(pr: PrMetadata, diff: string): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)
     .join("\n");
@@ -107,6 +129,5 @@ ${diff}
 
 ---
 Review this PR through the CodeQuality lens. Focus on correctness, clarity, error handling,
-edge cases, and idiomatic style. Surface only real issues — do not invent findings. Reply
-with the JSON shape specified above.`;
+edge cases, and idiomatic style. Surface only real issues — do not invent findings.`;
 }

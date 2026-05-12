@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
@@ -124,19 +127,35 @@ export async function postReview(input: PostReviewInput): Promise<void> {
         ? "--request-changes"
         : "--comment";
 
-  await runGh(
-    [
-      "pr",
-      "review",
-      String(input.ref.number),
-      "--repo",
-      formatRepo(input.ref),
-      flag,
-      "--body",
-      input.body,
-    ],
-    { timeoutMs: 60_000 },
-  );
+  // Use --body-file with a temp file rather than --body in argv. A review
+  // body with many findings + fenced suggestions easily exceeds macOS
+  // ARG_MAX (~256 KB). Temp file path is short; the body itself is read
+  // from disk by gh.
+  const tmpDir = mkdtempSync(join(tmpdir(), "sage-review-"));
+  const bodyPath = join(tmpDir, "body.md");
+  writeFileSync(bodyPath, input.body);
+
+  try {
+    await runGh(
+      [
+        "pr",
+        "review",
+        String(input.ref.number),
+        "--repo",
+        formatRepo(input.ref),
+        flag,
+        "--body-file",
+        bodyPath,
+      ],
+      { timeoutMs: 60_000 },
+    );
+  } finally {
+    try {
+      unlinkSync(bodyPath);
+    } catch {
+      // Best-effort cleanup; tempdir is in OS-managed /tmp anyway.
+    }
+  }
 }
 
 export async function ghAuthStatus(): Promise<{ ok: boolean; output: string }> {

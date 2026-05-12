@@ -11,7 +11,18 @@ import { buildPiEnv } from "./env.ts";
  */
 
 export interface PiRunOptions {
+  /**
+   * The instruction passed as `pi -p <prompt>` on the command line. Keep
+   * this small — macOS caps argv+env at ~256 KB (ARG_MAX). Put large
+   * content (PR diff, file dump) in `stdin` instead.
+   */
   prompt: string;
+  /**
+   * Optional large content streamed to pi via stdin. Pi's documented
+   * pattern: `cat README.md | pi -p "Summarize this text"`. Use this for
+   * anything that might exceed ARG_MAX.
+   */
+  stdin?: string;
   provider?: string;
   model?: string;
   tools?: readonly string[];
@@ -103,7 +114,22 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
       });
     });
 
-    child.stdin.end();
+    // Write any large content via stdin BEFORE we'd otherwise hit ARG_MAX
+    // on the argv path. Wrap in try/catch — if the child exited in the
+    // same tick (e.g., `pi` binary missing), stdin may already be ended
+    // and `write/end` would otherwise become an unhandled rejection.
+    try {
+      if (opts.stdin !== undefined) {
+        child.stdin.write(opts.stdin);
+      }
+      child.stdin.end();
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      // Don't reject — let the close handler resolve with whatever the
+      // child produced. The error here is almost always benign cleanup.
+      // eslint-disable-next-line no-console
+      console.error(`[sage] pi stdin write/end after-close: ${m}`);
+    }
   });
 }
 
