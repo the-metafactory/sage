@@ -46,8 +46,21 @@ program
   .option("--source <src>", "Envelope source", process.env.SAGE_SOURCE ?? "metafactory.sage.local")
   .option("--did <did>", "Sage's DID", process.env.SAGE_DID ?? "did:mf:sage")
   .option("--no-post", "Do not post reviews back to GitHub (dry-run)")
+  .option(
+    "--max-concurrent <n>",
+    "Max concurrent reviews (default 3)",
+    (v) => parseInt(v, 10),
+    Number(process.env.SAGE_MAX_CONCURRENT ?? 3),
+  )
   .action(
-    async (opts: { nats: string; org: string; source: string; did: string; post: boolean }) => {
+    async (opts: {
+      nats: string;
+      org: string;
+      source: string;
+      did: string;
+      post: boolean;
+      maxConcurrent: number;
+    }) => {
       console.error(`[sage] serve — connecting to ${opts.nats} as ${opts.did}`);
       const bridge = await startBridge({
         natsUrl: opts.nats,
@@ -55,6 +68,7 @@ program
         source: opts.source,
         did: opts.did,
         postReviews: opts.post,
+        maxConcurrentTasks: opts.maxConcurrent,
       });
 
       const shutdown = async (signal: string) => {

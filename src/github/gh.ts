@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { z } from "zod";
 
 /**
  * gh CLI wrapper. Piggybacks on the user's existing `gh auth` login — no token
@@ -34,25 +35,36 @@ export function formatRepo(ref: PrRef): string {
   return `${ref.owner}/${ref.repo}`;
 }
 
-export interface PrMetadata {
-  number: number;
-  title: string;
-  body: string;
-  state: string;
-  isDraft: boolean;
-  baseRefName: string;
-  headRefName: string;
-  author: { login: string };
-  changedFiles: number;
-  additions: number;
-  deletions: number;
-  files: ReadonlyArray<{
-    path: string;
-    additions: number;
-    deletions: number;
-  }>;
-  url: string;
-}
+/**
+ * Runtime shape validation for `gh pr view --json` output. Localizes a
+ * schema-drift failure to this wrapper rather than letting a TypeError
+ * surface deep in the lens pipeline.
+ */
+export const PrMetadataSchema = z.object({
+  number: z.number().int(),
+  title: z.string(),
+  body: z.string().nullable().transform((s) => s ?? ""),
+  state: z.string(),
+  isDraft: z.boolean(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  author: z.object({ login: z.string() }),
+  changedFiles: z.number().int(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        additions: z.number().int(),
+        deletions: z.number().int(),
+      }),
+    )
+    .default([]),
+  url: z.string().url(),
+});
+
+export type PrMetadata = z.infer<typeof PrMetadataSchema>;
 
 const PR_VIEW_FIELDS =
   "number,title,body,state,isDraft,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url";
@@ -67,7 +79,22 @@ export async function prView(ref: PrRef): Promise<PrMetadata> {
     "--json",
     PR_VIEW_FIELDS,
   ]);
-  return JSON.parse(out.stdout) as PrMetadata;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(out.stdout);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    throw new Error(`gh pr view returned non-JSON output: ${m}`);
+  }
+
+  const parsed = PrMetadataSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `gh pr view payload failed schema validation for ${formatRepo(ref)}#${ref.number}: ${parsed.error.message}`,
+    );
+  }
+  return parsed.data;
 }
 
 export async function prDiff(ref: PrRef): Promise<string> {

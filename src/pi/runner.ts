@@ -12,7 +12,6 @@ import { buildPiEnv } from "./env.ts";
 
 export interface PiRunOptions {
   prompt: string;
-  stdin?: string;
   provider?: string;
   model?: string;
   tools?: readonly string[];
@@ -96,9 +95,6 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
       });
     });
 
-    if (opts.stdin !== undefined) {
-      child.stdin.write(opts.stdin);
-    }
     child.stdin.end();
   });
 }
@@ -127,8 +123,14 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
   return { result: parsed as T, raw };
 }
 
+/**
+ * Strip a single outer ```json … ``` (or ```…```) wrapper from pi's output,
+ * if present. Greedy match captures from the first opening fence to the
+ * LAST closing fence, so inner code blocks inside JSON `suggestion` fields
+ * don't truncate the payload.
+ */
 function stripFences(s: string): string {
-  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/m;
+  const fence = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
   const m = s.trim().match(fence);
   return m ? (m[1] ?? s) : s;
 }

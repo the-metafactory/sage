@@ -46,6 +46,45 @@ export interface BridgeConfig {
   capabilities?: readonly string[];
   /** Default to true; set false to log-only for dry-run testing. */
   postReviews?: boolean;
+  /**
+   * Max concurrent reviews. Each review spawns a `pi` subprocess and competes
+   * for LLM API rate limit + memory; unbounded is dangerous under load.
+   * Defaults to 3. Phase 2 should replace this in-process gate with a NATS
+   * JetStream consumer group `max_ack_pending`.
+   */
+  maxConcurrentTasks?: number;
+}
+
+class Semaphore {
+  private active = 0;
+  private waiters: Array<() => void> = [];
+
+  constructor(private readonly max: number) {
+    if (max < 1) throw new Error(`Semaphore max must be >= 1 (got ${max})`);
+  }
+
+  async acquire(): Promise<void> {
+    if (this.active < this.max) {
+      this.active++;
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      this.waiters.push(() => {
+        this.active++;
+        resolve();
+      });
+    });
+  }
+
+  release(): void {
+    this.active--;
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+
+  get inFlight(): number {
+    return this.active;
+  }
 }
 
 export interface RunningBridge {
@@ -60,12 +99,16 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   const broadcast = nc.subscribe(broadcastSubject(subjects));
   const direct = nc.subscribe(directSubject(subjects));
 
+  const concurrencyLimit = cfg.maxConcurrentTasks ?? 3;
+  const sem = new Semaphore(concurrencyLimit);
+
   log(`bridge: connected ${cfg.natsUrl}`);
   log(`bridge: subscribed ${broadcastSubject(subjects)}`);
   log(`bridge: subscribed ${directSubject(subjects)}`);
+  log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
-  void consumeSubscription(broadcast, "broadcast", cfg, nc);
-  void consumeSubscription(direct, "direct", cfg, nc);
+  void consumeSubscription(broadcast, "broadcast", cfg, nc, sem);
+  void consumeSubscription(direct, "direct", cfg, nc, sem);
 
   return {
     connection: nc,
@@ -80,6 +123,7 @@ async function consumeSubscription(
   mode: "broadcast" | "direct",
   cfg: BridgeConfig,
   nc: NatsConnection,
+  sem: Semaphore,
 ): Promise<void> {
   for await (const msg of sub) {
     let envelope: Envelope;
@@ -97,10 +141,17 @@ async function consumeSubscription(
       continue;
     }
 
-    log(`bridge: ${mode} task ${envelope.id} (type=${envelope.type})`);
-    void handleTask(envelope, cfg, nc).catch((err) => {
-      log(`bridge: handler crashed for ${envelope.id}: ${err instanceof Error ? err.message : err}`);
-    });
+    // Block the consumer loop until a concurrency slot is available. Back-
+    // pressure here propagates to NATS via slow consumer detection rather
+    // than spawning unbounded pi subprocesses. Phase 2: switch to a
+    // JetStream pull consumer with explicit ack + max_ack_pending.
+    await sem.acquire();
+    log(`bridge: ${mode} task ${envelope.id} (type=${envelope.type}, in-flight=${sem.inFlight})`);
+    void handleTask(envelope, cfg, nc)
+      .catch((err) => {
+        log(`bridge: handler crashed for ${envelope.id}: ${err instanceof Error ? err.message : err}`);
+      })
+      .finally(() => sem.release());
   }
 }
 
