@@ -93,8 +93,11 @@ export function buildEnvelope<P extends object = Record<string, unknown>>(
     sovereignty,
     // Single structural cast localized to the schema-parse boundary. Zod's
     // `EnvelopeSchema.parse` below enforces the runtime contract
-    // (`payload: z.record(z.unknown())`), so a payload that's not a plain
-    // string-keyed record fails fast here, not silently downstream.
+    // (`payload: z.record(z.unknown())`), rejecting null, undefined, and
+    // arrays — so a structurally incompatible payload fails fast here
+    // rather than silently downstream. Exotic objects (Date, Map, class
+    // instances) DO satisfy `z.record(z.unknown())` and reach the bus, but
+    // those are caller bugs the type system already discourages.
     payload: input.payload as Record<string, unknown>,
     ...(input.correlationId ? { correlation_id: input.correlationId } : {}),
     ...(input.extensions ? { extensions: input.extensions } : {}),

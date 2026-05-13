@@ -5,6 +5,7 @@ import {
   encodeDidSegment,
   safeValidateEnvelope,
 } from "../src/bus/envelope.ts";
+import type { DispatchTaskPayload } from "../src/bus/dispatcher.ts";
 
 /**
  * Issue #11: buildEnvelope is generic over the payload type so callers with
@@ -13,25 +14,24 @@ import {
  * `Record<string, unknown>`, so closed interfaces are assignable. The Zod
  * parse at the end of buildEnvelope still validates the runtime shape.
  */
-interface PreciseDispatchPayload {
-  pr_url: string;
-  post?: true;
-  timeout_ms?: number;
-}
 
 describe("buildEnvelope generic", () => {
   test("accepts a precise interface without an index signature (no cast needed)", () => {
-    // This call would fail to type-check pre-fix because PreciseDispatchPayload
-    // is not assignable to Record<string, unknown> (closed interface, no
-    // index signature). With the generic constraint relaxed to `object`,
-    // the call compiles cleanly. The Zod parse below still validates the
-    // runtime shape, so type-system relaxation is paired with runtime
-    // enforcement.
-    const payload: PreciseDispatchPayload = {
+    // Importing the real `DispatchTaskPayload` (closed interface, no index
+    // signature) means this test moves in lockstep with the production
+    // type — if `DispatchTaskPayload` ever gains a field, this call site
+    // is the canary, not a stale parallel definition.
+    //
+    // Pre-fix this call would fail to type-check because
+    // `DispatchTaskPayload` is not assignable to `Record<string, unknown>`.
+    // With the generic constraint relaxed to `object`, the call compiles
+    // cleanly while the Zod parse downstream still validates the runtime
+    // shape.
+    const payload: DispatchTaskPayload = {
       pr_url: "https://github.com/x/y/pull/1",
       post: true,
     };
-    const env = buildEnvelope<PreciseDispatchPayload>({
+    const env = buildEnvelope<DispatchTaskPayload>({
       source: "metafactory.sage.local",
       type: "tasks.code-review.typescript",
       payload,
