@@ -28,13 +28,7 @@ export interface DispatchOptions {
   org: string;
   source: string;
   credsFile?: string | undefined;
-  /**
-   * When `true`, include `post: true` in the dispatch payload (explicit
-   * opt-in — the daemon will post regardless of its own default). When
-   * `false` (CLI default), the `post` field is OMITTED from the payload
-   * entirely, so the daemon's `cfg.postReviews` default determines whether
-   * the review is posted. See sage#8 for why omitting beats sending false.
-   */
+  /** CLI `--post`. See {@link buildReviewTaskPayload} for the omit-vs-false semantic. */
   post: boolean;
   /** Hard wait cap in seconds — exits non-zero if no completed/failed arrives. */
   waitSeconds: number;
@@ -58,18 +52,11 @@ export interface BuildReviewTaskPayloadInput {
 }
 
 /**
- * Outgoing shape of the dispatch envelope's payload. Named `DispatchTaskPayload`
- * to distinguish it from `bridge.ts`'s `ReviewTaskPayload` (the Zod-inferred
- * INCOMING payload the daemon validates) — same `src/bus/` module, opposite
- * direction on the wire, different contracts (e.g. `post?: true` here vs
- * `post?: boolean` there).
- *
- * `post` is typed as `true | undefined` (never `false`): when the CLI flag is
- * absent the field is omitted, so the bridge's `payload.post ?? cfg.postReviews`
- * lookup falls through to the daemon-side default. The type is intentionally
- * precise (no index signature) so consumers see a closed contract; the
- * structural cast to `Record<string, unknown>` for `buildEnvelope` is
- * localized to the single call site in `dispatchReview`.
+ * Outgoing shape of the dispatch envelope's payload. Sender-side counterpart
+ * to `bridge.ts`'s `ReviewTaskPayload` (incoming, Zod-validated) — same
+ * module, opposite direction, narrower contract (`post?: true` here vs
+ * `post?: boolean` there). See {@link buildReviewTaskPayload} for the
+ * omit-vs-false rationale.
  */
 export interface DispatchTaskPayload {
   pr_url: string;
