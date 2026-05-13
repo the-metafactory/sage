@@ -12,6 +12,7 @@ import {
   broadcastSubject,
   directSubject,
   dispatchSubject,
+  postFailedSubject,
   verdictSubject,
   type SubjectConfig,
 } from "./subjects.ts";
@@ -310,13 +311,44 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       verdictSubject({ org: cfg.org }, result.verdict.decision),
     );
 
+    // Surface a post-step failure on its own envelope so operators can
+    // distinguish "lens work failed" (dispatch.task.failed) from "lens
+    // work succeeded but `gh pr review` crashed" (code.pr.review.post-
+    // failed). Pre-#16 a post error was thrown out of `reviewPr` and
+    // landed in the outer catch below, kicking the whole task to
+    // dispatch.task.failed — which conflated the two failure modes and
+    // discarded an otherwise-valid verdict. The verdict is still
+    // persisted to disk by `persistVerdict`, so a recovery path exists
+    // even when this envelope is the only signal.
+    if (result.postError) {
+      await publish(
+        nc,
+        buildEnvelope({
+          source: cfg.source,
+          type: "code.pr.review.post-failed",
+          correlationId: env.correlation_id ?? env.id,
+          payload: {
+            ref,
+            verdict: result.verdict,
+            error: result.postError.message,
+          },
+          extensions: { substrate: cfg.substrate.name },
+        }),
+        postFailedSubject({ org: cfg.org }),
+      );
+    }
+
     await publish(
       nc,
       buildEnvelope({
         source: cfg.source,
         type: "dispatch.task.completed",
         correlationId: env.correlation_id ?? env.id,
-        payload: { ref, decision: result.verdict.decision },
+        payload: {
+          ref,
+          decision: result.verdict.decision,
+          posted: result.posted,
+        },
       }),
       dispatchSubject({ org: cfg.org }, "completed"),
     );

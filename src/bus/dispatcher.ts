@@ -145,6 +145,28 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     void consume(verdictSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
       const payload = env.payload as Record<string, unknown>;
+
+      // `code.pr.review.post-failed` is a sibling of the three verdict
+      // outcomes (sage#16). It carries the verdict + the post error;
+      // the lens work itself succeeded and the verdict is on disk at
+      // ~/.config/sage/reviews/<owner>-<repo>-<n>.{json,md}. Surface
+      // both bits of information here — the receiving operator/tool
+      // typically wants the recovery instruction.
+      if (env.type === "code.pr.review.post-failed") {
+        const ref = payload.ref as { owner: string; repo: string; number: number } | undefined;
+        const errorMsg =
+          typeof payload.error === "string" ? payload.error : "<no error message>";
+        log(`  post-failed: ${errorMsg}`);
+        if (ref) {
+          log(
+            `  recover: cat ~/.config/sage/reviews/${ref.owner}-${ref.repo}-${ref.number}.md | gh pr review ${ref.number} --repo ${ref.owner}/${ref.repo} --body-file -`,
+          );
+        }
+        // dispatch.task.completed still arrives after this — let it
+        // resolve the dispatcher exit code.
+        return;
+      }
+
       const decision =
         typeof payload.verdict === "object" && payload.verdict !== null
           ? (payload.verdict as Record<string, unknown>).decision

@@ -23,6 +23,13 @@ export interface ReviewOptions {
 
 export interface ReviewResult {
   verdict: ReviewVerdict;
+  /**
+   * True only when `opts.post` was set AND `postReview` actually returned
+   * without throwing. Was previously `opts.post === true` (intent, not
+   * outcome) — the lens-completion path published the verdict envelope
+   * with `posted: true` even when the GH `gh pr review` call had crashed
+   * silently. See sage#16.
+   */
   posted: boolean;
   /**
    * Set when GH blocked self-{approve,request-changes} and postReview fell
@@ -32,6 +39,14 @@ export interface ReviewResult {
    */
   postedEvent?: ReviewEvent;
   downgraded?: boolean;
+  /**
+   * Set when `opts.post` was true but `postReview` threw. The lens work
+   * itself succeeded — the verdict is on disk via `persistVerdict` and
+   * the caller can re-post manually. Bridge mode publishes a separate
+   * `code.pr.review.post-failed` envelope so operators can distinguish
+   * a post failure from a lens / dispatch failure (sage#16).
+   */
+  postError?: Error;
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
@@ -63,29 +78,58 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
 
-  // Persist the verdict + rendered body BEFORE the network call. If postReview
-  // fails permanently (network or otherwise), the operator can re-post from
-  // disk without re-running the lenses. ~/.config/sage/reviews/<repo>-<pr>.json
-  // holds the latest verdict per PR; older ones are overwritten on next run.
+  // Persist the verdict + rendered body BEFORE the network call. If
+  // `postReview` fails permanently, the operator can re-post from disk
+  // without re-running the lenses. The file at
+  // ~/.config/sage/reviews/<owner>-<repo>-<pr>.{json,md} holds the latest
+  // verdict per PR; older ones are overwritten on next run.
   persistVerdict(opts.ref, verdict, body);
 
   let postedEvent: ReviewEvent | undefined;
   let downgraded: boolean | undefined;
+  let postError: Error | undefined;
+  let posted = false;
+
   if (opts.post) {
-    const result = await postReview({
-      ref: opts.ref,
-      event: verdictToEvent(verdict.decision),
-      body,
-    });
-    postedEvent = result.posted;
-    downgraded = result.downgraded;
+    const target = `${opts.ref.owner}/${opts.ref.repo}#${opts.ref.number}`;
+    // eslint-disable-next-line no-console
+    console.error(
+      `[workflow] post: attempting ${target} (decision=${verdict.decision})`,
+    );
+    try {
+      const result = await postReview({
+        ref: opts.ref,
+        event: verdictToEvent(verdict.decision),
+        body,
+      });
+      postedEvent = result.posted;
+      downgraded = result.downgraded;
+      posted = true;
+      // eslint-disable-next-line no-console
+      console.error(
+        `[workflow] post: ok ${target} (event=${postedEvent}, downgraded=${downgraded})`,
+      );
+    } catch (err) {
+      // Do NOT re-throw — pre-#16, a `postReview` throw escaped here and
+      // landed in the bridge's outer try/catch, kicking the whole task to
+      // `dispatch.task.failed`. That conflated a post failure with a lens
+      // failure and discarded the (otherwise-valid) verdict. Now the
+      // verdict is preserved on disk (above) and signaled to the caller
+      // via `postError`; bridge mode publishes a dedicated
+      // `code.pr.review.post-failed` envelope so operators can act on the
+      // partial outcome without the lens work being lost.
+      postError = err instanceof Error ? err : new Error(String(err));
+      // eslint-disable-next-line no-console
+      console.error(`[workflow] post: failed ${target}: ${postError.message}`);
+    }
   }
 
   return {
     verdict,
-    posted: opts.post === true,
+    posted,
     ...(postedEvent !== undefined ? { postedEvent } : {}),
     ...(downgraded !== undefined ? { downgraded } : {}),
+    ...(postError !== undefined ? { postError } : {}),
   };
 }
 

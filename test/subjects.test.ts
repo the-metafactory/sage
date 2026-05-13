@@ -3,6 +3,7 @@ import {
   broadcastSubject,
   directSubject,
   dispatchSubject,
+  postFailedSubject,
   verdictSubject,
   taskSubject,
   dispatchLifecycleWildcard,
@@ -60,5 +61,17 @@ describe("publish-side concrete subjects", () => {
         `local.metafactory.code.pr.review.${decision}`,
       );
     }
+  });
+
+  // Post-failed sits under the same `code.pr.review.>` root as the three
+  // verdict outcomes (sage#16) so a `verdictWildcard` subscriber receives
+  // it without a separate subscription.
+  test("postFailedSubject lives under verdict root", () => {
+    expect(postFailedSubject({ org: "metafactory" })).toBe(
+      "local.metafactory.code.pr.review.post-failed",
+    );
+    expect(postFailedSubject({ org: "metafactory" }).startsWith(
+      verdictWildcard({ org: "metafactory" }).replace(".>", "."),
+    )).toBe(true);
   });
 });
