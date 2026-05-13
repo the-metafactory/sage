@@ -79,6 +79,17 @@ Severity rules:
 
 Surface only real issues for THIS lens. Findings that belong to a different
 lens are out of scope — skip them. An empty findings array is a valid response.
+
+BE BRIEF. Every string field has a hard budget:
+- "summary": ≤ 2 sentences. No preamble, no scene-setting.
+- "title": ≤ 10 words. Headline only.
+- "rationale": ≤ 2 sentences. State the problem, not the philosophy.
+- "suggestion": minimal concrete fix. Code or one short sentence. No essay.
+
+Cut filler ("just", "really", "basically", "it seems that", "we should consider").
+No hedging unless uncertainty is the finding. No restating the diff. Aim for
+signal density: a reviewer should grasp the finding in one read.
+
 PR data follows on stdin.`;
 
 const SEVERITY_VALUES = ["blocker", "important", "suggestion", "nit"] as const;

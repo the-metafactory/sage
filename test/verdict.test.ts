@@ -21,13 +21,23 @@ describe("decideVerdict", () => {
     expect(v.decision).toBe("commented");
   });
 
-  test("any important → commented (NOT changes-requested)", () => {
+  test("any important → changes-requested", () => {
     const v = decideVerdict([
       lens("CodeQuality", [
         { path: "a.ts", line: 1, severity: "important", title: "t", rationale: "r" },
       ]),
     ]);
-    expect(v.decision).toBe("commented");
+    expect(v.decision).toBe("changes-requested");
+  });
+
+  test("important alongside suggestion → changes-requested", () => {
+    const v = decideVerdict([
+      lens("CodeQuality", [
+        { path: "a.ts", line: 1, severity: "important", title: "t", rationale: "r" },
+        { path: "b.ts", line: 2, severity: "suggestion", title: "t", rationale: "r" },
+      ]),
+    ]);
+    expect(v.decision).toBe("changes-requested");
   });
 
   test("any blocker → changes-requested", () => {

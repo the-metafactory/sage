@@ -30,13 +30,13 @@ export function decideVerdict(lenses: LensReport[]): ReviewVerdict {
   const hasBlocker = all.some((f) => f.severity === "blocker");
   const hasImportant = all.some((f) => f.severity === "important");
 
-  const decision: ReviewVerdict["decision"] = hasBlocker
+  // blocker and important both signal "fix before merge" per persona.md §5,
+  // so both trigger changes-requested. suggestion/nit are comment-only.
+  const decision: ReviewVerdict["decision"] = hasBlocker || hasImportant
     ? "changes-requested"
-    : hasImportant
-      ? "commented"
-      : all.length === 0
-        ? "approved"
-        : "commented";
+    : all.length === 0
+      ? "approved"
+      : "commented";
 
   const summary =
     all.length === 0
