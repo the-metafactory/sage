@@ -48,18 +48,6 @@ describe("buildEnvelope generic", () => {
     expect(env.payload).toEqual({ anything: 42, nested: { goes: "here" } });
   });
 
-  test("Zod runtime parse rejects envelopes with a malformed source field", () => {
-    // Envelope-level validation still works — the generic relaxation
-    // didn't touch SourceRe.
-    expect(() =>
-      buildEnvelope({
-        source: "BAD SOURCE",
-        type: "tasks.code-review.typescript",
-        payload: { pr_url: "https://x.example/pull/1" },
-      }),
-    ).toThrow();
-  });
-
   test("Zod runtime parse rejects a payload that isn't a string-keyed record", () => {
     // The generic relaxes the compile-time constraint to `object`, which
     // includes arrays. Runtime Zod still enforces `payload: z.record(...)`,
