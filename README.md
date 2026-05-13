@@ -1,6 +1,6 @@
 # Sage
 
-> Botanical-named code review agent on the pi.dev substrate. Speaks Myelin envelopes. Posts via `gh`.
+> Botanical-named code review agent. Runs on pi.dev (default) or Claude Code via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh`.
 
 Sage reviews GitHub pull requests through composable lenses (CodeQuality first; Security, Architecture, EcosystemCompliance, Performance to follow) and publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render.
 
@@ -44,7 +44,9 @@ Prerequisites:
 
 - [`bun`](https://bun.sh/) >= 1.1
 - [`gh`](https://cli.github.com/) authenticated (`gh auth status` green)
-- [`pi`](https://pi.dev/docs/latest/usage) installed and on `$PATH` (`npm i -g @earendil-works/pi-coding-agent`)
+- One of the supported substrates on `$PATH`:
+  - [`pi`](https://pi.dev/docs/latest/usage) (default) — `npm i -g @earendil-works/pi-coding-agent`
+  - [`claude`](https://docs.claude.com/en/docs/agents-and-tools/claude-code/overview) — for `--substrate claude`
 - NATS broker reachable at `$NATS_URL` for `serve` mode (optional for `review` mode)
 
 ## Usage
@@ -153,8 +155,12 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/bus/envelope.ts` | Zod mirror of `myelin/schemas/envelope.schema.json` + `buildEnvelope`, `deriveSubject` |
 | `src/bus/subjects.ts` | Subject helpers (broadcast / direct / dispatch / verdict) |
 | `src/bus/bridge.ts` | NATS connect, subscribe, dispatch, publish |
-| `src/pi/runner.ts` | `pi -p` subprocess wrapper, `runPiJson<T>()` |
-| `src/pi/env.ts` | `buildPiEnv()` — allow-listed env forwarding to the subprocess |
+| `src/substrate/types.ts` | `Substrate` interface — substrate-neutral surface every coding harness implements |
+| `src/substrate/base.ts` | `runJsonViaTextExtraction` — forgiving JSON extractor reused by substrates without native structured output |
+| `src/substrate/env.ts` | `buildSubstrateEnv()` — allow-listed env forwarding with PI_*/CLAUDE_*/ANTHROPIC_* namespaces |
+| `src/substrate/pi.ts` | `PiSubstrate` — wraps `pi -p` |
+| `src/substrate/claude.ts` | `ClaudeSubstrate` — wraps `claude -p` with native `--output-format json` |
+| `src/substrate/select.ts` | `selectSubstrate()` — flag > env > config > pi resolution |
 | `src/github/gh.ts` | `gh pr view/diff/review` wrapper, PR-ref parser |
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
 | `src/lenses/base.ts` | Shared lens scaffolding (`runLens`, prompt template) |
@@ -169,12 +175,33 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `persona.md` | Sage's reviewing voice and principles (root copy shipped by arc) |
 | `ISA.md` | Ideal State Articulation (E3 tier) |
 
+## Substrate selection
+
+Sage runs the lens prompts through one of two coding-harness subprocesses.
+Selection is daemon-level — resolved once at startup, applied to every task
+this process handles:
+
+1. CLI `--substrate {pi|claude}` flag (on `sage review` / `sage serve`)
+2. Env `SAGE_SUBSTRATE`
+3. Config file `~/.config/sage/config.json` → `substrate.default`
+4. Built-in default: `pi` (preserves pre-#14 behavior)
+
+Per-task substrate selection is deliberately not supported (see issue #14
+"Out of scope") — same persona on different substrates should produce
+envelopes that differ ONLY in `extensions.substrate`, which makes A/B
+comparison trivial without diluting verdict reproducibility.
+
+| Substrate | Binary | Native JSON | Notes |
+|-----------|--------|-------------|-------|
+| `pi` (default) | `pi -p` | text-extraction | Honors `--provider`, `--model`, `--api-key`, `--tools`, `--thinking` |
+| `claude` | `claude -p` | `--output-format json` | Reads `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE` (default `acceptEdits` for daemons) |
+
 ## Provider keys
 
-Sage does **not** call any LLM directly — `pi` does. Provider API keys live in
-the parent process env (`.env` for `bun run`, systemd `Environment=` for
-daemons) and Sage forwards them to the subprocess through an explicit
-allow-list in `src/pi/env.ts`.
+Sage does **not** call any LLM directly — the substrate does. Provider API
+keys live in the parent process env (`.env` for `bun run`, systemd
+`Environment=` for daemons) and Sage forwards them to the subprocess
+through an explicit allow-list in `src/substrate/env.ts`.
 
 Auto-forwarded by default:
 
@@ -185,21 +212,24 @@ Auto-forwarded by default:
 - Azure: `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION`
 - AWS (Bedrock): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
   `AWS_SESSION_TOKEN`, `AWS_REGION`
-- Any key starting with `PI_` — pi.dev's own configuration namespace
+- Substrate-scoped namespaces: `PI_*` (forwarded only when substrate=pi);
+  `CLAUDE_*` and `ANTHROPIC_*` (forwarded only when substrate=claude)
 - Shell essentials: `PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, …
 
 Adjust without code changes:
 
 ```bash
 # Forward extra keys
-PI_ENV_ALLOW=MY_CUSTOM_TOKEN,REGISTRY_TOKEN sage review …
+SAGE_ENV_ALLOW=MY_CUSTOM_TOKEN,REGISTRY_TOKEN sage review …
 
 # Block a default forward
-PI_ENV_DENY=OPENAI_API_KEY sage serve …
+SAGE_ENV_DENY=OPENAI_API_KEY sage serve …
 ```
 
-Non-allow-listed env vars are **not** forwarded — keeps daemon secret blast
-radius tight when Sage runs under systemd / launchd with a noisy parent env.
+Legacy `PI_ENV_ALLOW` / `PI_ENV_DENY` are still honored for back-compat —
+operators don't need to migrate. Non-allow-listed env vars are **not**
+forwarded; keeps daemon secret blast radius tight when Sage runs under
+systemd / launchd with a noisy parent env.
 
 ## Roadmap (per design doc §10)
 

@@ -28,7 +28,7 @@ A PR drops into the Myelin bus as `local.metafactory.tasks.code-review.typescrip
 
 ## Principles
 
-1. **Substrate-independent**: Sage's persona, lens prompts, and verdict logic must not depend on which LLM substrate runs them. The pi runner is replaceable; everything else is pure code.
+1. **Substrate-independent**: Sage's persona, lens prompts, and verdict logic must not depend on which LLM substrate runs them. Substrate selection is a runtime decision — pi.dev (default) or Claude Code, resolved at startup via `selectSubstrate()` (CLI flag > env > config > pi). The substrate is replaceable; everything else is pure code. See `src/substrate/`.
 2. **Bus as contract**: the envelope is the integration. Anyone speaking Myelin can talk to Sage.
 3. **Substitute, don't reinvent**: piggyback on `gh` for GitHub and `pi` for LLM rather than re-implementing OAuth / HTTP-API clients.
 4. **No findings is a valid review.** The lens prompt and verdict logic must support empty findings without forcing a "looks good" filler.
@@ -40,7 +40,7 @@ A PR drops into the Myelin bus as `local.metafactory.tasks.code-review.typescrip
 - No Python. No npm/yarn/pnpm.
 - Myelin envelope conformance (`myelin/schemas/envelope.schema.json` v1) is non-negotiable.
 - `gh` CLI auth is the only GitHub credential path. No PAT in env.
-- pi.dev is invoked as a subprocess (`pi -p`) — no SDK dependency.
+- Substrates (`pi`, `claude`) are invoked as subprocesses (`pi -p`, `claude -p`) — no SDK dependency.
 
 ## Goal
 
@@ -52,11 +52,11 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - [x] ISC-2: `src/bus/envelope.ts` exports `EnvelopeSchema` matching `myelin/schemas/envelope.schema.json` required fields. _Probe: Grep for `id`, `source`, `type`, `sovereignty`, `payload`._
 - [x] ISC-3: `deriveSubject()` derives `local.{org}.{type}` per `namespace.md` Composition table. _Probe: Read function body._
 - [x] ISC-4: `encodeDidSegment()` encodes `did:mf:sage` → `@did-mf-sage` and `did:mf:hub.metafactory` → `@did-mf-hub--metafactory`. _Probe: synthetic Bun test._
-- [x] ISC-5: `src/pi/runner.ts` spawns `pi -p <prompt>` and returns stdout/stderr/exitCode. _Probe: Read function body._
-- [x] ISC-6: `runPiJson<T>()` strips fenced code blocks and `JSON.parse`s the result. _Probe: synthetic test with fence wrapping._
+- [x] ISC-5: `src/substrate/pi.ts` `PiSubstrate.run()` spawns `pi -p <prompt>` and returns stdout/stderr/exitCode. _Probe: Read class body._
+- [x] ISC-6: `runJsonViaTextExtraction<T>()` (used by `PiSubstrate.runJson`) strips fenced code blocks and `JSON.parse`s the result. _Probe: synthetic test with fence wrapping._
 - [x] ISC-7: `parsePrRef()` parses both `OWNER/REPO#N` and `https://github.com/.../pull/N`. _Probe: synthetic test._
 - [x] ISC-8: `prView()` shells `gh pr view N --repo OWNER/REPO --json …` and parses JSON. _Probe: Read function body._
-- [x] ISC-9: `reviewCodeQuality()` calls `runPiJson` with the SYSTEM_PROMPT + per-PR user prompt, returns a `LensReport`. _Probe: Read function body._
+- [x] ISC-9: `reviewCodeQuality()` calls `input.substrate.runJson` with the SYSTEM_PROMPT + per-PR user prompt, returns a `LensReport`. _Probe: Read function body._
 - [x] ISC-10: `decideVerdict()` returns `changes-requested` iff any finding is severity `blocker`. _Probe: unit test._
 - [x] ISC-11: `reviewPr({ post: true })` calls `postReview()` with the right `ReviewEvent`. _Probe: Read function body._
 - [x] ISC-12: `startBridge()` connects to NATS, subscribes to broadcast + direct subjects, and publishes lifecycle envelopes. _Probe: Read function body._

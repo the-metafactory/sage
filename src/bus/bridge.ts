@@ -17,6 +17,7 @@ import {
 } from "./subjects.ts";
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
+import type { Substrate } from "../substrate/types.ts";
 import { TaskPayloadSchema, type ReviewTaskPayload } from "./payload.ts";
 
 const td = new TextDecoder();
@@ -46,14 +47,21 @@ export interface BridgeConfig {
   org: string;
   source: string;
   did: string;
+  /**
+   * Substrate that backs every review handled by this daemon. Resolved
+   * once at CLI startup via `selectSubstrate` — selection is daemon-level
+   * by design (issue #14 "Out of scope": per-task substrate is deliberately
+   * not supported, to keep verdicts reproducible across operators).
+   */
+  substrate: Substrate;
   capabilities?: readonly string[];
   /** Default to true; set false to log-only for dry-run testing. */
   postReviews?: boolean;
   /**
-   * Max concurrent reviews. Each review spawns a `pi` subprocess and competes
-   * for LLM API rate limit + memory; unbounded is dangerous under load.
-   * Defaults to 3. Phase 2 should replace this in-process gate with a NATS
-   * JetStream consumer group `max_ack_pending`.
+   * Max concurrent reviews. Each review spawns a substrate subprocess and
+   * competes for LLM API rate limit + memory; unbounded is dangerous under
+   * load. Defaults to 3. Phase 2 should replace this in-process gate with a
+   * NATS JetStream consumer group `max_ack_pending`.
    */
   maxConcurrentTasks?: number;
   /**
@@ -269,6 +277,7 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
   try {
     const result = await reviewPr({
       ref,
+      substrate: cfg.substrate,
       post: payload.post ?? cfg.postReviews ?? false,
       ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
       onLensComplete: async (lens) => {
@@ -285,6 +294,10 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       },
     });
 
+    // Verdict envelope carries the substrate identity in `extensions` per
+    // issue #14 acceptance — same persona on different substrates should
+    // produce envelopes that differ ONLY in `extensions.substrate`, making
+    // A/B comparison trivial for the operator.
     await publish(
       nc,
       buildEnvelope({
@@ -292,6 +305,7 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
         type: `code.pr.review.${result.verdict.decision}`,
         correlationId: env.correlation_id ?? env.id,
         payload: { ref, verdict: result.verdict, posted: result.posted },
+        extensions: { substrate: cfg.substrate.name },
       }),
       verdictSubject({ org: cfg.org }, result.verdict.decision),
     );
