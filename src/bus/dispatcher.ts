@@ -43,6 +43,34 @@ export interface DispatchOptions {
 const td = new TextDecoder();
 const te = new TextEncoder();
 
+export interface BuildReviewTaskPayloadInput {
+  prUrl: string;
+  /** Boolean from CLI; only true → opt-in. false / undefined → omit field. */
+  post: boolean;
+  /** Optional per-lens pi timeout to forward to the daemon (seconds). */
+  timeoutSeconds?: number;
+}
+
+/**
+ * Pure helper that shapes the dispatch envelope's payload. Extracted so the
+ * fix for sage#8 is unit-testable without bringing up NATS.
+ *
+ * Semantic: `post` is OPT-IN only. The CLI's `--post` flag (default false)
+ * sends `payload.post=true` when set, and OMITS the field otherwise.
+ * Omitting lets the bridge's `payload.post ?? cfg.postReviews` lookup fall
+ * through to the daemon-side default; sending an explicit `false` would
+ * short-circuit past that default (??-coalesce treats false as a value).
+ */
+export function buildReviewTaskPayload(
+  input: BuildReviewTaskPayloadInput,
+): Record<string, unknown> {
+  return {
+    pr_url: input.prUrl,
+    ...(input.post ? { post: true } : {}),
+    ...(input.timeoutSeconds ? { timeout_ms: input.timeoutSeconds * 1000 } : {}),
+  };
+}
+
 export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   const ref = parsePrRef(opts.prRef);
 
@@ -58,11 +86,11 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     source: opts.source,
     type: "tasks.code-review.typescript",
     correlationId,
-    payload: {
-      pr_url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+    payload: buildReviewTaskPayload({
+      prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
       post: opts.post,
-      ...(opts.timeoutSeconds ? { timeout_ms: opts.timeoutSeconds * 1000 } : {}),
-    },
+      ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+    }),
   });
   const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
 
