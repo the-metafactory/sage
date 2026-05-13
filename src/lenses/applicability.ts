@@ -100,7 +100,7 @@ const PERFORMANCE_DIFF_PATTERNS = [
   /\bSELECT\s+\*/i, // wildcard query
   /\bwhile\s*\([^)]*\)\s*\{[\s\S]*?\b(?:fetch|axios|request|http)\b/, // network inside while
   /\bsetInterval\(/,
-  /\bsync(?:Sync)?\(/, // sync FS in hot paths
+  /\b\w+Sync\(/, // sync FS in hot paths (readFileSync, writeFileSync, execSync, …)
   /\.forEach\([^)]*async/, // async forEach (parallelism trap)
 ];
 
