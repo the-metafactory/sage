@@ -48,15 +48,27 @@ describe("buildEnvelope generic", () => {
     expect(env.payload).toEqual({ anything: 42, nested: { goes: "here" } });
   });
 
-  test("Zod runtime parse still rejects payloads that violate the schema", () => {
-    // Even with the type cast inside buildEnvelope, runtime validation
-    // catches malformed shapes — here a stringy source that fails the
-    // SourceRe regex.
+  test("Zod runtime parse rejects envelopes with a malformed source field", () => {
+    // Envelope-level validation still works — the generic relaxation
+    // didn't touch SourceRe.
     expect(() =>
       buildEnvelope({
         source: "BAD SOURCE",
         type: "tasks.code-review.typescript",
         payload: { pr_url: "https://x.example/pull/1" },
+      }),
+    ).toThrow();
+  });
+
+  test("Zod runtime parse rejects a payload that isn't a string-keyed record", () => {
+    // The generic relaxes the compile-time constraint to `object`, which
+    // includes arrays. Runtime Zod still enforces `payload: z.record(...)`,
+    // so an array passed through the cast fails fast at parse time.
+    expect(() =>
+      buildEnvelope({
+        source: "metafactory.sage.local",
+        type: "tasks.code-review.typescript",
+        payload: ["not", "a", "record"] as unknown as object,
       }),
     ).toThrow();
   });
