@@ -9,6 +9,7 @@ import {
 } from "./subjects.ts";
 import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
+import { safeRefSegment } from "../util/persistence.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "./payload.ts";
 
 /**
@@ -233,9 +234,10 @@ function log(msg: string): void {
 
 /**
  * Strip everything that isn't a safe ref-segment character before this
- * value gets interpolated into a printed shell command. The character
- * class mirrors `persistVerdict`'s on-disk-filename sanitizer so the
- * `cat` path we emit matches what's actually on disk.
+ * value gets interpolated into a printed shell command. Delegates to
+ * `safeRefSegment` in `persistence.ts` so the `cat` path printed here
+ * matches the filename `persistVerdict` actually writes — one regex,
+ * two consumers (sage#16 round-2 review).
  *
  * Defense in depth: `TaskPayloadSchema` already constrains `owner`/`repo`
  * via a regex, but this dispatcher consumes envelopes from the bus
@@ -245,6 +247,6 @@ function log(msg: string): void {
  */
 function sanitizeRefSegment(raw: string): string {
   if (typeof raw !== "string") return "_";
-  const sanitized = raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const sanitized = safeRefSegment(raw);
   return sanitized.length > 0 ? sanitized : "_";
 }

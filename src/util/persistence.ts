@@ -6,6 +6,25 @@ import type { PrRef } from "../github/gh.ts";
 import type { ReviewVerdict } from "../lenses/types.ts";
 
 /**
+ * Character class for ref segments and filename slugs. Anything outside
+ * the safe set becomes `_` so the resulting path is shell-safe and
+ * filesystem-portable. Exported because the dispatcher prints a `cat
+ * ~/.config/sage/reviews/<safe>-<safe>-<n>.md` recovery hint that must
+ * match the filename `persistVerdict` actually writes here — one
+ * regex, two consumers (sage#16 round-2 review).
+ */
+export const SAFE_FILENAME_CHAR_RE = /[^a-zA-Z0-9._-]/g;
+
+/**
+ * Build the on-disk slug for a PR ref. Shared with `dispatcher.ts`'s
+ * `sanitizeRefSegment` (which produces the same shape for the printed
+ * recovery hint).
+ */
+export function safeRefSegment(value: string): string {
+  return value.replace(SAFE_FILENAME_CHAR_RE, "_");
+}
+
+/**
  * Persist a rendered review verdict to disk so a postReview failure can be
  * recovered manually. Best-effort — write errors log but don't propagate.
  *
@@ -21,7 +40,7 @@ export function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string)
   try {
     const dir = join(homedir(), ".config", "sage", "reviews");
     mkdirSync(dir, { recursive: true });
-    const safeRef = `${ref.owner}-${ref.repo}-${ref.number}`.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeRef = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
     const json = {
       ref,
       verdict,

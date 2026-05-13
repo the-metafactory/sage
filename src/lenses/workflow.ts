@@ -114,49 +114,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // verdict per PR; older ones are overwritten on next run.
   persistVerdict(opts.ref, verdict, body);
 
-  let postedEvent: ReviewEvent | undefined;
-  let downgraded: boolean | undefined;
-  let postError: PostError | undefined;
-  let posted = false;
-
-  if (opts.post) {
-    const target = `${opts.ref.owner}/${opts.ref.repo}#${opts.ref.number}`;
-    // eslint-disable-next-line no-console
-    console.error(
-      `[workflow] post: attempting ${target} (decision=${verdict.decision})`,
-    );
-    try {
-      const result = await postReview({
-        ref: opts.ref,
-        event: verdictToEvent(verdict.decision),
-        body,
-      });
-      postedEvent = result.posted;
-      downgraded = result.downgraded;
-      posted = true;
-      // eslint-disable-next-line no-console
-      console.error(
-        `[workflow] post: ok ${target} (event=${postedEvent}, downgraded=${downgraded})`,
-      );
-    } catch (err) {
-      // Do NOT re-throw — pre-#16, a `postReview` throw escaped here and
-      // landed in the bridge's outer try/catch, kicking the whole task to
-      // `dispatch.task.failed`. That conflated a post failure with a lens
-      // failure and discarded the (otherwise-valid) verdict. Now the
-      // verdict is preserved on disk (above) and signaled to the caller
-      // via `postError`; bridge mode publishes a dedicated
-      // `code.pr.review.post-failed` envelope so operators can act on the
-      // partial outcome without the lens work being lost.
-      const rawMessage = err instanceof Error ? err.message : String(err);
-      const message =
-        rawMessage.length > POST_ERROR_MAX_LEN
-          ? `${rawMessage.slice(0, POST_ERROR_MAX_LEN)} […truncated ${rawMessage.length - POST_ERROR_MAX_LEN} chars]`
-          : rawMessage;
-      postError = { message };
-      // eslint-disable-next-line no-console
-      console.error(`[workflow] post: failed ${target}: ${message}`);
-    }
-  }
+  const { posted, postedEvent, downgraded, postError } = opts.post
+    ? await attemptPost(opts.ref, verdict, body)
+    : { posted: false };
 
   return {
     verdict,
@@ -165,6 +125,64 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),
   };
+}
+
+interface AttemptPostResult {
+  posted: boolean;
+  postedEvent?: ReviewEvent;
+  downgraded?: boolean;
+  postError?: PostError;
+}
+
+/**
+ * Attempt the GitHub post step. Pure helper extracted from `reviewPr` so
+ * the data flow is explicit (return value, not four outer-scope mutations)
+ * and `reviewPr` stays scannable (sage#16 round-2 review).
+ *
+ * Never re-throws — pre-#16, a `postReview` throw escaped out of
+ * `reviewPr` and landed in the bridge's outer try/catch, kicking the
+ * whole task to `dispatch.task.failed`. That conflated a post failure
+ * with a lens failure and discarded the (otherwise-valid) verdict. Now
+ * the verdict is preserved on disk by the caller before this is invoked,
+ * and the captured error is surfaced via `postError`; bridge mode
+ * publishes a dedicated `dispatch.task.post-failed` envelope (sibling of
+ * `failed` in the lifecycle namespace) so operators can act on the
+ * partial outcome without the lens work being lost.
+ */
+async function attemptPost(
+  ref: PrRef,
+  verdict: ReviewVerdict,
+  body: string,
+): Promise<AttemptPostResult> {
+  const target = `${ref.owner}/${ref.repo}#${ref.number}`;
+  // eslint-disable-next-line no-console
+  console.error(`[workflow] post: attempting ${target} (decision=${verdict.decision})`);
+
+  try {
+    const result = await postReview({
+      ref,
+      event: verdictToEvent(verdict.decision),
+      body,
+    });
+    // eslint-disable-next-line no-console
+    console.error(
+      `[workflow] post: ok ${target} (event=${result.posted}, downgraded=${result.downgraded})`,
+    );
+    return {
+      posted: true,
+      postedEvent: result.posted,
+      downgraded: result.downgraded,
+    };
+  } catch (err) {
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const message =
+      rawMessage.length > POST_ERROR_MAX_LEN
+        ? `${rawMessage.slice(0, POST_ERROR_MAX_LEN)} […truncated ${rawMessage.length - POST_ERROR_MAX_LEN} chars]`
+        : rawMessage;
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] post: failed ${target}: ${message}`);
+    return { posted: false, postError: { message } };
+  }
 }
 
 
