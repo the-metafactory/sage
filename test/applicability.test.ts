@@ -4,11 +4,14 @@ import {
   architectureApplies,
   ecosystemComplianceApplies,
   performanceApplies,
+  maintainabilityApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/github/gh.ts";
 
-function pr(files: Array<Pick<PrMetadata["files"][number], "path">>): PrMetadata {
+type FileSpec = { path: string; additions?: number; deletions?: number };
+
+function pr(files: Array<FileSpec>): PrMetadata {
   return {
     number: 1,
     title: "t",
@@ -21,7 +24,11 @@ function pr(files: Array<Pick<PrMetadata["files"][number], "path">>): PrMetadata
     changedFiles: files.length,
     additions: 0,
     deletions: 0,
-    files: files.map((f) => ({ path: f.path, additions: 1, deletions: 0 })),
+    files: files.map((f) => ({
+      path: f.path,
+      additions: f.additions ?? 1,
+      deletions: f.deletions ?? 0,
+    })),
     url: "https://github.com/x/y/pull/1",
   };
 }
@@ -172,8 +179,125 @@ describe("performanceApplies", () => {
   });
 });
 
+describe("maintainabilityApplies", () => {
+  test("fires on substantial .ts change (≥20 lines, one file)", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "src/big.ts", additions: 80, deletions: 5 }]),
+        diff: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on .py source change", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "tool/script.py", additions: 50, deletions: 0 }]),
+        diff: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on multiple smaller in-scope files summing past threshold", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([
+          { path: "src/a.ts", additions: 8, deletions: 2 },
+          { path: "src/b.ts", additions: 7, deletions: 3 },
+          { path: "src/c.ts", additions: 5, deletions: 0 },
+        ]),
+        diff: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("skips trivial change (5 added lines, well under threshold)", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "src/tiny.ts", additions: 5, deletions: 0 }]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("skips docs-only PR (no code-extension files)", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([
+          { path: "README.md", additions: 200, deletions: 50 },
+          { path: "docs/design.md", additions: 100, deletions: 0 },
+        ]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("skips lock-file-only churn", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "bun.lock", additions: 500, deletions: 200 }]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("skips generated / vendored paths even with code extensions", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([
+          { path: "node_modules/foo/index.ts", additions: 100, deletions: 0 },
+          { path: "dist/bundle.js", additions: 5000, deletions: 0 },
+          { path: "vendor/lib.ts", additions: 100, deletions: 0 },
+        ]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("skips .d.ts ambient declarations (mechanical, not maintained)", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "types/api.d.ts", additions: 200, deletions: 0 }]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("mixed in/out-of-scope: only in-scope lines count toward threshold", () => {
+    // In-scope total: 10 lines (under 20) — should NOT fire even with
+    // a giant docs change alongside.
+    expect(
+      maintainabilityApplies({
+        pr: pr([
+          { path: "src/x.ts", additions: 8, deletions: 2 },
+          { path: "README.md", additions: 1000, deletions: 0 },
+        ]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("threshold edge: exactly 20 lines fires", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "src/edge.ts", additions: 15, deletions: 5 }]),
+        diff: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("threshold edge: 19 lines does not fire", () => {
+    expect(
+      maintainabilityApplies({
+        pr: pr([{ path: "src/edge.ts", additions: 14, deletions: 5 }]),
+        diff: "",
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("evaluateApplicability", () => {
-  test("aggregates all four predicates", () => {
+  test("aggregates all five predicates", () => {
     const result = evaluateApplicability({
       pr: pr([{ path: "src/auth/login.ts" }]),
       diff: "",
@@ -182,5 +306,14 @@ describe("evaluateApplicability", () => {
     expect(result.architecture).toBe(false);
     expect(result.ecosystemCompliance).toBe(false);
     expect(result.performance).toBe(false);
+    expect(result.maintainability).toBe(false); // only 1 line under default helper
+  });
+
+  test("maintainability fires on substantial code PR", () => {
+    const result = evaluateApplicability({
+      pr: pr([{ path: "src/feat.ts", additions: 100, deletions: 20 }]),
+      diff: "",
+    });
+    expect(result.maintainability).toBe(true);
   });
 });
