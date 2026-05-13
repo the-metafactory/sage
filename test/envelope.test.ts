@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { z } from "zod";
 import {
   buildEnvelope,
   deriveSubject,
@@ -52,13 +53,23 @@ describe("buildEnvelope generic", () => {
     // The generic relaxes the compile-time constraint to `object`, which
     // includes arrays. Runtime Zod still enforces `payload: z.record(...)`,
     // so an array passed through the cast fails fast at parse time.
-    expect(() =>
+    //
+    // Assert on ZodError specifically — a generic `.toThrow()` would pass
+    // for any failure (e.g. a source-regex mismatch on an unrelated future
+    // refactor) and silently mask the regression this test exists to
+    // catch.
+    try {
       buildEnvelope({
         source: "metafactory.sage.local",
         type: "tasks.code-review.typescript",
         payload: ["not", "a", "record"] as unknown as object,
-      }),
-    ).toThrow();
+      });
+      throw new Error("expected buildEnvelope to throw for non-record payload");
+    } catch (err) {
+      expect(err).toBeInstanceOf(z.ZodError);
+      const issues = (err as z.ZodError).issues;
+      expect(issues.some((i) => i.path.includes("payload"))).toBe(true);
+    }
   });
 });
 
