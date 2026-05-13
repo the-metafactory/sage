@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
+import { retryTransient } from "./retry.ts";
 
 /**
  * gh CLI wrapper. Piggybacks on the user's existing `gh auth` login — no token
@@ -136,18 +137,36 @@ export async function postReview(input: PostReviewInput): Promise<void> {
   writeFileSync(bodyPath, input.body);
 
   try {
-    await runGh(
-      [
-        "pr",
-        "review",
-        String(input.ref.number),
-        "--repo",
-        formatRepo(input.ref),
-        flag,
-        "--body-file",
-        bodyPath,
-      ],
-      { timeoutMs: 60_000 },
+    // Retry on transient network errors (operator walking between rooms
+    // is a real case — laptop WLAN re-association takes ~30-60s). Auth
+    // / validation errors propagate immediately, no retry.
+    await retryTransient(
+      () =>
+        runGh(
+          [
+            "pr",
+            "review",
+            String(input.ref.number),
+            "--repo",
+            formatRepo(input.ref),
+            flag,
+            "--body-file",
+            bodyPath,
+          ],
+          { timeoutMs: 60_000 },
+        ),
+      {
+        maxAttempts: 6,
+        baseDelayMs: 1000,
+        maxDelayMs: 30_000,
+        onRetry: (attempt, delayMs, err) => {
+          const m = err instanceof Error ? err.message : String(err);
+          // eslint-disable-next-line no-console
+          console.error(
+            `[sage] gh pr review attempt ${attempt} failed transient; retrying in ${delayMs}ms: ${m.split("\n")[0]}`,
+          );
+        },
+      },
     );
   } finally {
     try {
