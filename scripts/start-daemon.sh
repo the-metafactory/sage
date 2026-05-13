@@ -8,9 +8,18 @@ set -euo pipefail
 PLIST="${HOME}/Library/LaunchAgents/ai.meta-factory.sage.plist"
 
 if [[ ! -f "$PLIST" ]]; then
-  echo "sage start-daemon: plist not found at $PLIST" >&2
-  exit 1
+  # Plist absent = darwin-launchd host adapter didn't run (e.g., install on
+  # Linux, or arc < 0.26.0 without launchd P3). Soft-skip so the install
+  # transaction completes — operator can install manually if they want
+  # daemon supervision later.
+  echo "sage start-daemon: plist not found at $PLIST — skipping launchctl bootstrap (not an error)" >&2
+  exit 0
 fi
+
+# Ensure LOG_DIR exists. arc renders {{LOG_DIR}} in the plist but does not
+# create the directory itself; launchctl errors on missing log paths.
+LOG_DIR="${HOME}/Library/Logs/sage"
+mkdir -p "$LOG_DIR"
 
 # Unload first if loaded (no-op if not loaded). bootout returns non-zero
 # on "not loaded" — swallow that case.
