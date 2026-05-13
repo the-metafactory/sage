@@ -1,14 +1,18 @@
 import { connect, credsAuthenticator, type Subscription } from "nats";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 import {
   buildEnvelope,
-  deriveSubject,
   safeValidateEnvelope,
   type Envelope,
 } from "../bus/envelope.ts";
+import {
+  taskSubject,
+  dispatchLifecycleWildcard,
+  verdictWildcard,
+} from "../bus/subjects.ts";
+import { resolveCredsPath } from "../bus/creds.ts";
 import { parsePrRef } from "../github/gh.ts";
 
 /**
@@ -62,13 +66,13 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       ...(opts.timeoutSeconds ? { timeout_ms: opts.timeoutSeconds * 1000 } : {}),
     },
   });
-  const taskSubject = `local.${opts.org}.tasks.code-review.typescript`;
+  const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
 
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
   // miss a fast-completing daemon's reply. Filter by correlation_id so
   // concurrent reviews don't cross-talk.
-  const lifecycleSub = nc.subscribe(`local.${opts.org}.dispatch.task.>`);
-  const verdictSub = nc.subscribe(`local.${opts.org}.code.pr.review.>`);
+  const lifecycleSub = nc.subscribe(dispatchLifecycleWildcard({ org: opts.org }));
+  const verdictSub = nc.subscribe(verdictWildcard({ org: opts.org }));
 
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -112,14 +116,8 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     }, opts.waitSeconds * 1000);
   });
 
-  log(`▶ publishing ${taskSubject} (id=${taskEnvelope.id}, correlation=${correlationId})`);
-  nc.publish(taskSubject, te.encode(JSON.stringify(taskEnvelope)));
-  // Subject derivation note: deriveSubject() would yield the canonical
-  // subject from envelope.source + type + classification — we override
-  // here because the task domain has its own derivation path per
-  // myelin/specs/namespace.md (tasks.{capability}). deriveSubject is still
-  // used by the bridge for outbound dispatch/verdict envelopes.
-  void deriveSubject;
+  log(`▶ publishing ${taskSubj} (id=${taskEnvelope.id}, correlation=${correlationId})`);
+  nc.publish(taskSubj, te.encode(JSON.stringify(taskEnvelope)));
 
   const exitCode = await done;
   await nc.drain();
@@ -144,12 +142,6 @@ async function consume(
     if (envelope.correlation_id !== correlationId) continue;
     onMatch(envelope, msg.subject);
   }
-}
-
-function resolveCredsPath(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  if (raw.startsWith("~/")) return raw.replace(/^~/, homedir());
-  return raw;
 }
 
 function log(msg: string): void {

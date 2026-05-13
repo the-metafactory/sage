@@ -38,3 +38,27 @@ export function verdictSubject(
 ): string {
   return `local.${cfg.org}.code.pr.review.${verdict}`;
 }
+
+/**
+ * Concrete task subject for publishing — used by `sage dispatch` to send a
+ * code-review request into the bus. Pairs with `broadcastSubject` (which
+ * is the subscribe-side wildcard pattern).
+ */
+export function taskSubject(
+  cfg: Pick<SubjectConfig, "org">,
+  capability: string,
+): string {
+  return `local.${cfg.org}.tasks.${capability}`;
+}
+
+/**
+ * Wildcard subscription patterns for dispatchers watching for lifecycle
+ * + verdict envelopes coming back from a running Sage daemon.
+ */
+export function dispatchLifecycleWildcard(cfg: Pick<SubjectConfig, "org">): string {
+  return `local.${cfg.org}.dispatch.task.>`;
+}
+
+export function verdictWildcard(cfg: Pick<SubjectConfig, "org">): string {
+  return `local.${cfg.org}.code.pr.review.>`;
+}

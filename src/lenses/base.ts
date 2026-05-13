@@ -23,6 +23,14 @@ export interface LensRunInput {
   pr: PrMetadata;
   diff: string;
   timeoutMs?: number;
+  /**
+   * Thinking level passed to pi. Sage defaults to `off` because the
+   * chain-of-thought trace empirically broke the JSON contract on
+   * weaker / light-tier models. Callers (or per-lens specs in future)
+   * can opt back into low/medium/high for tasks where nuanced reasoning
+   * justifies the contract-drift risk.
+   */
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
 interface RawLensOutput {
@@ -126,11 +134,11 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       // User message: terse trigger; the actual PR content lives on stdin.
       prompt: "Review the PR data on stdin and respond with the lens JSON.",
       stdin: stdinContent,
-      // Disable chain-of-thought reasoning. The trace is ALWAYS prose,
-      // and weaker models will emit the trace + NOTHING ELSE, leaving
+      // Disable chain-of-thought reasoning by default. The trace is ALWAYS
+      // prose, and weaker models emit the trace + NOTHING ELSE, leaving
       // zero JSON to parse. `off` eliminates that failure mode at the
-      // source.
-      thinking: "off",
+      // source. Caller may opt back in via input.thinking.
+      thinking: input.thinking ?? "off",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });
   } catch (err) {
