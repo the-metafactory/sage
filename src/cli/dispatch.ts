@@ -63,12 +63,14 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   const lifecycleSub = nc.subscribe(`local.${opts.org}.dispatch.task.>`);
   const verdictSub = nc.subscribe(`local.${opts.org}.code.pr.review.>`);
 
-  let exitCode = 0;
   let terminated = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   const done = new Promise<number>((resolve) => {
     const finish = (code: number) => {
       if (terminated) return;
       terminated = true;
+      if (timer) clearTimeout(timer);
       resolve(code);
     };
 
@@ -97,16 +99,10 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       // dispatch.task.completed which arrives right after.
     });
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       log(`dispatch: timed out after ${opts.waitSeconds}s — no completed/failed envelope received`);
       finish(2);
     }, opts.waitSeconds * 1000);
-
-    done
-      .finally(() => clearTimeout(timer))
-      .catch(() => {
-        // unreachable; promise only resolves
-      });
   });
 
   log(`▶ publishing ${taskSubject} (id=${taskEnvelope.id}, correlation=${correlationId})`);
@@ -118,7 +114,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   // used by the bridge for outbound dispatch/verdict envelopes.
   void deriveSubject;
 
-  exitCode = await done;
+  const exitCode = await done;
   await nc.drain();
   return exitCode;
 }
