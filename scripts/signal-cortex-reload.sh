@@ -19,5 +19,5 @@ if [[ -n "$pid" ]]; then
   exit 0
 fi
 
-echo "sage signal-cortex-reload: cortex daemon not running and 'cortex agents reload' unavailable" >&2
-exit 1
+echo "sage signal-cortex-reload: cortex daemon not running and 'cortex agents reload' unavailable — skipping reload (not an error)" >&2
+exit 0
