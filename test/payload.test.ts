@@ -63,8 +63,12 @@ describe("TaskPayloadSchema (runtime)", () => {
   // slipped through. Object-entry rows + `$bad` interpolation are used
   // here — Bun's test.each does NOT substitute `%s` for flat primitive
   // arrays (verified on Bun 1.3.6), so the `$bad` form is the only way
-  // to get distinct, value-named test titles.
-  test.each([{ bad: 0 }, { bad: -1 }, { bad: -1000 }])(
+  // to get distinct, value-named test titles. Shared between the
+  // `timeout_ms` and `number` blocks below so a new edge value (e.g.
+  // `Number.MIN_SAFE_INTEGER`) only needs to land in one place.
+  const NON_POSITIVE_INT_ROWS = [{ bad: 0 }, { bad: -1 }, { bad: -1000 }];
+
+  test.each(NON_POSITIVE_INT_ROWS)(
     "rejects timeout_ms=$bad (non-positive)",
     ({ bad }) => {
       const r = TaskPayloadSchema.safeParse({
@@ -75,7 +79,7 @@ describe("TaskPayloadSchema (runtime)", () => {
     },
   );
 
-  test.each([{ bad: 0 }, { bad: -1 }, { bad: -1000 }])(
+  test.each(NON_POSITIVE_INT_ROWS)(
     "rejects number=$bad (non-positive)",
     ({ bad }) => {
       // owner+repo+number satisfies the disjunction refinement, so the

@@ -39,5 +39,10 @@ export type Expect<T extends true> = T;
 // assertion (see JSDoc above). The `T` type parameter is referenced only
 // in its own constraint; that is intentional and is how the helper does
 // its job. Type parameters are out of scope for
-// `@typescript-eslint/no-unused-vars`, so no lint-disable is needed.
+// `@typescript-eslint/no-unused-vars`, so no lint-disable is needed for
+// that rule. The `no-empty-function` disable below covers the body —
+// strict lint configs would otherwise flag the deliberately-empty body
+// without surfacing why; the disable + the comment above keep intent
+// visible if a future lint config tightens.
+// eslint-disable-next-line @typescript-eslint/no-empty-function
 export function typeCheck<T extends true>(): void {}
