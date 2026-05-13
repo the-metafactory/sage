@@ -33,6 +33,8 @@ export const ReviewTaskPayloadSchema = z
     repo: z.string().optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
+    /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */
+    timeout_ms: z.number().int().positive().optional(),
   })
   .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
     message: "payload must contain either pr_url or (owner, repo, number)",
@@ -271,6 +273,7 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     const result = await reviewPr({
       ref,
       post: payload.post ?? cfg.postReviews ?? false,
+      ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
       onLensComplete: async (lens) => {
         await publish(
           nc,

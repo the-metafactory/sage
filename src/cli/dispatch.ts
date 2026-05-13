@@ -28,6 +28,12 @@ export interface DispatchOptions {
   post: boolean;
   /** Hard wait cap in seconds — exits non-zero if no completed/failed arrives. */
   waitSeconds: number;
+  /**
+   * Per-lens pi runner timeout (seconds) to forward to the daemon via
+   * payload.timeout_ms. Daemon falls back to its own PI_TIMEOUT_MS / default
+   * when this is absent.
+   */
+  timeoutSeconds?: number;
 }
 
 const td = new TextDecoder();
@@ -53,6 +59,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     payload: {
       pr_url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
       post: opts.post,
+      ...(opts.timeoutSeconds ? { timeout_ms: opts.timeoutSeconds * 1000 } : {}),
     },
   });
   const taskSubject = `local.${opts.org}.tasks.code-review.typescript`;

@@ -143,6 +143,12 @@ program
     (v) => parseInt(v, 10),
     Number(process.env.SAGE_DISPATCH_WAIT ?? 900),
   )
+  .option(
+    "--timeout <seconds>",
+    "Per-lens pi timeout to forward to the daemon (default: daemon's own)",
+    (v) => parseInt(v, 10),
+    process.env.SAGE_DISPATCH_TIMEOUT ? Number(process.env.SAGE_DISPATCH_TIMEOUT) : undefined,
+  )
   .action(
     async (
       prRef: string,
@@ -153,6 +159,7 @@ program
         creds?: string;
         post: boolean;
         wait: number;
+        timeout?: number;
       },
     ) => {
       const exitCode = await dispatchReview({
@@ -163,6 +170,7 @@ program
         credsFile: opts.creds,
         post: opts.post,
         waitSeconds: opts.wait,
+        ...(opts.timeout ? { timeoutSeconds: opts.timeout } : {}),
       });
       process.exit(exitCode);
     },
