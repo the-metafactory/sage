@@ -52,14 +52,19 @@ export interface BuildReviewTaskPayloadInput {
 }
 
 /**
- * Shape of the dispatch envelope's payload. `post` is intentionally typed as
- * `true | undefined` (never `false`) — when the CLI flag is absent the field
- * is omitted so the bridge's `payload.post ?? cfg.postReviews` lookup falls
- * through to the daemon-side default. The trailing index signature keeps the
- * type assignable to `Record<string, unknown>` (which `buildEnvelope` accepts)
- * without losing the precise field types at use sites.
+ * Outgoing shape of the dispatch envelope's payload. Named `DispatchTaskPayload`
+ * to distinguish it from `bridge.ts`'s `ReviewTaskPayload` (the Zod-inferred
+ * INCOMING payload the daemon validates) — same `src/bus/` module, opposite
+ * direction on the wire, different contracts (e.g. `post?: true` here vs
+ * `post?: boolean` there).
+ *
+ * `post` is typed as `true | undefined` (never `false`): when the CLI flag is
+ * absent the field is omitted, so the bridge's `payload.post ?? cfg.postReviews`
+ * lookup falls through to the daemon-side default. The trailing index signature
+ * keeps the type assignable to `Record<string, unknown>` (which `buildEnvelope`
+ * accepts) without losing the precise field types at use sites.
  */
-export interface ReviewTaskPayload {
+export interface DispatchTaskPayload {
   pr_url: string;
   post?: true;
   timeout_ms?: number;
@@ -76,7 +81,7 @@ export interface ReviewTaskPayload {
  * through to the daemon-side default; sending an explicit `false` would
  * short-circuit past that default (??-coalesce treats false as a value).
  */
-export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): ReviewTaskPayload {
+export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): DispatchTaskPayload {
   return {
     pr_url: input.prUrl,
     ...(input.post ? { post: true as const } : {}),
