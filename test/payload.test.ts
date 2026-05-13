@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Equal, Expect } from "./_type-utils.ts";
+import { typeCheck, type Equal } from "./_type-utils.ts";
 import {
   TaskPayloadSchema,
   type ReviewTaskPayload,
@@ -31,6 +31,15 @@ describe("TaskPayloadSchema (runtime)", () => {
     expect(r.success).toBe(true);
   });
 
+  test("rejects a completely empty payload", () => {
+    // Neither pr_url nor any of (owner, repo, number) — the refinement's
+    // disjunction must reject this. Without this case, a regression that
+    // returned `true` for `{}` would go unnoticed (none of the existing
+    // tests exercise the all-fields-absent branch).
+    const r = TaskPayloadSchema.safeParse({});
+    expect(r.success).toBe(false);
+  });
+
   test("rejects a payload with neither pr_url nor full triple", () => {
     const r = TaskPayloadSchema.safeParse({ owner: "x" });
     expect(r.success).toBe(false);
@@ -50,15 +59,40 @@ describe("TaskPayloadSchema (runtime)", () => {
     expect(r.success).toBe(true);
   });
 
-  test("rejects negative or zero timeout_ms", () => {
-    for (const bad of [0, -1, -1000]) {
+  // Per-iteration assertion: a single failure tells us *which* value
+  // slipped through. Object-entry rows + `$bad` interpolation are used
+  // here — Bun's test.each does NOT substitute `%s` for flat primitive
+  // arrays (verified on Bun 1.3.6), so the `$bad` form is the only way
+  // to get distinct, value-named test titles. Shared between the
+  // `timeout_ms` and `number` blocks below so a new edge value (e.g.
+  // `Number.MIN_SAFE_INTEGER`) only needs to land in one place.
+  const NON_POSITIVE_INT_ROWS = [{ bad: 0 }, { bad: -1 }, { bad: -1000 }];
+
+  test.each(NON_POSITIVE_INT_ROWS)(
+    "rejects timeout_ms=$bad (non-positive)",
+    ({ bad }) => {
       const r = TaskPayloadSchema.safeParse({
         pr_url: "https://github.com/x/y/pull/1",
         timeout_ms: bad,
       });
       expect(r.success).toBe(false);
-    }
-  });
+    },
+  );
+
+  test.each(NON_POSITIVE_INT_ROWS)(
+    "rejects number=$bad (non-positive)",
+    ({ bad }) => {
+      // owner+repo+number satisfies the disjunction refinement, so the
+      // rejection here is from `.int().positive()` on the `number` field
+      // — not a short-circuit on the disjunction.
+      const r = TaskPayloadSchema.safeParse({
+        owner: "x",
+        repo: "y",
+        number: bad,
+      });
+      expect(r.success).toBe(false);
+    },
+  );
 
   test("rejects non-integer number field", () => {
     const r = TaskPayloadSchema.safeParse({ owner: "x", repo: "y", number: 1.5 });
@@ -72,7 +106,7 @@ describe("TaskPayloadSchema (runtime)", () => {
 });
 
 describe("DispatchTaskPayload (sender narrowing)", () => {
-  test("post is constrained to true | undefined (compile-time)", () => {
+  test("post is constrained to true | undefined", () => {
     // True opt-in: this compiles.
     const a: DispatchTaskPayload = {
       pr_url: "https://github.com/x/y/pull/1",
@@ -83,22 +117,21 @@ describe("DispatchTaskPayload (sender narrowing)", () => {
     expect(a.post).toBe(true);
     expect(b.post).toBeUndefined();
 
-    // The following should NOT compile (verified manually — TS would
-    // reject `post: false`):
+    // The following would NOT compile (TS rejects `post: false`):
     //   const c: DispatchTaskPayload = { pr_url: "...", post: false };
     //
-    // We can't `expect(...).toThrow` a compile error, so we encode the
-    // intent here as a runtime guard against accidental relaxation:
+    // The `typeCheck` call below pins this — if `post` widens to
+    // `boolean`, the file fails to type-check. Do not delete it thinking
+    // it is redundant with the runtime asserts above.
     type PostFieldType = DispatchTaskPayload["post"];
-    type _Check = Expect<Equal<PostFieldType, true | undefined>>;
-    // The `_Check` line fails to type-check if `post` widens.
+    typeCheck<Equal<PostFieldType, true | undefined>>();
   });
 
-  test("pr_url is REQUIRED on the sender side", () => {
-    // Compile-time: required field. Type-system check:
+  test("pr_url is required at the type level", () => {
+    // Compile-time only: `typeCheck` lifts the `Equal` assertion into a
+    // callable so we don't need an `expect(true).toBe(true)` sentinel.
     type PrUrlRequired = "pr_url" extends keyof Required<DispatchTaskPayload> ? true : false;
-    type _Check = Expect<Equal<PrUrlRequired, true>>;
-    expect(true).toBe(true); // runtime sentinel so the test counts
+    typeCheck<Equal<PrUrlRequired, true>>();
   });
 
   test("DispatchTaskPayload at runtime still validates against TaskPayloadSchema", () => {
@@ -115,14 +148,15 @@ describe("DispatchTaskPayload (sender narrowing)", () => {
 });
 
 describe("Shape parity between sender and receiver", () => {
-  test("ReviewTaskPayload (receiver) has all the fields DispatchTaskPayload uses", () => {
-    // Compile-time check: every key on the sender type must exist on the
-    // receiver type. If a future protocol field is added to
-    // DispatchTaskPayload without updating TaskPayloadSchema, this fails.
+  test("every DispatchTaskPayload key exists on ReviewTaskPayload (sender ⊆ receiver)", () => {
+    // ONE-DIRECTIONAL check: if a sender-side field is added without a
+    // matching schema entry, this fails. The inverse direction (receiver
+    // gains a field the sender should ALSO ship) is intentionally NOT
+    // checked — adding a sender-side field is a manual decision per the
+    // MAINTAINER CHECKLIST in src/bus/payload.ts.
     type SenderKeys = keyof DispatchTaskPayload;
     type ReceiverKeys = keyof ReviewTaskPayload;
     type Missing = Exclude<SenderKeys, ReceiverKeys>;
-    type _Check = Expect<Equal<Missing, never>>;
-    expect(true).toBe(true);
+    typeCheck<Equal<Missing, never>>();
   });
 });

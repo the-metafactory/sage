@@ -55,11 +55,18 @@ export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
  * Tradeoff vs `Omit<ReviewTaskPayload, "post" | "pr_url">`: future
  * protocol fields added to `TaskPayloadSchema` (e.g. `priority`, `labels`,
  * `target_lens`) do NOT auto-propagate here — they need an explicit add
- * to the `Pick` set. The `shape-parity` test in `test/payload.test.ts`
- * already enforces sender-is-subset-of-receiver, so the gap can only go
- * one direction (sender lagging behind receiver, never sender drifting
- * past it). Precision > automatic propagation for the dispatcher's
- * tightly-scoped surface.
+ * to the `Pick` set. The shape-parity test in `test/payload.test.ts` is
+ * ONE-DIRECTIONAL — it catches sender keys missing from the receiver,
+ * NOT receiver keys missing from the sender. Adding a sender-side field
+ * is therefore an explicit, manual choice. Precision > automatic
+ * propagation for the dispatcher's tightly-scoped surface.
+ *
+ * MAINTAINER CHECKLIST when adding a protocol field:
+ *   1. Add the field to `TaskPayloadSchema` above.
+ *   2. If the dispatcher should send it, add the key to the `Pick` set
+ *      below. The shape-parity test in `test/payload.test.ts` will fail
+ *      if you do step 2 without step 1, but it will NOT fail if you skip
+ *      step 2 — that direction is intentional.
  */
 export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms"> & {
   pr_url: string;
