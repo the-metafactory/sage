@@ -1,5 +1,10 @@
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
 import { reviewCodeQuality } from "./code-quality.ts";
+import { reviewSecurity } from "./security.ts";
+import { reviewArchitecture } from "./architecture.ts";
+import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
+import { reviewPerformance } from "./performance.ts";
+import { evaluateApplicability } from "./applicability.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
 export interface ReviewOptions {
@@ -21,25 +26,32 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const pr = await prView(opts.ref);
   const diff = await prDiff(opts.ref);
 
+  const applies = evaluateApplicability({ pr, diff });
+  const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
   const lensReports: LensReport[] = [];
 
-  const cq = await reviewCodeQuality({
-    pr,
-    diff,
-    ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
-  });
-  lensReports.push(cq);
-  // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
-  // — a publish failure must not discard a completed review. Log and move on.
-  try {
-    await opts.onLensComplete?.(cq);
-  } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    console.error(`[sage] onLensComplete (CodeQuality) failed: ${m}`);
-  }
+  const fireLens = async (
+    runner: (i: { pr: typeof pr; diff: string; timeoutMs?: number }) => Promise<LensReport>,
+  ) => {
+    const report = await runner({ pr, diff, ...timeout });
+    lensReports.push(report);
+    // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
+    // — a publish failure must not discard a completed review. Log and move on.
+    try {
+      await opts.onLensComplete?.(report);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error(`[sage] onLensComplete (${report.lens}) failed: ${m}`);
+    }
+  };
 
-  // Future lenses (Security, Architecture, EcosystemCompliance, Performance)
-  // plug in here. Each becomes an additional report appended to lensReports.
+  // CodeQuality always fires. Conditional lenses fire only when triggers match
+  // per cortex/docs/design-pi-dev-review-agent.md §7.
+  await fireLens(reviewCodeQuality);
+  if (applies.security) await fireLens(reviewSecurity);
+  if (applies.architecture) await fireLens(reviewArchitecture);
+  if (applies.ecosystemCompliance) await fireLens(reviewEcosystemCompliance);
+  if (applies.performance) await fireLens(reviewPerformance);
 
   const verdict = decideVerdict(lensReports);
 

@@ -1,0 +1,155 @@
+import { connect, credsAuthenticator, type Subscription } from "nats";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
+
+import {
+  buildEnvelope,
+  deriveSubject,
+  safeValidateEnvelope,
+  type Envelope,
+} from "../bus/envelope.ts";
+import { parsePrRef } from "../github/gh.ts";
+
+/**
+ * Publish a code-review task envelope to the Myelin bus and wait for the
+ * verdict + lifecycle envelopes to come back. This is the bus-driven
+ * counterpart to `sage review` — instead of running the review in-process,
+ * it asks a running Sage daemon to do it via NATS.
+ */
+
+export interface DispatchOptions {
+  prRef: string;
+  natsUrl: string;
+  org: string;
+  source: string;
+  credsFile?: string | undefined;
+  /** Set to `true` to ask the receiver to post the review. Default false. */
+  post: boolean;
+  /** Hard wait cap in seconds — exits non-zero if no completed/failed arrives. */
+  waitSeconds: number;
+}
+
+const td = new TextDecoder();
+const te = new TextEncoder();
+
+export async function dispatchReview(opts: DispatchOptions): Promise<number> {
+  const ref = parsePrRef(opts.prRef);
+
+  const connectOpts: Parameters<typeof connect>[0] = { servers: opts.natsUrl };
+  const credsPath = resolveCredsPath(opts.credsFile ?? process.env.NATS_CREDS_FILE);
+  if (credsPath) {
+    connectOpts.authenticator = credsAuthenticator(readFileSync(credsPath));
+    log(`dispatch: using NATS creds at ${credsPath}`);
+  }
+  const nc = await connect(connectOpts);
+  log(`dispatch: connected ${opts.natsUrl}`);
+
+  const correlationId = randomUUID();
+  const taskEnvelope = buildEnvelope({
+    source: opts.source,
+    type: "tasks.code-review.typescript",
+    correlationId,
+    payload: {
+      pr_url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+      post: opts.post,
+    },
+  });
+  const taskSubject = `local.${opts.org}.tasks.code-review.typescript`;
+
+  // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
+  // miss a fast-completing daemon's reply. Filter by correlation_id so
+  // concurrent reviews don't cross-talk.
+  const lifecycleSub = nc.subscribe(`local.${opts.org}.dispatch.task.>`);
+  const verdictSub = nc.subscribe(`local.${opts.org}.code.pr.review.>`);
+
+  let exitCode = 0;
+  let terminated = false;
+  const done = new Promise<number>((resolve) => {
+    const finish = (code: number) => {
+      if (terminated) return;
+      terminated = true;
+      resolve(code);
+    };
+
+    void consume(lifecycleSub, correlationId, (env, subject) => {
+      log(`◀ ${subject} ${env.type}`);
+      const detail = (env.payload as Record<string, unknown>) ?? {};
+      if (Object.keys(detail).length > 0) {
+        log(`  payload: ${JSON.stringify(detail)}`);
+      }
+      if (env.type === "dispatch.task.completed") {
+        finish(0);
+      } else if (env.type === "dispatch.task.failed") {
+        finish(1);
+      }
+    });
+
+    void consume(verdictSub, correlationId, (env, subject) => {
+      log(`◀ ${subject} ${env.type}`);
+      const payload = env.payload as Record<string, unknown>;
+      const decision =
+        typeof payload.verdict === "object" && payload.verdict !== null
+          ? (payload.verdict as Record<string, unknown>).decision
+          : env.type.replace("code.pr.review.", "");
+      log(`  verdict: ${decision} (posted=${payload.posted ?? false})`);
+      // Verdict alone doesn't terminate the dispatcher — wait for
+      // dispatch.task.completed which arrives right after.
+    });
+
+    const timer = setTimeout(() => {
+      log(`dispatch: timed out after ${opts.waitSeconds}s — no completed/failed envelope received`);
+      finish(2);
+    }, opts.waitSeconds * 1000);
+
+    done
+      .finally(() => clearTimeout(timer))
+      .catch(() => {
+        // unreachable; promise only resolves
+      });
+  });
+
+  log(`▶ publishing ${taskSubject} (id=${taskEnvelope.id}, correlation=${correlationId})`);
+  nc.publish(taskSubject, te.encode(JSON.stringify(taskEnvelope)));
+  // Subject derivation note: deriveSubject() would yield the canonical
+  // subject from envelope.source + type + classification — we override
+  // here because the task domain has its own derivation path per
+  // myelin/specs/namespace.md (tasks.{capability}). deriveSubject is still
+  // used by the bridge for outbound dispatch/verdict envelopes.
+  void deriveSubject;
+
+  exitCode = await done;
+  await nc.drain();
+  return exitCode;
+}
+
+async function consume(
+  sub: Subscription,
+  correlationId: string,
+  onMatch: (envelope: Envelope, subject: string) => void,
+): Promise<void> {
+  for await (const msg of sub) {
+    let envelope: Envelope;
+    try {
+      const raw = JSON.parse(td.decode(msg.data));
+      const parsed = safeValidateEnvelope(raw);
+      if (!parsed.success) continue;
+      envelope = parsed.data;
+    } catch {
+      continue;
+    }
+    if (envelope.correlation_id !== correlationId) continue;
+    onMatch(envelope, msg.subject);
+  }
+}
+
+function resolveCredsPath(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (raw.startsWith("~/")) return raw.replace(/^~/, homedir());
+  return raw;
+}
+
+function log(msg: string): void {
+  // eslint-disable-next-line no-console
+  console.error(`[sage:dispatch] ${msg}`);
+}

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { parsePrRef, ghAuthStatus } from "../github/gh.ts";
 import { reviewPr, renderReviewBody } from "../lenses/workflow.ts";
 import { startBridge } from "../bus/bridge.ts";
+import { dispatchReview } from "./dispatch.ts";
 
 const program = new Command();
 
@@ -118,6 +119,52 @@ program
       process.on("SIGINT", onSignal("SIGINT"));
       process.on("SIGTERM", onSignal("SIGTERM"));
       await bridge.connection.closed();
+    },
+  );
+
+program
+  .command("dispatch")
+  .description(
+    "Publish a code-review task envelope to the Myelin bus and stream the verdict back. Requires a running Sage daemon (sage serve).",
+  )
+  .argument("<pr-ref>", "PR URL or OWNER/REPO#N")
+  .option("--nats <url>", "NATS broker URL", process.env.NATS_URL ?? "nats://localhost:4222")
+  .option("--org <org>", "Org segment", process.env.SAGE_ORG ?? "metafactory")
+  .option(
+    "--source <src>",
+    "Envelope source",
+    process.env.SAGE_DISPATCH_SOURCE ?? "metafactory.sage-dispatch.local",
+  )
+  .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
+  .option("--post", "Ask the receiving daemon to post the review back to GitHub", false)
+  .option(
+    "--wait <seconds>",
+    "Max seconds to wait for the verdict before timing out (default 900)",
+    (v) => parseInt(v, 10),
+    Number(process.env.SAGE_DISPATCH_WAIT ?? 900),
+  )
+  .action(
+    async (
+      prRef: string,
+      opts: {
+        nats: string;
+        org: string;
+        source: string;
+        creds?: string;
+        post: boolean;
+        wait: number;
+      },
+    ) => {
+      const exitCode = await dispatchReview({
+        prRef,
+        natsUrl: opts.nats,
+        org: opts.org,
+        source: opts.source,
+        credsFile: opts.creds,
+        post: opts.post,
+        waitSeconds: opts.wait,
+      });
+      process.exit(exitCode);
     },
   );
 
