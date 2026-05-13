@@ -9,6 +9,9 @@ import {
 } from "./subjects.ts";
 import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
+import type { DispatchTaskPayload } from "./payload.ts";
+
+export type { DispatchTaskPayload } from "./payload.ts";
 
 /**
  * Bus-domain dispatcher. Publishes a code-review task envelope to the
@@ -49,19 +52,6 @@ export interface BuildReviewTaskPayloadInput {
   post: boolean;
   /** Optional per-lens pi timeout to forward to the daemon (seconds). */
   timeoutSeconds?: number;
-}
-
-/**
- * Outgoing shape of the dispatch envelope's payload. Sender-side counterpart
- * to `bridge.ts`'s `ReviewTaskPayload` (incoming, Zod-validated) — same
- * module, opposite direction, narrower contract (`post?: true` here vs
- * `post?: boolean` there). See {@link buildReviewTaskPayload} for the
- * omit-vs-false rationale.
- */
-export interface DispatchTaskPayload {
-  pr_url: string;
-  post?: true;
-  timeout_ms?: number;
 }
 
 /**

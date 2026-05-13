@@ -1,5 +1,4 @@
 import { type NatsConnection, type Subscription } from "nats";
-import { z } from "zod";
 
 import { connectNats } from "./connect.ts";
 
@@ -18,29 +17,19 @@ import {
 } from "./subjects.ts";
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
+import { TaskPayloadSchema, type ReviewTaskPayload } from "./payload.ts";
 
 const td = new TextDecoder();
 const te = new TextEncoder();
 
 /**
- * Payload schema for a code-review task envelope.
- * Sage accepts either explicit `owner/repo/number` or a `pr_url`.
+ * Re-exports — schema and inferred type now live in `./payload.ts` as the
+ * canonical contract shared between sender (`dispatcher.ts`) and receiver
+ * (this file). The `ReviewTaskPayloadSchema` alias preserves the prior
+ * public name; the underlying schema is `TaskPayloadSchema`. See sage#10.
  */
-export const ReviewTaskPayloadSchema = z
-  .object({
-    pr_url: z.string().url().optional(),
-    owner: z.string().optional(),
-    repo: z.string().optional(),
-    number: z.number().int().positive().optional(),
-    post: z.boolean().optional(),
-    /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */
-    timeout_ms: z.number().int().positive().optional(),
-  })
-  .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
-    message: "payload must contain either pr_url or (owner, repo, number)",
-  });
-
-export type ReviewTaskPayload = z.infer<typeof ReviewTaskPayloadSchema>;
+export { TaskPayloadSchema as ReviewTaskPayloadSchema } from "./payload.ts";
+export type { ReviewTaskPayload } from "./payload.ts";
 
 export interface BridgeConfig {
   natsUrl: string;
@@ -218,7 +207,7 @@ async function consumeSubscription(
 }
 
 async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection): Promise<void> {
-  const payloadResult = ReviewTaskPayloadSchema.safeParse(env.payload);
+  const payloadResult = TaskPayloadSchema.safeParse(env.payload);
   if (!payloadResult.success) {
     await publish(
       nc,
