@@ -142,7 +142,9 @@ async function consume(
   }
 }
 
+const LOG_PREFIX = "[sage:dispatch]";
+
 function log(msg: string): void {
   // eslint-disable-next-line no-console
-  console.error(`[sage:dispatch] ${msg}`);
+  console.error(`${LOG_PREFIX} ${msg}`);
 }

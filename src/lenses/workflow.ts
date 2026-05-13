@@ -1,8 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
+import { persistVerdict } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
@@ -43,7 +40,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       await opts.onLensComplete?.(report);
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
-      console.error(`[sage] onLensComplete (${report.lens}) failed: ${m}`);
+      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
     }
   }
 
@@ -67,28 +64,6 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   return { verdict, posted: opts.post === true };
 }
 
-/**
- * Write the verdict + rendered body to disk so a postReview failure can be
- * recovered manually. Best-effort — write errors log but don't propagate.
- */
-function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string): void {
-  try {
-    const dir = join(homedir(), ".config", "sage", "reviews");
-    mkdirSync(dir, { recursive: true });
-    const safeRef = `${ref.owner}-${ref.repo}-${ref.number}`.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const json = {
-      ref,
-      verdict,
-      body,
-      savedAt: new Date().toISOString(),
-    };
-    writeFileSync(join(dir, `${safeRef}.json`), JSON.stringify(json, null, 2));
-    writeFileSync(join(dir, `${safeRef}.md`), body);
-  } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    console.error(`[sage] persistVerdict failed (non-fatal): ${m}`);
-  }
-}
 
 function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
   switch (decision) {

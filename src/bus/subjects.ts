@@ -1,4 +1,7 @@
 import { encodeDidSegment } from "./envelope.ts";
+import { type SubjectConfig } from "./types.ts";
+
+export type { SubjectConfig };
 
 /**
  * Subject helpers for Sage's bus participation.
@@ -11,11 +14,6 @@ import { encodeDidSegment } from "./envelope.ts";
  *   - Lifecycle:  local.{org}.dispatch.task.{started|progress|completed|failed}
  *   - Verdict:    local.{org}.code.pr.review.{approved|changes-requested|commented}
  */
-
-export interface SubjectConfig {
-  org: string;
-  did: string;
-}
 
 export function broadcastSubject(cfg: SubjectConfig): string {
   return `local.${cfg.org}.tasks.code-review.>`;

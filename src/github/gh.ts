@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
-import { retryTransient } from "./retry.ts";
+import { retryTransient } from "../util/retry.ts";
 
 /**
  * gh CLI wrapper. Piggybacks on the user's existing `gh auth` login — no token
