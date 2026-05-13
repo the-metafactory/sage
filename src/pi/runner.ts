@@ -197,32 +197,29 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
  * Returns `undefined` if all four fail.
  */
 function extractJson<T>(text: string): T | undefined {
-  // Build a candidate list across multiple shapes, then try each from
-  // most-likely-to-parse to least. Order matters: a verbose model
-  // (chain-of-thought, reasoning trace, prose preamble) tends to emit the
-  // ACTUAL JSON LAST, often inside the final fenced block. Earlier-text
-  // candidates are common false positives (the prompt itself shows a JSON
-  // shape example, which appears inside the model's reasoning and would
-  // brace-balance into a non-target object).
+  // Candidate list across multiple shapes, tried in order. Raw goes FIRST
+  // (zero false-positive risk when the model obeys the contract — cheap
+  // happy path). Then the multi-shape fallbacks for verbose / chain-of-
+  // thought / fenced-block outputs.
   const candidates: string[] = [];
 
-  // 1) All fenced blocks, LAST first. Captures both ```json … ``` and
+  // 1) Raw text — happy path for contract-obeying models.
+  candidates.push(text);
+
+  // 2) All fenced blocks, LAST first. Captures both ```json … ``` and
   //    plain ```…``` shapes. Verbose models with reasoning traces almost
   //    always emit their final answer inside the LAST fenced block.
   for (const block of allFencedBlocks(text).reverse()) {
     candidates.push(block);
   }
 
-  // 2) All balanced-brace objects in the text, LARGEST first. The model's
+  // 3) All balanced-brace objects in the text, LARGEST first. The model's
   //    actual review JSON is typically the longest balanced span; smaller
   //    spans tend to be example JSON inside the reasoning trace.
   const balancedAll = findAllBalancedObjects(text).sort(
     (a, b) => b.length - a.length,
   );
   for (const b of balancedAll) candidates.push(b);
-
-  // 3) Raw text — only useful when the model perfectly obeys the contract.
-  candidates.push(text);
 
   // 4) Trailing balanced object — defensive: walks backwards from the LAST
   //    `}` to find the matching `{`. Handles "reasoning trace + JSON-at-
