@@ -52,11 +52,18 @@ depends_on:
       version: ">=2.0.0"
 
 provides:
+  # Arc 0.25.0's type:agent flow auto-discovers `<name>.md` at the repo root
+  # and symlinks it into the host's agentsDir (cortex's ~/.config/cortex/agents.d
+  # via the CortexHostAdapter). Sage's persona + identity frontmatter live in
+  # sage.md.
+  #
+  # Daemon-side artifacts (launchd plist + bin wrapper) are NOT yet wired
+  # through arc's HostAdapter for darwin-launchd — track follow-up at
+  # arc#TBD. For now, lifecycle scripts (scripts/start-daemon.sh) install
+  # the plist manually during postinstall.
   files:
-    persona.md: ~/.config/cortex/personas/sage.md
-    agent.yaml: ~/.config/cortex/agents.d/sage.yaml
-  binary: bin/sage                                # → ~/bin/sage launcher wrapper
-  plist: services/ai.meta-factory.sage.plist     # → ~/Library/LaunchAgents/
+    - source: sage.md
+      target: ~/.config/cortex/agents.d/sage.md
 
 scripts:
   postinstall: bun install                       # pull deps into the install copy
