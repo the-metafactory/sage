@@ -122,6 +122,10 @@ export interface RunningBridge {
 }
 
 export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
+  // Connect via the shared helper. It handles creds-path resolution, the
+  // ENOENT soft-fallback (missing sage.creds file is a legitimate dev
+  // state), and authenticator setup. Both bridge.ts and dispatcher.ts
+  // use the same helper so transport behavior can't drift between them.
   const nc = await connectNats({
     natsUrl: cfg.natsUrl,
     ...(cfg.credsFile ? { credsFile: cfg.credsFile } : {}),

@@ -22,4 +22,20 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
+# Load env from ~/.config/sage/.env if present. This is where operators
+# put provider API keys (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, etc.) for
+# the launchd-managed daemon — launchd does NOT read shell init files, so
+# without this load step the daemon's env is empty of secrets even when
+# the operator's terminal session has them set. chmod 600 recommended.
+SAGE_ENV_FILE="${HOME}/.config/sage/.env"
+if [[ -f "$SAGE_ENV_FILE" ]]; then
+  if [[ "$(stat -f '%Mp%Lp' "$SAGE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then
+    echo "sage: warning — $SAGE_ENV_FILE is world/group-readable (chmod 600 recommended)" >&2
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$SAGE_ENV_FILE"
+  set +a
+fi
+
 exec bun run "$REPO_ROOT/src/cli/index.ts" "$@"
