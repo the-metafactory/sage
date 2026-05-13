@@ -1,10 +1,77 @@
 import { describe, test, expect } from "bun:test";
+import { z } from "zod";
 import {
   buildEnvelope,
   deriveSubject,
   encodeDidSegment,
   safeValidateEnvelope,
 } from "../src/bus/envelope.ts";
+import type { DispatchTaskPayload } from "../src/bus/dispatcher.ts";
+
+/**
+ * Issue #11: buildEnvelope is generic over the payload type so callers with
+ * a precise interface (no index signature) don't have to launder through
+ * `as unknown as Record<string, unknown>`. The constraint is `object`, not
+ * `Record<string, unknown>`, so closed interfaces are assignable. The Zod
+ * parse at the end of buildEnvelope still validates the runtime shape.
+ */
+
+describe("buildEnvelope generic", () => {
+  test("accepts a precise interface without an index signature (no cast needed)", () => {
+    // Importing the real `DispatchTaskPayload` (closed interface, no index
+    // signature) means this test moves in lockstep with the production
+    // type — if `DispatchTaskPayload` ever gains a field, this call site
+    // is the canary, not a stale parallel definition.
+    //
+    // Pre-fix this call would fail to type-check because
+    // `DispatchTaskPayload` is not assignable to `Record<string, unknown>`.
+    // With the generic constraint relaxed to `object`, the call compiles
+    // cleanly while the Zod parse downstream still validates the runtime
+    // shape.
+    const payload: DispatchTaskPayload = {
+      pr_url: "https://github.com/x/y/pull/1",
+      post: true,
+    };
+    const env = buildEnvelope<DispatchTaskPayload>({
+      source: "metafactory.sage.local",
+      type: "tasks.code-review.typescript",
+      payload,
+    });
+    expect(env.payload).toEqual({ pr_url: "https://github.com/x/y/pull/1", post: true });
+  });
+
+  test("type parameter defaults to Record<string, unknown> for untyped callers", () => {
+    const env = buildEnvelope({
+      source: "metafactory.sage.local",
+      type: "tasks.code-review.typescript",
+      payload: { anything: 42, nested: { goes: "here" } },
+    });
+    expect(env.payload).toEqual({ anything: 42, nested: { goes: "here" } });
+  });
+
+  test("Zod runtime parse rejects a payload that isn't a string-keyed record", () => {
+    // The generic relaxes the compile-time constraint to `object`, which
+    // includes arrays. Runtime Zod still enforces `payload: z.record(...)`,
+    // so an array passed through the cast fails fast at parse time.
+    //
+    // Assert on ZodError specifically — a generic `.toThrow()` would pass
+    // for any failure (e.g. a source-regex mismatch on an unrelated future
+    // refactor) and silently mask the regression this test exists to
+    // catch.
+    try {
+      buildEnvelope({
+        source: "metafactory.sage.local",
+        type: "tasks.code-review.typescript",
+        payload: ["not", "a", "record"],
+      });
+      throw new Error("expected buildEnvelope to throw for non-record payload");
+    } catch (err) {
+      expect(err).toBeInstanceOf(z.ZodError);
+      const issues = (err as z.ZodError).issues;
+      expect(issues.some((i) => i.path.includes("payload"))).toBe(true);
+    }
+  });
+});
 
 describe("buildEnvelope", () => {
   test("populates required fields with defaults", () => {

@@ -51,16 +51,32 @@ export const EnvelopeSchema = z
 
 export type Envelope = z.infer<typeof EnvelopeSchema>;
 
-export interface BuildEnvelopeInput {
+/**
+ * Generic over the payload type so callers with a precise interface (e.g.
+ * `DispatchTaskPayload`) don't have to launder through
+ * `as unknown as Record<string, unknown>`. The constraint is `object` (any
+ * non-null reference type), not `Record<string, unknown>`, because a closed
+ * interface without an explicit index signature isn't assignable to Record
+ * — and forcing every payload type to carry an index signature weakens the
+ * sender-side contract for no real gain. The Zod parse at the end of
+ * `buildEnvelope` validates the runtime shape, so the compile-time cast at
+ * the schema boundary is safe.
+ *
+ * Default `Record<string, unknown>` preserves the prior call-style for
+ * existing untyped sites.
+ */
+export interface BuildEnvelopeInput<P extends object = Record<string, unknown>> {
   source: string;
   type: string;
-  payload: Record<string, unknown>;
+  payload: P;
   sovereignty?: Partial<Sovereignty>;
   correlationId?: string;
   extensions?: Record<string, unknown>;
 }
 
-export function buildEnvelope(input: BuildEnvelopeInput): Envelope {
+export function buildEnvelope<P extends object = Record<string, unknown>>(
+  input: BuildEnvelopeInput<P>,
+): Envelope {
   const sovereignty: Sovereignty = {
     classification: input.sovereignty?.classification ?? "local",
     data_residency: input.sovereignty?.data_residency ?? process.env.SAGE_DATA_RESIDENCY ?? "CH",
@@ -75,7 +91,14 @@ export function buildEnvelope(input: BuildEnvelopeInput): Envelope {
     type: input.type,
     timestamp: new Date().toISOString(),
     sovereignty,
-    payload: input.payload,
+    // Single structural cast localized to the schema-parse boundary. Zod's
+    // `EnvelopeSchema.parse` below enforces the runtime contract
+    // (`payload: z.record(z.unknown())`), rejecting null, undefined, and
+    // arrays — so a structurally incompatible payload fails fast here
+    // rather than silently downstream. Exotic objects (Date, Map, class
+    // instances) DO satisfy `z.record(z.unknown())` and reach the bus, but
+    // those are caller bugs the type system already discourages.
+    payload: input.payload as Record<string, unknown>,
     ...(input.correlationId ? { correlation_id: input.correlationId } : {}),
     ...(input.extensions ? { extensions: input.extensions } : {}),
   };

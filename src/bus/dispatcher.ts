@@ -96,18 +96,15 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   log(`connected ${opts.natsUrl}`);
 
   const correlationId = randomUUID();
-  const taskEnvelope = buildEnvelope({
+  const taskEnvelope = buildEnvelope<DispatchTaskPayload>({
     source: opts.source,
     type: "tasks.code-review.typescript",
     correlationId,
-    // Structural cast to satisfy buildEnvelope's `Record<string, unknown>`
-    // input; the precise DispatchTaskPayload shape is preserved at the
-    // helper's return type for tests and other readers.
     payload: buildReviewTaskPayload({
       prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
       post: opts.post,
       ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
-    }) as unknown as Record<string, unknown>,
+    }),
   });
   const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
 
