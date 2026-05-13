@@ -1,5 +1,6 @@
 import { buildSubstrateEnv } from "./env.ts";
-import { runJsonViaTextExtraction, spawnSubstrate } from "./base.ts";
+import { spawnSubstrate } from "./base.ts";
+import { runJsonViaTextExtraction } from "./json.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -43,14 +44,19 @@ export class PiSubstrate implements Substrate {
 
   constructor(private readonly cfg: PiSubstrateConfig = {}) {}
 
+  // Resolution chain mirrors selectSubstrate(): per-call opts > env >
+  // config > built-in default. The env layer sits between caller-supplied
+  // overrides and the daemon's startup config so an operator can adjust
+  // a single run via `PI_PROVIDER=… sage review …` without touching
+  // sage.config.json.
   get bin(): string {
-    return this.cfg.bin ?? process.env.PI_BIN ?? "pi";
+    return process.env.PI_BIN ?? this.cfg.bin ?? "pi";
   }
 
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {
-    const provider = opts.provider ?? this.cfg.provider ?? process.env.PI_PROVIDER;
-    const model = opts.model ?? this.cfg.model ?? process.env.PI_MODEL;
-    const apiKey = opts.apiKey ?? this.cfg.apiKey ?? process.env.PI_API_KEY;
+    const provider = opts.provider ?? process.env.PI_PROVIDER ?? this.cfg.provider;
+    const model = opts.model ?? process.env.PI_MODEL ?? this.cfg.model;
+    const apiKey = opts.apiKey ?? process.env.PI_API_KEY ?? this.cfg.apiKey;
 
     const args: string[] = ["-p"];
     if (provider) args.push("--provider", provider);

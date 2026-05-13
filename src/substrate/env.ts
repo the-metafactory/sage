@@ -118,9 +118,12 @@ export function buildSubstrateEnv(opts: BuildSubstrateEnvOptions): Record<string
   const parent = opts.parent ?? process.env;
 
   // SAGE_ENV_ALLOW/DENY are the modern controls; PI_ENV_ALLOW/DENY remain
-  // honored so operators using the legacy var names keep working. SAGE_*
-  // wins on conflict (sage > pi). Both are stripped from the forwarded env
-  // via SAGE_INTERNAL_KEYS so the substrate never sees the parent's policy.
+  // honored so operators using the legacy var names keep working. Both
+  // pairs are merged additively into a single allow / deny set (Set
+  // semantics deduplicate — there is no SAGE-over-PI precedence; either
+  // env var being set is sufficient). Both pairs are stripped from the
+  // forwarded env via SAGE_INTERNAL_KEYS so the substrate never sees the
+  // parent's policy.
   const parentAllow = [
     ...parseEnvList(parent.PI_ENV_ALLOW),
     ...parseEnvList(parent.SAGE_ENV_ALLOW),

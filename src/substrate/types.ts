@@ -8,8 +8,12 @@
  *
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
- *   2. Register it in `src/substrate/select.ts` (the `build()` switch +
- *      `VALID` list).
+ *   2. Register it in three sites:
+ *        - the `SubstrateName` union below
+ *        - the `VALID` list and the `build()` switch in `select.ts`
+ *        - the `SageConfigFile.substrate.<name>` typed field in
+ *          `select.ts` so the config loader can carry substrate-specific
+ *          overrides
  *   3. Update README and ISA's substrates table.
  *
  * Nothing else changes — `lenses/base.ts` calls `substrate.runJson(opts)` and
