@@ -28,7 +28,13 @@ export interface DispatchOptions {
   org: string;
   source: string;
   credsFile?: string | undefined;
-  /** Set to `true` to ask the receiver to post the review. Default false. */
+  /**
+   * When `true`, include `post: true` in the dispatch payload (explicit
+   * opt-in — the daemon will post regardless of its own default). When
+   * `false` (CLI default), the `post` field is OMITTED from the payload
+   * entirely, so the daemon's `cfg.postReviews` default determines whether
+   * the review is posted. See sage#8 for why omitting beats sending false.
+   */
   post: boolean;
   /** Hard wait cap in seconds — exits non-zero if no completed/failed arrives. */
   waitSeconds: number;
@@ -60,20 +66,23 @@ export interface BuildReviewTaskPayloadInput {
  *
  * `post` is typed as `true | undefined` (never `false`): when the CLI flag is
  * absent the field is omitted, so the bridge's `payload.post ?? cfg.postReviews`
- * lookup falls through to the daemon-side default. The trailing index signature
- * keeps the type assignable to `Record<string, unknown>` (which `buildEnvelope`
- * accepts) without losing the precise field types at use sites.
+ * lookup falls through to the daemon-side default. The type is intentionally
+ * precise (no index signature) so consumers see a closed contract; the
+ * structural cast to `Record<string, unknown>` for `buildEnvelope` is
+ * localized to the single call site in `dispatchReview`.
  */
 export interface DispatchTaskPayload {
   pr_url: string;
   post?: true;
   timeout_ms?: number;
-  [k: string]: unknown;
 }
 
 /**
  * Pure helper that shapes the dispatch envelope's payload. Extracted so the
- * fix for sage#8 is unit-testable without bringing up NATS.
+ * fix for sage#8 is unit-testable without bringing up NATS. The function is
+ * a single-callsite helper today (only `dispatchReview` calls it in
+ * production); the explicit tradeoff is broader-public-surface for
+ * round-trip-free unit coverage of the subtle `??`-omit semantic.
  *
  * Semantic: `post` is OPT-IN only. The CLI's `--post` flag (default false)
  * sends `payload.post=true` when set, and OMITS the field otherwise.
@@ -104,11 +113,14 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     source: opts.source,
     type: "tasks.code-review.typescript",
     correlationId,
+    // Structural cast to satisfy buildEnvelope's `Record<string, unknown>`
+    // input; the precise DispatchTaskPayload shape is preserved at the
+    // helper's return type for tests and other readers.
     payload: buildReviewTaskPayload({
       prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
       post: opts.post,
       ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
-    }),
+    }) as unknown as Record<string, unknown>,
   });
   const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
 
