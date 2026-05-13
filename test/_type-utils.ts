@@ -10,24 +10,16 @@
  * these and `src/util/` should not become a dumping ground for
  * compile-time-only test infrastructure.
  *
- * Usage:
+ * Usage — inside a test body:
  *
- *   // As a type assertion at the call site:
- *   type _Check = Expect<Equal<A, B>>;
- *
- *   // As a runtime-zero helper invoked inside a test body (preferred —
- *   // no misleading `expect(true).toBe(true)` sentinel needed):
  *   typeCheck<Equal<A, B>>();
  *
- * If `A` and `B` are not equal, the call (or the `_Check` line) fails to
- * type-check. Runtime is unaffected — these are pure type-system
- * artifacts.
+ * If `A` and `B` differ, the call fails to type-check. Runtime is
+ * unaffected — these are pure type-system artifacts.
  */
 
 export type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false;
-
-export type Expect<T extends true> = T;
 
 /**
  * Runtime-zero helper that lifts an `Equal<…>` check into a callable shape.
