@@ -11,6 +11,11 @@ import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
 import type { DispatchTaskPayload } from "./payload.ts";
 
+/**
+ * @deprecated Import `DispatchTaskPayload` directly from `./payload.ts`.
+ * This re-export is a back-compat shim — the type's canonical home is the
+ * protocol module, not this transport module. Remove in the next cleanup.
+ */
 export type { DispatchTaskPayload } from "./payload.ts";
 
 /**
