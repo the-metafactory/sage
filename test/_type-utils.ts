@@ -35,7 +35,11 @@ export type Expect<T extends true> = T;
  * pin a type-level invariant") and leaves no misleading runtime assertion
  * in the test body.
  */
-export function typeCheck<_T extends true>(): void {
-  // intentionally empty — the constraint on `_T` does the work at
-  // compile time.
+export function typeCheck<T extends true>(): void {
+  // intentionally empty — the `T extends true` constraint is the entire
+  // assertion. Passing `Equal<A, B>` where the two types differ resolves
+  // to `false`, which fails the constraint and produces a compile error
+  // at the call site. Do NOT rename `T` to `_T` (the underscore would
+  // imply "unused", but the constraint is load-bearing).
+  void 0;
 }

@@ -68,9 +68,6 @@ export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
  *      if you do step 2 without step 1, but it will NOT fail if you skip
  *      step 2 — that direction is intentional.
  */
-// MAINTAINER NOTE: adding a sender-side field means adding it to BOTH
-// `TaskPayloadSchema` (above) AND this `Pick` set. See the checklist in
-// the docblock just above this declaration.
 export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms"> & {
   pr_url: string;
   post?: true;
