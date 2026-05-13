@@ -45,10 +45,25 @@ const te = new TextEncoder();
 
 export interface BuildReviewTaskPayloadInput {
   prUrl: string;
-  /** Boolean from CLI; only true → opt-in. false / undefined → omit field. */
+  /** Boolean from CLI; only `true` → opt-in. `false` → omit field. */
   post: boolean;
   /** Optional per-lens pi timeout to forward to the daemon (seconds). */
   timeoutSeconds?: number;
+}
+
+/**
+ * Shape of the dispatch envelope's payload. `post` is intentionally typed as
+ * `true | undefined` (never `false`) — when the CLI flag is absent the field
+ * is omitted so the bridge's `payload.post ?? cfg.postReviews` lookup falls
+ * through to the daemon-side default. The trailing index signature keeps the
+ * type assignable to `Record<string, unknown>` (which `buildEnvelope` accepts)
+ * without losing the precise field types at use sites.
+ */
+export interface ReviewTaskPayload {
+  pr_url: string;
+  post?: true;
+  timeout_ms?: number;
+  [k: string]: unknown;
 }
 
 /**
@@ -61,12 +76,10 @@ export interface BuildReviewTaskPayloadInput {
  * through to the daemon-side default; sending an explicit `false` would
  * short-circuit past that default (??-coalesce treats false as a value).
  */
-export function buildReviewTaskPayload(
-  input: BuildReviewTaskPayloadInput,
-): Record<string, unknown> {
+export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): ReviewTaskPayload {
   return {
     pr_url: input.prUrl,
-    ...(input.post ? { post: true } : {}),
+    ...(input.post ? { post: true as const } : {}),
     ...(input.timeoutSeconds ? { timeout_ms: input.timeoutSeconds * 1000 } : {}),
   };
 }

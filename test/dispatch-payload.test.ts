@@ -74,13 +74,13 @@ describe("integration with bridge's nullish-coalesce semantics", () => {
 
   test("daemon configured to post; dispatch w/o --post → posts (the fix)", () => {
     const payload = buildReviewTaskPayload({ prUrl: URL, post: false });
-    const merged = bridgeMerge(payload.post as boolean | undefined, true);
+    const merged = bridgeMerge(payload.post, true);
     expect(merged).toBe(true);
   });
 
   test("daemon configured to post; dispatch w/ --post → posts", () => {
     const payload = buildReviewTaskPayload({ prUrl: URL, post: true });
-    const merged = bridgeMerge(payload.post as boolean | undefined, true);
+    const merged = bridgeMerge(payload.post, true);
     expect(merged).toBe(true);
   });
 
