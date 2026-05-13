@@ -72,6 +72,9 @@ describe("TaskPayloadSchema (runtime)", () => {
   });
 
   test.each([0, -1, -1000])("rejects number=%s (non-positive)", (bad) => {
+    // owner+repo+number satisfies the disjunction refinement, so the
+    // rejection here is from `.int().positive()` on the `number` field
+    // — not a short-circuit on the disjunction.
     const r = TaskPayloadSchema.safeParse({
       owner: "x",
       repo: "y",

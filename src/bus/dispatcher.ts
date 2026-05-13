@@ -9,14 +9,18 @@ import {
 } from "./subjects.ts";
 import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
-import type { DispatchTaskPayload } from "./payload.ts";
+import type { DispatchTaskPayload as _DispatchTaskPayload } from "./payload.ts";
 
 /**
  * @deprecated Import `DispatchTaskPayload` directly from `./payload.ts`.
  * This re-export is a back-compat shim — the type's canonical home is the
  * protocol module, not this transport module. Remove in the next cleanup.
+ *
+ * Declared via local alias (rather than `export type { … } from`) so the
+ * `@deprecated` JSDoc binds directly to the exported identifier, which
+ * TS surfaces reliably at the consumer's import site.
  */
-export type { DispatchTaskPayload } from "./payload.ts";
+export type DispatchTaskPayload = _DispatchTaskPayload;
 
 /**
  * Bus-domain dispatcher. Publishes a code-review task envelope to the
@@ -72,7 +76,7 @@ export interface BuildReviewTaskPayloadInput {
  * through to the daemon-side default; sending an explicit `false` would
  * short-circuit past that default (??-coalesce treats false as a value).
  */
-export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): DispatchTaskPayload {
+export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): _DispatchTaskPayload {
   return {
     pr_url: input.prUrl,
     ...(input.post ? { post: true as const } : {}),
@@ -91,7 +95,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   log(`connected ${opts.natsUrl}`);
 
   const correlationId = randomUUID();
-  const taskEnvelope = buildEnvelope<DispatchTaskPayload>({
+  const taskEnvelope = buildEnvelope<_DispatchTaskPayload>({
     source: opts.source,
     type: "tasks.code-review.typescript",
     correlationId,
