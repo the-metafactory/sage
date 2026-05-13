@@ -41,7 +41,7 @@ program
         process.exit(2);
       }
 
-      const selection = selectSubstrate({ ...(opts.substrate ? { flag: opts.substrate } : {}) });
+      const selection = selectSubstrate({ flag: opts.substrate });
       console.error(
         `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s)`,
       );
@@ -92,7 +92,7 @@ program
       queue: string;
       substrate?: string;
     }) => {
-      const selection = selectSubstrate({ ...(opts.substrate ? { flag: opts.substrate } : {}) });
+      const selection = selectSubstrate({ flag: opts.substrate });
       console.error(
         `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source})`,
       );

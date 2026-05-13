@@ -23,7 +23,7 @@
  */
 
 /** Provider keys Sage forwards by default. Add to this list when a new provider matters. */
-export const PROVIDER_KEYS = [
+const PROVIDER_KEYS = [
   "OPENROUTER_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -46,7 +46,7 @@ export const PROVIDER_KEYS = [
 ] as const;
 
 /** Shell essentials. Without these the substrate binary can't even resolve. */
-export const SHELL_ESSENTIALS = [
+const SHELL_ESSENTIALS = [
   "PATH",
   "HOME",
   "USER",
@@ -66,7 +66,7 @@ export const SHELL_ESSENTIALS = [
  * forwarded by default; opt in via `SAGE_ENV_ALLOW=NODE_OPTIONS` (or the
  * legacy `PI_ENV_ALLOW=NODE_OPTIONS`).
  */
-export const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
+const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
 
 /**
  * Substrate namespaces. Each substrate's own config env (PI_PROVIDER,
@@ -75,7 +75,7 @@ export const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
  * unconditionally via PROVIDER_KEYS — listing ANTHROPIC_ here only ensures
  * any *other* ANTHROPIC_* config var also makes it through.
  */
-export const SUBSTRATE_NAMESPACES = {
+const SUBSTRATE_NAMESPACES = {
   pi: ["PI_"],
   claude: ["CLAUDE_", "ANTHROPIC_"],
 } as const;

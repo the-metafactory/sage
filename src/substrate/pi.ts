@@ -1,5 +1,5 @@
 import { buildSubstrateEnv } from "./env.ts";
-import { spawnSubstrate } from "./base.ts";
+import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
 import { runJsonViaTextExtraction } from "./json.ts";
 import type {
   Substrate,
@@ -80,7 +80,7 @@ export class PiSubstrate implements Substrate {
       env: buildSubstrateEnv({ substrate: "pi", extra: opts.env }),
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
       ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs: opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS,
+      timeoutMs: opts.timeoutMs ?? readTimeoutFromEnv("PI_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
       label: "pi",
     });
   }
@@ -88,9 +88,4 @@ export class PiSubstrate implements Substrate {
   runJson<T>(opts: SubstrateRunOptions): Promise<{ result: T; raw: SubstrateRunResult }> {
     return runJsonViaTextExtraction<T>((o) => this.run(o), opts);
   }
-}
-
-function envTimeoutMs(): number | undefined {
-  const raw = Number(process.env.PI_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }

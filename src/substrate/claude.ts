@@ -1,5 +1,5 @@
 import { buildSubstrateEnv } from "./env.ts";
-import { spawnSubstrate } from "./base.ts";
+import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
 import { extractJson, isLensShaped } from "./json.ts";
 import type {
   Substrate,
@@ -141,15 +141,10 @@ export class ClaudeSubstrate implements Substrate {
       env: buildSubstrateEnv({ substrate: "claude", extra: opts.env }),
       ...(opts.cwd ? { cwd: opts.cwd } : {}),
       ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs: opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS,
+      timeoutMs: opts.timeoutMs ?? readTimeoutFromEnv("CLAUDE_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
       label: "claude",
     });
   }
-}
-
-function envTimeoutMs(): number | undefined {
-  const raw = Number(process.env.CLAUDE_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
 /**

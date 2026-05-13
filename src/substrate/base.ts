@@ -35,6 +35,17 @@ export interface SpawnSubstrateInput {
   label: string;
 }
 
+/**
+ * Read a substrate-specific timeout env var (PI_TIMEOUT_MS,
+ * CLAUDE_TIMEOUT_MS, …). Shared helper so a third substrate doesn't need
+ * to copy-paste the parse + guard. Returns `undefined` when the env var
+ * is unset, NaN, or non-positive — caller decides the substrate default.
+ */
+export function readTimeoutFromEnv(key: string): number | undefined {
+  const raw = Number(process.env[key]);
+  return Number.isFinite(raw) && raw > 0 ? raw : undefined;
+}
+
 export async function spawnSubstrate(input: SpawnSubstrateInput): Promise<SubstrateRunResult> {
   const started = Date.now();
   return new Promise<SubstrateRunResult>((resolve, reject) => {

@@ -126,11 +126,15 @@ function findTrailingBalancedObject(text: string): string | undefined {
 
   for (let i = end; i >= 0; i--) {
     const ch = text[i];
+    // Treat `i === 0` as not-escaped (no preceding char to be a
+    // backslash). Avoids relying on `text[-1] === undefined !== "\\"`
+    // coercion to express the same intent.
+    const prevIsEscape = i > 0 && text[i - 1] === "\\";
     if (inString) {
-      if (ch === '"' && text[i - 1] !== "\\") inString = false;
+      if (ch === '"' && !prevIsEscape) inString = false;
       continue;
     }
-    if (ch === '"' && text[i - 1] !== "\\") {
+    if (ch === '"' && !prevIsEscape) {
       inString = true;
       continue;
     }
