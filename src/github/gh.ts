@@ -120,14 +120,62 @@ export interface PostReviewInput {
   body: string;
 }
 
-export async function postReview(input: PostReviewInput): Promise<void> {
-  const flag =
-    input.event === "approve"
-      ? "--approve"
-      : input.event === "request-changes"
-        ? "--request-changes"
-        : "--comment";
+export interface PostReviewResult {
+  /** Event actually accepted by GitHub. May be downgraded from input.event. */
+  posted: ReviewEvent;
+  /** True when GH blocked self-{approve,request-changes} and we fell back. */
+  downgraded: boolean;
+}
 
+/**
+ * GraphQL error family GH returns when the authenticated user equals the PR
+ * author and tries to approve/request-changes their own PR. Matches both
+ * "approve" and "request changes" wording; the `--comment` event is always
+ * allowed and never produces this error.
+ */
+export const SELF_REVIEW_BLOCK_RE =
+  /Can not (?:approve|request changes on) your own pull request/i;
+
+function eventFlag(event: ReviewEvent): string {
+  return event === "approve"
+    ? "--approve"
+    : event === "request-changes"
+      ? "--request-changes"
+      : "--comment";
+}
+
+/**
+ * Pure fallback policy, extracted for testability. Attempts `attempt(event)`;
+ * if it throws with the self-review GraphQL block AND the event is not already
+ * `comment`, retries once with `comment`. Any other failure (including a
+ * `comment` failure) propagates without further retry.
+ *
+ * The caller wraps `attempt` in `retryTransient` so transient network errors
+ * are already absorbed before they reach this policy.
+ */
+export async function postReviewWithFallback(
+  event: ReviewEvent,
+  attempt: (event: ReviewEvent) => Promise<unknown>,
+  log: (msg: string) => void = (m) => {
+    // eslint-disable-next-line no-console
+    console.error(m);
+  },
+): Promise<PostReviewResult> {
+  try {
+    await attempt(event);
+    return { posted: event, downgraded: false };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (event !== "comment" && SELF_REVIEW_BLOCK_RE.test(msg)) {
+      log(`[sage] gh blocked self-${event}; falling back to --comment`);
+      await attempt("comment");
+      return { posted: "comment", downgraded: true };
+    }
+    throw err;
+  }
+}
+
+export async function postReview(input: PostReviewInput): Promise<PostReviewResult> {
   // Use --body-file with a temp file rather than --body in argv. A review
   // body with many findings + fenced suggestions easily exceeds macOS
   // ARG_MAX (~256 KB). Temp file path is short; the body itself is read
@@ -136,11 +184,11 @@ export async function postReview(input: PostReviewInput): Promise<void> {
   const bodyPath = join(tmpDir, "body.md");
   writeFileSync(bodyPath, input.body);
 
-  try {
+  const attempt = (event: ReviewEvent) =>
     // Retry on transient network errors (operator walking between rooms
     // is a real case — laptop WLAN re-association takes ~30-60s). Auth
     // / validation errors propagate immediately, no retry.
-    await retryTransient(
+    retryTransient(
       () =>
         runGh(
           [
@@ -149,7 +197,7 @@ export async function postReview(input: PostReviewInput): Promise<void> {
             String(input.ref.number),
             "--repo",
             formatRepo(input.ref),
-            flag,
+            eventFlag(event),
             "--body-file",
             bodyPath,
           ],
@@ -159,15 +207,18 @@ export async function postReview(input: PostReviewInput): Promise<void> {
         maxAttempts: 6,
         baseDelayMs: 1000,
         maxDelayMs: 30_000,
-        onRetry: (attempt, delayMs, err) => {
+        onRetry: (attemptNum, delayMs, err) => {
           const m = err instanceof Error ? err.message : String(err);
           // eslint-disable-next-line no-console
           console.error(
-            `[sage] gh pr review attempt ${attempt} failed transient; retrying in ${delayMs}ms: ${m.split("\n")[0]}`,
+            `[sage] gh pr review (${event}) attempt ${attemptNum} failed transient; retrying in ${delayMs}ms: ${m.split("\n")[0]}`,
           );
         },
       },
     );
+
+  try {
+    return await postReviewWithFallback(input.event, attempt);
   } finally {
     try {
       unlinkSync(bodyPath);

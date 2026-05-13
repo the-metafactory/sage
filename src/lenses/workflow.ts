@@ -16,6 +16,14 @@ export interface ReviewOptions {
 export interface ReviewResult {
   verdict: ReviewVerdict;
   posted: boolean;
+  /**
+   * Set when GH blocked self-{approve,request-changes} and postReview fell
+   * back to `--comment`. The verdict.decision is unchanged — only the
+   * GitHub-side event surface was downgraded. Undefined when post was
+   * skipped or the original event was accepted.
+   */
+  postedEvent?: ReviewEvent;
+  downgraded?: boolean;
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
@@ -53,15 +61,24 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // holds the latest verdict per PR; older ones are overwritten on next run.
   persistVerdict(opts.ref, verdict, body);
 
+  let postedEvent: ReviewEvent | undefined;
+  let downgraded: boolean | undefined;
   if (opts.post) {
-    await postReview({
+    const result = await postReview({
       ref: opts.ref,
       event: verdictToEvent(verdict.decision),
       body,
     });
+    postedEvent = result.posted;
+    downgraded = result.downgraded;
   }
 
-  return { verdict, posted: opts.post === true };
+  return {
+    verdict,
+    posted: opts.post === true,
+    ...(postedEvent !== undefined ? { postedEvent } : {}),
+    ...(downgraded !== undefined ? { downgraded } : {}),
+  };
 }
 
 
