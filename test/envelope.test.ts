@@ -6,6 +6,62 @@ import {
   safeValidateEnvelope,
 } from "../src/bus/envelope.ts";
 
+/**
+ * Issue #11: buildEnvelope is generic over the payload type so callers with
+ * a precise interface (no index signature) don't have to launder through
+ * `as unknown as Record<string, unknown>`. The constraint is `object`, not
+ * `Record<string, unknown>`, so closed interfaces are assignable. The Zod
+ * parse at the end of buildEnvelope still validates the runtime shape.
+ */
+interface PreciseDispatchPayload {
+  pr_url: string;
+  post?: true;
+  timeout_ms?: number;
+}
+
+describe("buildEnvelope generic", () => {
+  test("accepts a precise interface without an index signature (no cast needed)", () => {
+    // This call would fail to type-check pre-fix because PreciseDispatchPayload
+    // is not assignable to Record<string, unknown> (closed interface, no
+    // index signature). With the generic constraint relaxed to `object`,
+    // the call compiles cleanly. The Zod parse below still validates the
+    // runtime shape, so type-system relaxation is paired with runtime
+    // enforcement.
+    const payload: PreciseDispatchPayload = {
+      pr_url: "https://github.com/x/y/pull/1",
+      post: true,
+    };
+    const env = buildEnvelope<PreciseDispatchPayload>({
+      source: "metafactory.sage.local",
+      type: "tasks.code-review.typescript",
+      payload,
+    });
+    expect(env.payload).toEqual({ pr_url: "https://github.com/x/y/pull/1", post: true });
+  });
+
+  test("type parameter defaults to Record<string, unknown> for untyped callers", () => {
+    const env = buildEnvelope({
+      source: "metafactory.sage.local",
+      type: "tasks.code-review.typescript",
+      payload: { anything: 42, nested: { goes: "here" } },
+    });
+    expect(env.payload).toEqual({ anything: 42, nested: { goes: "here" } });
+  });
+
+  test("Zod runtime parse still rejects payloads that violate the schema", () => {
+    // Even with the type cast inside buildEnvelope, runtime validation
+    // catches malformed shapes — here a stringy source that fails the
+    // SourceRe regex.
+    expect(() =>
+      buildEnvelope({
+        source: "BAD SOURCE",
+        type: "tasks.code-review.typescript",
+        payload: { pr_url: "https://x.example/pull/1" },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("buildEnvelope", () => {
   test("populates required fields with defaults", () => {
     const env = buildEnvelope({
