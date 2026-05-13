@@ -78,7 +78,6 @@ const ECOSYSTEM_PATH_PATTERNS = [
   /(?:^|\/)cortex\.ya?ml$/,
   /(?:^|\/)arc-manifest\.ya?ml$/,
   /(?:^|\/)bot\.ya?ml$/,
-  /(?:^|\/)\.plist$/,
   /\.plist$/,
   /(?:^|\/)agents\.d\//,
   /(?:^|\/)\.claude\//,

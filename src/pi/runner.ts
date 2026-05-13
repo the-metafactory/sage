@@ -296,7 +296,6 @@ function findTrailingBalancedObject(text: string): string | undefined {
 
   let depth = 0;
   let inString = false;
-  let escaped = false;
 
   for (let i = end; i >= 0; i--) {
     const ch = text[i];
@@ -317,7 +316,6 @@ function findTrailingBalancedObject(text: string): string | undefined {
       depth--;
       if (depth === 0) return text.slice(i, end + 1);
     }
-    if (escaped) escaped = false;
   }
   return undefined;
 }

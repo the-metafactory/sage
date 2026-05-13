@@ -1,10 +1,5 @@
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
-import { reviewCodeQuality } from "./code-quality.ts";
-import { reviewSecurity } from "./security.ts";
-import { reviewArchitecture } from "./architecture.ts";
-import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
-import { reviewPerformance } from "./performance.ts";
-import { evaluateApplicability } from "./applicability.ts";
+import { LENSES } from "./registry.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
 export interface ReviewOptions {
@@ -26,14 +21,17 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const pr = await prView(opts.ref);
   const diff = await prDiff(opts.ref);
 
-  const applies = evaluateApplicability({ pr, diff });
+  const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
   const lensReports: LensReport[] = [];
 
-  const fireLens = async (
-    runner: (i: { pr: typeof pr; diff: string; timeoutMs?: number }) => Promise<LensReport>,
-  ) => {
-    const report = await runner({ pr, diff, ...timeout });
+  // Iterate the declared lens registry. Each entry self-describes its
+  // optional applicability predicate, so adding lens #6 is a single-file
+  // edit in src/lenses/registry.ts — no changes here. Per cortex/docs/
+  // design-pi-dev-review-agent.md §7.
+  for (const lens of LENSES) {
+    if (lens.applies && !lens.applies(ctx)) continue;
+    const report = await lens.review({ pr, diff, ...timeout });
     lensReports.push(report);
     // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
     // — a publish failure must not discard a completed review. Log and move on.
@@ -43,15 +41,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       const m = err instanceof Error ? err.message : String(err);
       console.error(`[sage] onLensComplete (${report.lens}) failed: ${m}`);
     }
-  };
-
-  // CodeQuality always fires. Conditional lenses fire only when triggers match
-  // per cortex/docs/design-pi-dev-review-agent.md §7.
-  await fireLens(reviewCodeQuality);
-  if (applies.security) await fireLens(reviewSecurity);
-  if (applies.architecture) await fireLens(reviewArchitecture);
-  if (applies.ecosystemCompliance) await fireLens(reviewEcosystemCompliance);
-  if (applies.performance) await fireLens(reviewPerformance);
+  }
 
   const verdict = decideVerdict(lensReports);
 

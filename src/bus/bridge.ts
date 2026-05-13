@@ -1,8 +1,7 @@
-import { connect, credsAuthenticator, type NatsConnection, type Subscription } from "nats";
-import { existsSync, readFileSync } from "node:fs";
+import { type NatsConnection, type Subscription } from "nats";
 import { z } from "zod";
 
-import { resolveCredsPath } from "./creds.ts";
+import { connectNats } from "./connect.ts";
 
 import {
   buildEnvelope,
@@ -123,22 +122,11 @@ export interface RunningBridge {
 }
 
 export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
-  const connectOpts: Parameters<typeof connect>[0] = { servers: cfg.natsUrl };
-
-  const credsPath = resolveCredsPath(cfg.credsFile ?? process.env.NATS_CREDS_FILE);
-  if (credsPath && existsSync(credsPath)) {
-    connectOpts.authenticator = credsAuthenticator(readFileSync(credsPath));
-    log(`bridge: using NATS creds at ${credsPath}`);
-  } else if (credsPath) {
-    // Env points at a creds file that doesn't exist — common when sage is
-    // installed via arc but `cortex creds issue sage` hasn't yet run.
-    // Soft-fall to unauthenticated rather than crash on ENOENT.
-    log(`bridge: NATS_CREDS_FILE=${credsPath} does not exist — connecting unauthenticated`);
-  } else {
-    log(`bridge: connecting unauthenticated (no NATS_CREDS_FILE / cfg.credsFile)`);
-  }
-
-  const nc = await connect(connectOpts);
+  const nc = await connectNats({
+    natsUrl: cfg.natsUrl,
+    ...(cfg.credsFile ? { credsFile: cfg.credsFile } : {}),
+    log: (m) => log(`bridge: ${m}`),
+  });
   // Register connection-level event listeners BEFORE any subscribe/publish.
   // The nats.js client emits 'error' on the connection (not via thrown
   // exceptions) for transport-level failures during fire-and-forget
