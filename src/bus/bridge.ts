@@ -1,5 +1,5 @@
 import { connect, credsAuthenticator, type NatsConnection, type Subscription } from "nats";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { z } from "zod";
 
@@ -123,9 +123,16 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   const connectOpts: Parameters<typeof connect>[0] = { servers: cfg.natsUrl };
 
   const credsPath = resolveCredsPath(cfg.credsFile ?? process.env.NATS_CREDS_FILE);
-  if (credsPath) {
+  if (credsPath && existsSync(credsPath)) {
     connectOpts.authenticator = credsAuthenticator(readFileSync(credsPath));
     log(`bridge: using NATS creds at ${credsPath}`);
+  } else if (credsPath) {
+    // Env points at a creds file that doesn't exist — common when sage is
+    // installed via arc but `cortex creds issue sage` hasn't yet run
+    // (cortex daemon not up, or operator using an unauthenticated local
+    // broker). Soft-fall to unauthenticated rather than crash on
+    // ENOENT — daemon retry loop should not flap on a recoverable state.
+    log(`bridge: NATS_CREDS_FILE=${credsPath} does not exist — connecting unauthenticated`);
   } else {
     log(`bridge: connecting unauthenticated (no NATS_CREDS_FILE / cfg.credsFile)`);
   }
