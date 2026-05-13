@@ -16,9 +16,11 @@ if [[ ! -f "$PLIST" ]]; then
   exit 0
 fi
 
-# Ensure LOG_DIR exists. arc renders {{LOG_DIR}} in the plist but does not
-# create the directory itself; launchctl errors on missing log paths.
-LOG_DIR="${HOME}/Library/Logs/sage"
+# Ensure log dir exists. Sage uses ~/.config/sage/logs/ rather than arc's
+# default ~/Library/Logs/sage/ so all sage state (config + logs + cache)
+# lives under a single ~/.config/sage/ root. launchctl errors on missing
+# StandardOutPath / StandardErrorPath, so we mkdir before bootstrap.
+LOG_DIR="${HOME}/.config/sage/logs"
 mkdir -p "$LOG_DIR"
 
 # Unload first if loaded (no-op if not loaded). bootout returns non-zero

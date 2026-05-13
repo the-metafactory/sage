@@ -10,11 +10,16 @@
     {{BIN}}           → absolute path of ~/bin/sage (the launcher symlink)
     {{INSTALL_PATH}}  → the cloned package directory
     {{HOME}}          → os.homedir()
-    {{LOG_DIR}}       → ~/Library/Logs/sage/
+    {{LOG_DIR}}       → ~/Library/Logs/sage/ (arc default — NOT used; see below)
     {{NATS_URL}}      → process.env.NATS_URL or nats://127.0.0.1:4222
 
   Sage-specific config (org, did, source) is hardcoded here — only the
   five well-known tokens above are substituted by arc.
+
+  Log location: sage deliberately writes logs under ~/.config/sage/logs/
+  rather than arc's default ~/Library/Logs/sage/. Keeps all sage state
+  (config + logs + future cache) under a single ~/.config/sage/ root
+  for easier inspection and backup.
 
   Provider API keys are deliberately NOT in this plist. They live in the
   operator's login shell env (or a per-user keychain) and reach the pi
@@ -75,9 +80,9 @@
   </dict>
 
   <key>StandardOutPath</key>
-  <string>{{LOG_DIR}}/sage.log</string>
+  <string>{{HOME}}/.config/sage/logs/sage.log</string>
   <key>StandardErrorPath</key>
-  <string>{{LOG_DIR}}/sage.err.log</string>
+  <string>{{HOME}}/.config/sage/logs/sage.err.log</string>
 
   <key>WorkingDirectory</key>
   <string>{{INSTALL_PATH}}</string>
