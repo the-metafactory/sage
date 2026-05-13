@@ -98,11 +98,44 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
       post: true,
     });
     expect(result.posted).toBe(false);
-    expect(result.postError).toBeInstanceOf(Error);
+    // postError is a structured shape (sage#16 round 2 review) so it can
+    // cross the bus without serialization gymnastics — `Error` instances
+    // don't JSON-serialize cleanly.
+    expect(result.postError).toBeDefined();
+    expect(typeof result.postError?.message).toBe("string");
     expect(result.postError?.message).toMatch(/network unreachable/);
     // Verdict was still persisted — recovery path remains.
     expect(persistedCount).toBe(1);
     expect(postReviewCalls).toBe(1);
+  });
+
+  test("postError.message is truncated when gh stderr is large", async () => {
+    // The previous postReview rejection message embeds gh's stderr verbatim
+    // (see runGh in src/github/gh.ts). Truncation caps the blast radius if
+    // gh ever echoes unexpected content during a crash.
+    const huge = "X".repeat(5000);
+    mock.module("../src/github/gh.ts", () => ({
+      parsePrRef: (r: string) => {
+        const m = r.match(/^([^/]+)\/([^#]+)#(\d+)$/);
+        if (!m) throw new Error(`bad ref ${r}`);
+        return { owner: m[1], repo: m[2], number: Number(m[3]) };
+      },
+      prView: async () => stubPr,
+      prDiff: async () => stubDiff,
+      postReview: async () => {
+        throw new Error(`gh pr review failed (exit 1): ${huge}`);
+      },
+    }));
+    const { reviewPr, POST_ERROR_MAX_LEN } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 42 },
+      substrate: stubSubstrate,
+      post: true,
+    });
+    expect(result.posted).toBe(false);
+    const msg = result.postError?.message ?? "";
+    expect(msg.length).toBeLessThanOrEqual(POST_ERROR_MAX_LEN + 100); // +slack for the "[…truncated N chars]" suffix
+    expect(msg).toMatch(/truncated \d+ chars/);
   });
 
   test("posted=false + postReview NOT called when opts.post is false", async () => {

@@ -63,15 +63,19 @@ describe("publish-side concrete subjects", () => {
     }
   });
 
-  // Post-failed sits under the same `code.pr.review.>` root as the three
-  // verdict outcomes (sage#16) so a `verdictWildcard` subscriber receives
-  // it without a separate subscription.
-  test("postFailedSubject lives under verdict root", () => {
+  // Post-failed sits under the DISPATCH LIFECYCLE namespace (sage#16
+  // PR #20 round 2 review): verdict outcomes describe the message, post
+  // failures describe what happened to it — different facts. The
+  // dispatchLifecycleWildcard subscriber on the dispatcher receives it
+  // without a separate subscription.
+  test("postFailedSubject lives under dispatch lifecycle root", () => {
     expect(postFailedSubject({ org: "metafactory" })).toBe(
-      "local.metafactory.code.pr.review.post-failed",
+      "local.metafactory.dispatch.task.post-failed",
     );
-    expect(postFailedSubject({ org: "metafactory" }).startsWith(
-      verdictWildcard({ org: "metafactory" }).replace(".>", "."),
-    )).toBe(true);
+    expect(
+      postFailedSubject({ org: "metafactory" }).startsWith(
+        dispatchLifecycleWildcard({ org: "metafactory" }).replace(".>", "."),
+      ),
+    ).toBe(true);
   });
 });

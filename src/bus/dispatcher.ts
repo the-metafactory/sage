@@ -131,9 +131,45 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
     void consume(lifecycleSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
-      const detail = (env.payload as Record<string, unknown>) ?? {};
-      if (Object.keys(detail).length > 0) {
-        log(`  payload: ${JSON.stringify(detail)}`);
+      const payload = (env.payload as Record<string, unknown>) ?? {};
+
+      // `dispatch.task.post-failed` (sage#16) is the operational sibling
+      // of `dispatch.task.failed` — lens work succeeded, GH post
+      // crashed. The verdict is on disk at
+      // ~/.config/sage/reviews/<safe>-<safe>-<n>.{json,md}; surface a
+      // recovery hint with operator-typeable values. CRITICAL: the ref
+      // owner/repo come from a NATS publisher that this process does
+      // NOT control, so they pass through `sanitizeRefSegment` before
+      // any string interpolation — same character class
+      // `persistVerdict` uses for its on-disk filename, which also
+      // means the printed `cat` path matches what's actually on disk.
+      if (env.type === "dispatch.task.post-failed") {
+        const ref = payload.ref as
+          | { owner: string; repo: string; number: number }
+          | undefined;
+        const errObj = payload.error as { message?: unknown } | string | undefined;
+        const errorMsg =
+          typeof errObj === "string"
+            ? errObj
+            : typeof errObj?.message === "string"
+              ? errObj.message
+              : "<no error message>";
+        log(`  post-failed: ${errorMsg}`);
+        if (ref) {
+          const owner = sanitizeRefSegment(ref.owner);
+          const repo = sanitizeRefSegment(ref.repo);
+          const num = Number.isInteger(ref.number) && ref.number > 0 ? ref.number : 0;
+          log(
+            `  recover: cat ~/.config/sage/reviews/${owner}-${repo}-${num}.md | gh pr review ${num} --repo ${owner}/${repo} --body-file -`,
+          );
+        }
+        // dispatch.task.completed still arrives after this — let it
+        // resolve the dispatcher exit code.
+        return;
+      }
+
+      if (Object.keys(payload).length > 0) {
+        log(`  payload: ${JSON.stringify(payload)}`);
       }
       if (env.type === "dispatch.task.completed") {
         finish(0);
@@ -145,28 +181,6 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     void consume(verdictSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
       const payload = env.payload as Record<string, unknown>;
-
-      // `code.pr.review.post-failed` is a sibling of the three verdict
-      // outcomes (sage#16). It carries the verdict + the post error;
-      // the lens work itself succeeded and the verdict is on disk at
-      // ~/.config/sage/reviews/<owner>-<repo>-<n>.{json,md}. Surface
-      // both bits of information here — the receiving operator/tool
-      // typically wants the recovery instruction.
-      if (env.type === "code.pr.review.post-failed") {
-        const ref = payload.ref as { owner: string; repo: string; number: number } | undefined;
-        const errorMsg =
-          typeof payload.error === "string" ? payload.error : "<no error message>";
-        log(`  post-failed: ${errorMsg}`);
-        if (ref) {
-          log(
-            `  recover: cat ~/.config/sage/reviews/${ref.owner}-${ref.repo}-${ref.number}.md | gh pr review ${ref.number} --repo ${ref.owner}/${ref.repo} --body-file -`,
-          );
-        }
-        // dispatch.task.completed still arrives after this — let it
-        // resolve the dispatcher exit code.
-        return;
-      }
-
       const decision =
         typeof payload.verdict === "object" && payload.verdict !== null
           ? (payload.verdict as Record<string, unknown>).decision
@@ -215,4 +229,22 @@ const LOG_PREFIX = "[sage:dispatch]";
 function log(msg: string): void {
   // eslint-disable-next-line no-console
   console.error(`${LOG_PREFIX} ${msg}`);
+}
+
+/**
+ * Strip everything that isn't a safe ref-segment character before this
+ * value gets interpolated into a printed shell command. The character
+ * class mirrors `persistVerdict`'s on-disk-filename sanitizer so the
+ * `cat` path we emit matches what's actually on disk.
+ *
+ * Defense in depth: `TaskPayloadSchema` already constrains `owner`/`repo`
+ * via a regex, but this dispatcher consumes envelopes from the bus
+ * directly and treats every field as untrusted at the trust boundary.
+ * Catches malformed envelopes that bypass schema validation as well as
+ * any future producer that publishes without using sage's own helpers.
+ */
+function sanitizeRefSegment(raw: string): string {
+  if (typeof raw !== "string") return "_";
+  const sanitized = raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return sanitized.length > 0 ? sanitized : "_";
 }

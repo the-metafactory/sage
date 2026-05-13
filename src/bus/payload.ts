@@ -19,11 +19,23 @@ import { z } from "zod";
  * Refinement: an envelope must carry EITHER a `pr_url` or the
  * `owner+repo+number` triple. The daemon's `resolvePrRef` handles both.
  */
+/**
+ * GitHub character set for org logins and repository names. Logins are
+ * `[A-Za-z0-9]` plus single dashes (no leading/trailing dash); repo names
+ * additionally allow `.` and `_`. We use a narrow safe-character regex
+ * because these values cross the NATS bus trust boundary and are
+ * eventually rendered into operator-facing shell hints (sage#16 review).
+ * Anything that's not a valid GitHub identifier shouldn't reach the
+ * daemon in the first place.
+ */
+const GH_OWNER_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+const GH_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
+
 export const TaskPayloadSchema = z
   .object({
     pr_url: z.string().url().optional(),
-    owner: z.string().optional(),
-    repo: z.string().optional(),
+    owner: z.string().regex(GH_OWNER_RE).optional(),
+    repo: z.string().regex(GH_REPO_RE).optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
     /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */

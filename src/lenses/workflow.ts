@@ -43,11 +43,40 @@ export interface ReviewResult {
    * Set when `opts.post` was true but `postReview` threw. The lens work
    * itself succeeded — the verdict is on disk via `persistVerdict` and
    * the caller can re-post manually. Bridge mode publishes a separate
-   * `code.pr.review.post-failed` envelope so operators can distinguish
-   * a post failure from a lens / dispatch failure (sage#16).
+   * `dispatch.task.post-failed` envelope so operators can distinguish a
+   * post failure from a lens / dispatch failure (sage#16).
+   *
+   * Structured (not `Error`) so it can cross the NATS bus boundary
+   * without serialization gymnastics and so future fields (`code`,
+   * `retryable`, …) can be added without a breaking change to
+   * `ReviewResult`.
    */
-  postError?: Error;
+  postError?: PostError;
 }
+
+/**
+ * Structured shape for a post-step failure. Crosses process boundaries
+ * via the bus, so the contract is plain JSON-shaped data — no `Error`
+ * prototype, no stack trace (which leaks file paths from the daemon's
+ * filesystem).
+ */
+export interface PostError {
+  /**
+   * Operator-facing error message. Truncated to `POST_ERROR_MAX_LEN` to
+   * cap blast radius if `gh`'s stderr ever echoes unexpected content
+   * (the rejection message in `runGh` embeds the subprocess stderr
+   * verbatim).
+   */
+  message: string;
+}
+
+/**
+ * Cap on bytes of `gh` stderr that ride the post-failed envelope.
+ * 500 is enough to surface a typical `gh pr review` failure (auth
+ * message, HTTP status + body snippet) without becoming a vector for
+ * stderr-stuffing if the subprocess crashes mid-output.
+ */
+export const POST_ERROR_MAX_LEN = 500;
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const pr = await prView(opts.ref);
@@ -87,7 +116,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   let postedEvent: ReviewEvent | undefined;
   let downgraded: boolean | undefined;
-  let postError: Error | undefined;
+  let postError: PostError | undefined;
   let posted = false;
 
   if (opts.post) {
@@ -118,9 +147,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       // via `postError`; bridge mode publishes a dedicated
       // `code.pr.review.post-failed` envelope so operators can act on the
       // partial outcome without the lens work being lost.
-      postError = err instanceof Error ? err : new Error(String(err));
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message =
+        rawMessage.length > POST_ERROR_MAX_LEN
+          ? `${rawMessage.slice(0, POST_ERROR_MAX_LEN)} […truncated ${rawMessage.length - POST_ERROR_MAX_LEN} chars]`
+          : rawMessage;
+      postError = { message };
       // eslint-disable-next-line no-console
-      console.error(`[workflow] post: failed ${target}: ${postError.message}`);
+      console.error(`[workflow] post: failed ${target}: ${message}`);
     }
   }
 
