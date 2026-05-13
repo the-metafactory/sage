@@ -3,11 +3,13 @@ import { reviewSecurity } from "./security.ts";
 import { reviewArchitecture } from "./architecture.ts";
 import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
 import { reviewPerformance } from "./performance.ts";
+import { reviewMaintainability } from "./maintainability.ts";
 import {
   securityApplies,
   architectureApplies,
   ecosystemComplianceApplies,
   performanceApplies,
+  maintainabilityApplies,
   type ApplicabilityContext,
 } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
@@ -38,9 +40,15 @@ export interface LensModule {
 }
 
 /**
- * Canonical lens order: CodeQuality first (always fires), then four
+ * Canonical lens order: CodeQuality first (always fires), then five
  * conditional lenses gated on their applicability predicates. Per
  * cortex/docs/design-pi-dev-review-agent.md §7.
+ *
+ * Maintainability is ordered last so its findings (duplication, function
+ * size, complexity) read after the substantive correctness / security /
+ * shape passes — readers process "is this wrong?" before "is this hard to
+ * change?". Its applicability gate is broader than the others (most non-
+ * trivial code PRs benefit) but still skips docs/lock/config-only diffs.
  */
 export const LENSES: readonly LensModule[] = [
   { name: "CodeQuality", review: reviewCodeQuality },
@@ -52,4 +60,9 @@ export const LENSES: readonly LensModule[] = [
     applies: ecosystemComplianceApplies,
   },
   { name: "Performance", review: reviewPerformance, applies: performanceApplies },
+  {
+    name: "Maintainability",
+    review: reviewMaintainability,
+    applies: maintainabilityApplies,
+  },
 ];

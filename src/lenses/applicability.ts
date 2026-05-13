@@ -2,8 +2,9 @@ import type { PrMetadata } from "../github/gh.ts";
 
 /**
  * Trigger heuristics for the conditional lenses (Security, Architecture,
- * EcosystemCompliance, Performance) per cortex/docs/design-pi-dev-review-agent.md
- * §7. CodeQuality always fires; the others run only when the PR is in scope.
+ * EcosystemCompliance, Performance, Maintainability) per
+ * cortex/docs/design-pi-dev-review-agent.md §7. CodeQuality always fires;
+ * the others run only when the PR is in scope.
  *
  * Each predicate is intentionally cheap (file paths + a quick diff regex
  * scan) so the workflow can decide which lenses to dispatch without paying
@@ -114,6 +115,47 @@ export function performanceApplies(ctx: ApplicabilityContext): boolean {
   return PERFORMANCE_DIFF_PATTERNS.some((re) => re.test(ctx.diff));
 }
 
+// ──────────────────────────── Maintainability ──────────────────────────────
+
+/**
+ * Source-code file extensions worth running Maintainability on. Markdown,
+ * JSON, YAML, lock files are excluded — duplication / function-size /
+ * complexity all assume code.
+ */
+const MAINTAINABILITY_CODE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|py|pyi|go|rs)$/i;
+
+/**
+ * Paths to ignore even if the extension matches — these are *generated*
+ * or *vendored* artifacts where size/duplication findings are noise.
+ */
+const MAINTAINABILITY_IGNORE_RE = [
+  /(?:^|\/)node_modules\//,
+  /(?:^|\/)dist\//,
+  /(?:^|\/)build\//,
+  /(?:^|\/)vendor\//,
+  /\.d\.ts$/, // type-only declarations are mechanical
+  /\.min\.(?:js|css)$/,
+];
+
+/**
+ * Minimum total source additions+deletions across all in-scope files
+ * before Maintainability fires. Smaller diffs don't have enough surface
+ * to talk meaningfully about duplication / function size, and dispatching
+ * a model call on a 3-line tweak is pure overhead.
+ */
+const MAINTAINABILITY_MIN_LINES = 20;
+
+export function maintainabilityApplies(ctx: ApplicabilityContext): boolean {
+  const inScope = ctx.pr.files.filter(
+    (f) =>
+      MAINTAINABILITY_CODE_EXT_RE.test(f.path) &&
+      !MAINTAINABILITY_IGNORE_RE.some((re) => re.test(f.path)),
+  );
+  if (inScope.length === 0) return false;
+  const totalLines = inScope.reduce((acc, f) => acc + f.additions + f.deletions, 0);
+  return totalLines >= MAINTAINABILITY_MIN_LINES;
+}
+
 // ───────────────────────────── Summary ─────────────────────────────
 
 export interface ApplicabilityResult {
@@ -121,6 +163,7 @@ export interface ApplicabilityResult {
   architecture: boolean;
   ecosystemCompliance: boolean;
   performance: boolean;
+  maintainability: boolean;
 }
 
 export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityResult {
@@ -129,5 +172,6 @@ export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityR
     architecture: architectureApplies(ctx),
     ecosystemCompliance: ecosystemComplianceApplies(ctx),
     performance: performanceApplies(ctx),
+    maintainability: maintainabilityApplies(ctx),
   };
 }
