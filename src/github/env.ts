@@ -3,7 +3,7 @@
  *
  * `gh` is trusted but doesn't need the parent daemon's full env. Forwarding
  * provider API keys to `gh` would leak them into a child process that has
- * no business with them. Mirror the allow-list discipline of buildPiEnv()
+ * no business with them. Mirror the allow-list discipline of buildSubstrateEnv()
  * but with a tighter, gh-specific set.
  */
 

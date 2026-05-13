@@ -1,5 +1,5 @@
 import type { PrMetadata } from "../github/gh.ts";
-import { runPiJson } from "../pi/runner.ts";
+import type { Substrate } from "../substrate/types.ts";
 import type { Finding, LensReport } from "./types.ts";
 
 /**
@@ -22,13 +22,19 @@ export interface LensSpec {
 export interface LensRunInput {
   pr: PrMetadata;
   diff: string;
+  /**
+   * Substrate that runs this lens. Set once at startup by the CLI / daemon
+   * (via `selectSubstrate`) and threaded down here. Lens code never reaches
+   * into `src/substrate/*` directly — it goes through this seam so the
+   * persona stays substrate-independent (ISA principle #1).
+   */
+  substrate: Substrate;
   timeoutMs?: number;
   /**
-   * Thinking level passed to pi. Sage defaults to `off` because the
-   * chain-of-thought trace empirically broke the JSON contract on
-   * weaker / light-tier models. Callers (or per-lens specs in future)
-   * can opt back into low/medium/high for tasks where nuanced reasoning
-   * justifies the contract-drift risk.
+   * Thinking level passed to the substrate. Sage defaults to `off` because
+   * the chain-of-thought trace empirically broke the JSON contract on
+   * weaker / light-tier pi models. Substrates that don't expose a thinking
+   * knob (Claude Code) ignore this.
    */
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 }
@@ -127,7 +133,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   let extractionError = "";
 
   try {
-    lensResult = await runPiJson<RawLensOutput>({
+    lensResult = await input.substrate.runJson<RawLensOutput>({
       // System-role prompt for the JSON contract + lens focus. Models obey
       // system-role instructions more strictly than user messages.
       systemPrompt: COMMON_INSTRUCTION(spec),
@@ -137,7 +143,8 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       // Disable chain-of-thought reasoning by default. The trace is ALWAYS
       // prose, and weaker models emit the trace + NOTHING ELSE, leaving
       // zero JSON to parse. `off` eliminates that failure mode at the
-      // source. Caller may opt back in via input.thinking.
+      // source. Substrates that don't honor the flag (Claude Code) ignore
+      // it harmlessly.
       thinking: input.thinking ?? "off",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });

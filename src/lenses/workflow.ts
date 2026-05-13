@@ -1,13 +1,21 @@
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
+import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
+  /**
+   * Substrate that backs every lens for this review. Resolved once per
+   * process at startup by the CLI / daemon (`selectSubstrate`) — Sage
+   * deliberately does NOT support per-task substrate selection so verdicts
+   * stay reproducible across operators. See issue #14 "Out of scope".
+   */
+  substrate: Substrate;
   /** Post the review back to GitHub via gh CLI. Default: false (dry-run). */
   post?: boolean;
-  /** Per-lens pi runner timeout. Falls back to `PI_TIMEOUT_MS` env or 10min. */
+  /** Per-lens substrate timeout. Falls back to substrate-specific default. */
   timeoutMs?: number;
   /** Progress callback fired after each lens completes — used for envelope emission in serve mode. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
@@ -40,7 +48,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // design-pi-dev-review-agent.md §7.
   for (const lens of LENSES) {
     if (lens.applies && !lens.applies(ctx)) continue;
-    const report = await lens.review({ pr, diff, ...timeout });
+    const report = await lens.review({ pr, diff, substrate: opts.substrate, ...timeout });
     lensReports.push(report);
     // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
     // — a publish failure must not discard a completed review. Log and move on.
@@ -53,7 +61,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   }
 
   const verdict = decideVerdict(lensReports);
-  const body = renderReviewBody(verdict);
+  const body = renderReviewBody(verdict, opts.substrate.displayName);
 
   // Persist the verdict + rendered body BEFORE the network call. If postReview
   // fails permanently (network or otherwise), the operator can re-post from
@@ -94,7 +102,7 @@ function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
   }
 }
 
-export function renderReviewBody(verdict: ReviewVerdict): string {
+export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string): string {
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
   const sections = verdict.lenses.map((lens) => {
     const body =
@@ -110,7 +118,8 @@ export function renderReviewBody(verdict: ReviewVerdict): string {
             .join("\n\n");
     return `### ${lens.lens}\n${lens.summary}\n\n${body}`;
   });
-  return [head, ...sections, "\n---\n_Posted by Sage on pi.dev substrate._"].join("\n\n");
+  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
+  return [head, ...sections, footer].join("\n\n");
 }
 
 /**
