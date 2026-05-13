@@ -62,7 +62,7 @@ describe("buildEnvelope generic", () => {
       buildEnvelope({
         source: "metafactory.sage.local",
         type: "tasks.code-review.typescript",
-        payload: ["not", "a", "record"] as unknown as object,
+        payload: ["not", "a", "record"],
       });
       throw new Error("expected buildEnvelope to throw for non-record payload");
     } catch (err) {
