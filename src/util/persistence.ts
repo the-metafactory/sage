@@ -8,20 +8,32 @@ import type { ReviewVerdict } from "../lenses/types.ts";
 /**
  * Character class for ref segments and filename slugs. Anything outside
  * the safe set becomes `_` so the resulting path is shell-safe and
- * filesystem-portable. Exported because the dispatcher prints a `cat
- * ~/.config/sage/reviews/<safe>-<safe>-<n>.md` recovery hint that must
- * match the filename `persistVerdict` actually writes here — one
- * regex, two consumers (sage#16 round-2 review).
+ * filesystem-portable. Internal — callers should go through
+ * `safeRefSegment` or `verdictFilePath`.
  */
-export const SAFE_FILENAME_CHAR_RE = /[^a-zA-Z0-9._-]/g;
+const SAFE_FILENAME_CHAR_RE = /[^a-zA-Z0-9._-]/g;
+
+const REVIEWS_DIR = join(homedir(), ".config", "sage", "reviews");
 
 /**
- * Build the on-disk slug for a PR ref. Shared with `dispatcher.ts`'s
- * `sanitizeRefSegment` (which produces the same shape for the printed
- * recovery hint).
+ * Build the on-disk slug for a single ref segment (owner or repo).
+ * Shared with `dispatcher.ts`'s `sanitizeRefSegment` so the dispatcher's
+ * printed recovery hint matches the filename `persistVerdict` writes.
  */
 export function safeRefSegment(value: string): string {
   return value.replace(SAFE_FILENAME_CHAR_RE, "_");
+}
+
+/**
+ * Absolute path to the verdict-file for a PR ref, in either the
+ * machine-readable `.json` or the `gh pr review --body-file`-ready
+ * `.md` shape. One template, two consumers (persistVerdict here +
+ * dispatcher's recovery hint) so the directory / separator / extension
+ * cannot drift between them (sage#16 round-3 review).
+ */
+export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
+  const slug = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
+  return join(REVIEWS_DIR, `${slug}.${ext}`);
 }
 
 /**
@@ -38,17 +50,15 @@ export function safeRefSegment(value: string): string {
  */
 export function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string): void {
   try {
-    const dir = join(homedir(), ".config", "sage", "reviews");
-    mkdirSync(dir, { recursive: true });
-    const safeRef = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
+    mkdirSync(REVIEWS_DIR, { recursive: true });
     const json = {
       ref,
       verdict,
       body,
       savedAt: new Date().toISOString(),
     };
-    writeFileSync(join(dir, `${safeRef}.json`), JSON.stringify(json, null, 2));
-    writeFileSync(join(dir, `${safeRef}.md`), body);
+    writeFileSync(verdictFilePath(ref, "json"), JSON.stringify(json, null, 2));
+    writeFileSync(verdictFilePath(ref, "md"), body);
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console

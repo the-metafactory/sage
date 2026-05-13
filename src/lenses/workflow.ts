@@ -71,10 +71,13 @@ export interface PostError {
 }
 
 /**
- * Cap on bytes of `gh` stderr that ride the post-failed envelope.
- * 500 is enough to surface a typical `gh pr review` failure (auth
- * message, HTTP status + body snippet) without becoming a vector for
- * stderr-stuffing if the subprocess crashes mid-output.
+ * Cap on UTF-16 characters of `gh` stderr that ride the post-failed
+ * envelope. 500 is enough to surface a typical `gh pr review` failure
+ * (auth message, HTTP status + body snippet) without becoming a vector
+ * for stderr-stuffing if the subprocess crashes mid-output.
+ *
+ * @internal Exported for the truncation test; not part of the supported
+ * API surface.
  */
 export const POST_ERROR_MAX_LEN = 500;
 

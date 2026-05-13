@@ -9,7 +9,7 @@ import {
 } from "./subjects.ts";
 import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
-import { safeRefSegment } from "../util/persistence.ts";
+import { safeRefSegment, verdictFilePath } from "../util/persistence.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "./payload.ts";
 
 /**
@@ -157,11 +157,19 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
               : "<no error message>";
         log(`  post-failed: ${errorMsg}`);
         if (ref) {
-          const owner = sanitizeRefSegment(ref.owner);
-          const repo = sanitizeRefSegment(ref.repo);
+          // Bus fields are untrusted at the trust boundary. Sanitize
+          // each segment (defense in depth on top of
+          // `TaskPayloadSchema`'s GitHub-charset regex) before
+          // interpolating into the operator-typeable hint.
+          const owner = (typeof ref.owner === "string" && safeRefSegment(ref.owner)) || "_";
+          const repo = (typeof ref.repo === "string" && safeRefSegment(ref.repo)) || "_";
           const num = Number.isInteger(ref.number) && ref.number > 0 ? ref.number : 0;
+          // verdictFilePath builds the same path persistVerdict writes —
+          // single template, two consumers, no drift if the directory
+          // layout ever changes.
+          const path = verdictFilePath({ owner, repo, number: num }, "md");
           log(
-            `  recover: cat ~/.config/sage/reviews/${owner}-${repo}-${num}.md | gh pr review ${num} --repo ${owner}/${repo} --body-file -`,
+            `  recover: cat ${path} | gh pr review ${num} --repo ${owner}/${repo} --body-file -`,
           );
         }
         // dispatch.task.completed still arrives after this — let it
@@ -232,21 +240,3 @@ function log(msg: string): void {
   console.error(`${LOG_PREFIX} ${msg}`);
 }
 
-/**
- * Strip everything that isn't a safe ref-segment character before this
- * value gets interpolated into a printed shell command. Delegates to
- * `safeRefSegment` in `persistence.ts` so the `cat` path printed here
- * matches the filename `persistVerdict` actually writes — one regex,
- * two consumers (sage#16 round-2 review).
- *
- * Defense in depth: `TaskPayloadSchema` already constrains `owner`/`repo`
- * via a regex, but this dispatcher consumes envelopes from the bus
- * directly and treats every field as untrusted at the trust boundary.
- * Catches malformed envelopes that bypass schema validation as well as
- * any future producer that publishes without using sage's own helpers.
- */
-function sanitizeRefSegment(raw: string): string {
-  if (typeof raw !== "string") return "_";
-  const sanitized = safeRefSegment(raw);
-  return sanitized.length > 0 ? sanitized : "_";
-}

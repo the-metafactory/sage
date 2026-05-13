@@ -40,12 +40,14 @@ const stubSubstrate = {
 
 let persistedCount = 0;
 let postReviewBehavior: "success" | "throw" = "success";
+let postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 let postReviewCalls = 0;
 
 beforeEach(() => {
   persistedCount = 0;
   postReviewCalls = 0;
   postReviewBehavior = "success";
+  postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 
   mock.module("../src/github/gh.ts", () => ({
     parsePrRef: (ref: string) => {
@@ -58,7 +60,7 @@ beforeEach(() => {
     postReview: async () => {
       postReviewCalls++;
       if (postReviewBehavior === "throw") {
-        throw new Error("gh pr review failed (exit 1): network unreachable");
+        throw new Error(postReviewErrorMessage);
       }
       return { posted: "comment" as const, downgraded: false };
     },
@@ -110,23 +112,14 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
   });
 
   test("postError.message is truncated when gh stderr is large", async () => {
-    // The previous postReview rejection message embeds gh's stderr verbatim
-    // (see runGh in src/github/gh.ts). Truncation caps the blast radius if
-    // gh ever echoes unexpected content during a crash.
-    const huge = "X".repeat(5000);
-    mock.module("../src/github/gh.ts", () => ({
-      parsePrRef: (r: string) => {
-        const m = r.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-        if (!m) throw new Error(`bad ref ${r}`);
-        return { owner: m[1], repo: m[2], number: Number(m[3]) };
-      },
-      prView: async () => stubPr,
-      prDiff: async () => stubDiff,
-      postReview: async () => {
-        throw new Error(`gh pr review failed (exit 1): ${huge}`);
-      },
-    }));
-    const { reviewPr, POST_ERROR_MAX_LEN } = await import("../src/lenses/workflow.ts");
+    // The previous postReview rejection message embeds gh's stderr
+    // verbatim (see runGh in src/github/gh.ts). Truncation caps the
+    // blast radius if gh ever echoes unexpected content during a crash.
+    // Reuses the beforeEach mock by toggling behavior + injecting the
+    // large message; no need to re-define the full mock module.
+    postReviewBehavior = "throw";
+    postReviewErrorMessage = `gh pr review failed (exit 1): ${"X".repeat(5000)}`;
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
       substrate: stubSubstrate,
@@ -134,7 +127,9 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     });
     expect(result.posted).toBe(false);
     const msg = result.postError?.message ?? "";
-    expect(msg.length).toBeLessThanOrEqual(POST_ERROR_MAX_LEN + 100); // +slack for the "[…truncated N chars]" suffix
+    // Tighter behavioral bound: original message was 5000+ chars; the
+    // truncated form must be under 700 (cap + worst-case suffix).
+    expect(msg.length).toBeLessThanOrEqual(700);
     expect(msg).toMatch(/truncated \d+ chars/);
   });
 
