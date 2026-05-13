@@ -23,6 +23,19 @@ export interface PiRunOptions {
    * anything that might exceed ARG_MAX.
    */
   stdin?: string;
+  /**
+   * Optional system prompt (sent as SYSTEM role to the underlying LLM via
+   * pi's `--system-prompt` flag). Use this for output-contract directives
+   * — the model obeys system-role instructions more strictly than
+   * user-message instructions.
+   */
+  systemPrompt?: string;
+  /**
+   * Thinking level passthrough — `off | minimal | low | medium | high | xhigh`.
+   * Sage's lens calls default to `off` because the chain-of-thought
+   * reasoning trace ALWAYS includes prose and broke the JSON contract.
+   */
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   provider?: string;
   model?: string;
   tools?: readonly string[];
@@ -65,6 +78,16 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
   if (model) args.push("--model", model);
   if (apiKey) args.push("--api-key", apiKey);
   if (opts.tools && opts.tools.length) args.push("--tools", opts.tools.join(","));
+  // System-role prompting is stricter than passing instructions in the
+  // user message. Sage lens callers should always set systemPrompt for
+  // the JSON contract — improves contract adherence dramatically.
+  if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);
+  // Disable thinking by default for JSON-output callers — the chain-of-
+  // thought trace ALWAYS contains prose, which breaks the JSON contract
+  // (verified across Gemma, Gemini Flash, DeepSeek). Lens callers can
+  // override with thinking: "off" explicitly; absence means "default
+  // pi behavior" (don't pass the flag).
+  if (opts.thinking) args.push("--thinking", opts.thinking);
   args.push(opts.prompt);
 
   const started = Date.now();
@@ -237,17 +260,6 @@ function extractJson<T>(text: string): T | undefined {
     }
   }
   return undefined;
-}
-
-/**
- * Walk from the first `{` and return the smallest balanced object span.
- * Respects string literals (so `{` inside `"…"` doesn't increment depth)
- * and backslash escapes. Returns undefined if the braces are unbalanced.
- */
-function findBalancedObject(text: string): string | undefined {
-  const start = text.indexOf("{");
-  if (start === -1) return undefined;
-  return walkBalanced(text, start);
 }
 
 /**

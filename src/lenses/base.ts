@@ -115,13 +115,52 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   const started = Date.now();
   const stdinContent = buildStdinContent(input.pr, input.diff);
 
-  const { result } = await runPiJson<RawLensOutput>({
-    prompt: COMMON_INSTRUCTION(spec),
-    stdin: stdinContent,
-    ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
-  });
+  let lensResult: { result: RawLensOutput; raw: { stdout: string } } | undefined;
+  let extractionError = "";
 
-  const findings = (result.findings ?? []).map<Finding>((f) => ({
+  try {
+    lensResult = await runPiJson<RawLensOutput>({
+      // System-role prompt for the JSON contract + lens focus. Models obey
+      // system-role instructions more strictly than user messages.
+      systemPrompt: COMMON_INSTRUCTION(spec),
+      // User message: terse trigger; the actual PR content lives on stdin.
+      prompt: "Review the PR data on stdin and respond with the lens JSON.",
+      stdin: stdinContent,
+      // Disable chain-of-thought reasoning. The trace is ALWAYS prose,
+      // and weaker models will emit the trace + NOTHING ELSE, leaving
+      // zero JSON to parse. `off` eliminates that failure mode at the
+      // source.
+      thinking: "off",
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    });
+  } catch (err) {
+    extractionError = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.error(`[sage] ${spec.name} lens JSON extraction failed — falling back to prose finding`);
+  }
+
+  // Prose-fallback: model produced output but extractJson couldn't parse it.
+  // Rather than crashing the whole review, ship the raw output back as a
+  // single `nit` finding. The operator still sees the model's analysis on
+  // the PR, and downstream lenses keep firing.
+  if (!lensResult) {
+    return {
+      lens: spec.name,
+      summary: "Model output did not match the JSON contract; raw text captured below.",
+      findings: [
+        {
+          path: "(lens output)",
+          line: 0,
+          severity: "nit",
+          title: `${spec.name}: model deviated from JSON contract`,
+          rationale: truncate(extractionError, 4000),
+        },
+      ],
+      durationMs: Date.now() - started,
+    };
+  }
+
+  const findings = (lensResult.result.findings ?? []).map<Finding>((f) => ({
     path: f.path,
     line: normalizeLine(f.line),
     severity: normalizeSeverity(f.severity),
@@ -129,11 +168,17 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     rationale: f.rationale ?? "",
     ...(f.suggestion ? { suggestion: f.suggestion } : {}),
   }));
+  void extractionError;
 
   return {
     lens: spec.name,
-    summary: result.summary ?? "",
+    summary: lensResult.result.summary ?? "",
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max) + `\n\n[…truncated ${s.length - max} chars]`;
 }
