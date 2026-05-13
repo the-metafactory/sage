@@ -36,7 +36,8 @@ export type Expect<T extends true> = T;
  * in the test body.
  */
 // Intentionally empty body — the `T extends true` constraint is the entire
-// assertion (see JSDoc above). Do NOT rename `T` to `_T`: the underscore
-// would imply "unused", but the constraint is load-bearing.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// assertion (see JSDoc above). The `T` type parameter is referenced only
+// in its own constraint; that is intentional and is how the helper does
+// its job. Type parameters are out of scope for
+// `@typescript-eslint/no-unused-vars`, so no lint-disable is needed.
 export function typeCheck<T extends true>(): void {}

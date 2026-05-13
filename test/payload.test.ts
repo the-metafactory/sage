@@ -60,28 +60,35 @@ describe("TaskPayloadSchema (runtime)", () => {
   });
 
   // Per-iteration assertion: a single failure tells us *which* value
-  // slipped through, which a bare `expect(r.success).toBe(false)` in a
-  // `for` loop would not. Same shape applied to `number` below so a
-  // regression dropping `.positive()` from either field is caught.
-  test.each([0, -1, -1000])("rejects timeout_ms=%s (non-positive)", (bad) => {
-    const r = TaskPayloadSchema.safeParse({
-      pr_url: "https://github.com/x/y/pull/1",
-      timeout_ms: bad,
-    });
-    expect(r.success).toBe(false);
-  });
+  // slipped through. Object-entry rows + `$bad` interpolation are used
+  // here — Bun's test.each does NOT substitute `%s` for flat primitive
+  // arrays (verified on Bun 1.3.6), so the `$bad` form is the only way
+  // to get distinct, value-named test titles.
+  test.each([{ bad: 0 }, { bad: -1 }, { bad: -1000 }])(
+    "rejects timeout_ms=$bad (non-positive)",
+    ({ bad }) => {
+      const r = TaskPayloadSchema.safeParse({
+        pr_url: "https://github.com/x/y/pull/1",
+        timeout_ms: bad,
+      });
+      expect(r.success).toBe(false);
+    },
+  );
 
-  test.each([0, -1, -1000])("rejects number=%s (non-positive)", (bad) => {
-    // owner+repo+number satisfies the disjunction refinement, so the
-    // rejection here is from `.int().positive()` on the `number` field
-    // — not a short-circuit on the disjunction.
-    const r = TaskPayloadSchema.safeParse({
-      owner: "x",
-      repo: "y",
-      number: bad,
-    });
-    expect(r.success).toBe(false);
-  });
+  test.each([{ bad: 0 }, { bad: -1 }, { bad: -1000 }])(
+    "rejects number=$bad (non-positive)",
+    ({ bad }) => {
+      // owner+repo+number satisfies the disjunction refinement, so the
+      // rejection here is from `.int().positive()` on the `number` field
+      // — not a short-circuit on the disjunction.
+      const r = TaskPayloadSchema.safeParse({
+        owner: "x",
+        repo: "y",
+        number: bad,
+      });
+      expect(r.success).toBe(false);
+    },
+  );
 
   test("rejects non-integer number field", () => {
     const r = TaskPayloadSchema.safeParse({ owner: "x", repo: "y", number: 1.5 });

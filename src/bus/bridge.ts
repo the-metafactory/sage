@@ -23,21 +23,20 @@ const td = new TextDecoder();
 const te = new TextEncoder();
 
 /**
- * Re-exports — schema and inferred type now live in `./payload.ts` as the
- * canonical contract shared between sender (`dispatcher.ts`) and receiver
- * (this file). The `ReviewTaskPayloadSchema` alias preserves the prior
- * public name; the underlying schema is `TaskPayloadSchema`. See sage#10.
- *
- * The alias is declared as `const` (rather than `export { … as … } from`)
- * so the `@deprecated` JSDoc binds directly to the alias identifier — TS
- * surfaces the strikethrough reliably at the consumer's import site that
- * way, which the bare re-export form does not always do across editors.
- */
-/**
  * @deprecated Import `TaskPayloadSchema` directly from `./payload.ts` and
  * remove this re-export in the next cleanup pass. Two living names for the
  * same export is the kind of low-grade drift sage#10 was meant to
  * eliminate.
+ *
+ * Schema and inferred type now live in `./payload.ts` as the canonical
+ * contract shared between sender (`dispatcher.ts`) and receiver (this
+ * file). The `ReviewTaskPayloadSchema` alias preserves the prior public
+ * name; the underlying schema is `TaskPayloadSchema`.
+ *
+ * Declared as `const` (rather than `export { … as … } from`) so this
+ * `@deprecated` tag binds directly to the alias identifier — TS surfaces
+ * the strikethrough reliably at the consumer's import site that way,
+ * which the bare re-export form does not always do across editors.
  */
 export const ReviewTaskPayloadSchema = TaskPayloadSchema;
 export type { ReviewTaskPayload } from "./payload.ts";
