@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
-
 import { buildSubstrateEnv } from "./env.ts";
-import { runJsonViaTextExtraction } from "./base.ts";
+import { runJsonViaTextExtraction, spawnSubstrate } from "./base.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -11,17 +9,16 @@ import type {
 /**
  * pi.dev substrate — wraps `pi -p` (non-interactive print mode).
  *
- * Lifted from the previous src/pi/runner.ts with one structural change:
- * the bin / provider / model / apiKey / tools overrides come through
- * SubstrateRunOptions (substrate-neutral) rather than the old PiRunOptions.
- * The argv shape is preserved byte-for-byte so a pi-dev release that ships
- * a flag change updates with the same patch.
+ * Argv shape is preserved byte-for-byte from the previous src/pi/runner.ts so
+ * a pi-dev release that ships a flag change updates with the same patch.
  *
  * Per-process knobs:
  *   - `PI_BIN`         (binary path; default `pi`)
  *   - `PI_PROVIDER`    (default provider)
  *   - `PI_MODEL`       (default model)
- *   - `PI_API_KEY`     (default api-key — forwarded as `--api-key`)
+ *   - `PI_API_KEY`     (default api-key — forwarded as `--api-key`. Visible
+ *     in `ps` / `/proc/<pid>/cmdline`; pi.dev does not currently expose an
+ *     env-only auth path, so the argv approach is the documented surface.)
  *   - `PI_TIMEOUT_MS`  (default timeout)
  */
 
@@ -71,18 +68,14 @@ export class PiSubstrate implements Substrate {
     if (opts.thinking) args.push("--thinking", opts.thinking);
     args.push(opts.prompt);
 
-    const childEnv = buildSubstrateEnv({
-      substrate: "pi",
-      extra: opts.env,
-    });
-
-    return spawnAndCollect({
+    return spawnSubstrate({
       bin: this.bin,
       args,
-      cwd: opts.cwd,
-      env: childEnv,
-      stdin: opts.stdin,
+      env: buildSubstrateEnv({ substrate: "pi", extra: opts.env }),
+      ...(opts.cwd ? { cwd: opts.cwd } : {}),
+      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
       timeoutMs: opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS,
+      label: "pi",
     });
   }
 
@@ -94,65 +87,4 @@ export class PiSubstrate implements Substrate {
 function envTimeoutMs(): number | undefined {
   const raw = Number(process.env.PI_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
-}
-
-interface SpawnInput {
-  bin: string;
-  args: string[];
-  cwd?: string;
-  env: Record<string, string>;
-  stdin?: string;
-  timeoutMs: number;
-}
-
-async function spawnAndCollect(input: SpawnInput): Promise<SubstrateRunResult> {
-  const started = Date.now();
-  return new Promise<SubstrateRunResult>((resolve, reject) => {
-    const child = spawn(input.bin, input.args, {
-      env: input.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      ...(input.cwd ? { cwd: input.cwd } : {}),
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error(`pi substrate timed out after ${input.timeoutMs}ms`));
-    }, input.timeoutMs);
-
-    child.stdout.on("data", (c: Buffer) => {
-      stdout += c.toString("utf8");
-    });
-    child.stderr.on("data", (c: Buffer) => {
-      stderr += c.toString("utf8");
-    });
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on("close", (code: number | null) => {
-      clearTimeout(timer);
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code ?? -1,
-        durationMs: Date.now() - started,
-      });
-    });
-
-    // Write any large content via stdin BEFORE we'd otherwise hit ARG_MAX
-    // on the argv path. Wrap in try/catch — if the child exited in the
-    // same tick (e.g., `pi` binary missing), stdin may already be ended
-    // and `write/end` would otherwise become an unhandled rejection.
-    try {
-      if (input.stdin !== undefined) child.stdin.write(input.stdin);
-      child.stdin.end();
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      // eslint-disable-next-line no-console
-      console.error(`[sage:pi] stdin write/end after-close: ${m}`);
-    }
-  });
 }

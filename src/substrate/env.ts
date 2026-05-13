@@ -156,12 +156,13 @@ export function buildSubstrateEnv(opts: BuildSubstrateEnvOptions): Record<string
     if (value !== undefined) out[key] = value;
   }
 
-  // Forward keys in the active substrate's namespaces only.
+  // Forward keys in the active substrate's namespaces only. The `denySet`
+  // already includes `SAGE_INTERNAL_KEYS`, so a single membership check
+  // covers both operator-supplied denies and sage-internal keys.
   const namespaces = SUBSTRATE_NAMESPACES[opts.substrate];
   for (const [key, value] of Object.entries(parent)) {
     if (!namespaces.some((ns) => key.startsWith(ns))) continue;
     if (denySet.has(key)) continue;
-    if (SAGE_INTERNAL_KEYS.has(key)) continue;
     if (value !== undefined) out[key] = value;
   }
 

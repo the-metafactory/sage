@@ -1,16 +1,97 @@
+import { spawn } from "node:child_process";
+
 import type { SubstrateRunOptions, SubstrateRunResult } from "./types.ts";
 
 /**
- * Shared JSON-extraction logic for substrates that don't expose a native
- * structured-output mode. Lifted from the previous src/pi/runner.ts — same
- * forgiving extraction strategy (raw → fenced → balanced-brace → trailing),
- * same lens-shape preference (returns the first parse that looks like
- * `{ summary | findings }`, falling back to any parseable JSON).
+ * Shared subprocess + JSON-extraction primitives for substrates.
  *
- * Substrates with a native structured mode (e.g., Claude Code's
- * `--output-format json`) should override `runJson` directly rather than
- * use this fallback.
+ *   - `spawnSubstrate` — spawn a binary, buffer stdout/stderr, enforce a
+ *     timeout via SIGKILL, write optional stdin, return the captured
+ *     streams. Lifted out of `pi.ts` and `claude.ts` so substrate
+ *     implementations share one canonical spawn path (sage#15 review:
+ *     duplicate ~45-line spawn blocks were the main duplication signal).
+ *   - `runJsonViaTextExtraction` — for substrates without a native
+ *     structured-output mode. Same forgiving strategy as the previous
+ *     `src/pi/runner.ts` (raw → fenced → balanced-brace → trailing), same
+ *     lens-shape preference.
+ *   - `extractJson` (re-exported) — exposed so substrates with a native
+ *     JSON mode can salvage the lens body from the *already-captured*
+ *     stdout when the native envelope parse fails, instead of paying for
+ *     a second LLM round-trip.
  */
+
+export interface SpawnSubstrateInput {
+  /** Binary name or path. */
+  bin: string;
+  /** Argv to pass after the binary. */
+  args: string[];
+  /** Substrate-specific env (already built via `buildSubstrateEnv`). */
+  env: Record<string, string>;
+  /** Optional working directory. */
+  cwd?: string;
+  /** Optional stdin payload (large content too big for argv). */
+  stdin?: string;
+  /** Hard timeout in ms. Substrate is SIGKILLed on expiry. */
+  timeoutMs: number;
+  /**
+   * Short label used in error messages and the after-close stdin warning
+   * (e.g. `pi`, `claude`). Lets a future substrate add itself without
+   * patching the spawn path.
+   */
+  label: string;
+}
+
+export async function spawnSubstrate(input: SpawnSubstrateInput): Promise<SubstrateRunResult> {
+  const started = Date.now();
+  return new Promise<SubstrateRunResult>((resolve, reject) => {
+    const child = spawn(input.bin, input.args, {
+      env: input.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      ...(input.cwd ? { cwd: input.cwd } : {}),
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`${input.label} substrate timed out after ${input.timeoutMs}ms`));
+    }, input.timeoutMs);
+
+    child.stdout.on("data", (c: Buffer) => {
+      stdout += c.toString("utf8");
+    });
+    child.stderr.on("data", (c: Buffer) => {
+      stderr += c.toString("utf8");
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code: number | null) => {
+      clearTimeout(timer);
+      resolve({
+        stdout,
+        stderr,
+        exitCode: code ?? -1,
+        durationMs: Date.now() - started,
+      });
+    });
+
+    // Write any large content via stdin BEFORE we'd otherwise hit ARG_MAX
+    // on the argv path. Wrap in try/catch — if the child exited in the
+    // same tick (e.g., binary missing), stdin may already be ended and
+    // `write/end` would otherwise become an unhandled rejection.
+    try {
+      if (input.stdin !== undefined) child.stdin.write(input.stdin);
+      child.stdin.end();
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error(`[sage:${input.label}] stdin write/end after-close: ${m}`);
+    }
+  });
+}
 
 export async function runJsonViaTextExtraction<T>(
   run: (opts: SubstrateRunOptions) => Promise<SubstrateRunResult>,
@@ -47,7 +128,7 @@ export async function runJsonViaTextExtraction<T>(
  *   3. Trailing balanced object — walks backwards from the last `}` to find
  *      "reasoning trace + JSON at very end" shape.
  */
-function extractJson<T>(text: string): T | undefined {
+export function extractJson<T>(text: string): T | undefined {
   const candidates: string[] = [];
 
   candidates.push(text);

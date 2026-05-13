@@ -1,7 +1,5 @@
-import { spawn } from "node:child_process";
-
 import { buildSubstrateEnv } from "./env.ts";
-import { runJsonViaTextExtraction } from "./base.ts";
+import { extractJson, spawnSubstrate } from "./base.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -20,9 +18,12 @@ import type {
  *     unattended (defaults to `acceptEdits` so the substrate doesn't block
  *     waiting for an approval that will never come).
  *   - JSON output uses `--output-format json` natively when the caller asks
- *     for runJson — no fragile text extraction on the happy path. Falls
- *     back to runJsonViaTextExtraction if the native JSON envelope shape
- *     changes upstream.
+ *     for runJson — no fragile text extraction on the happy path. On the
+ *     UNHAPPY path we DO NOT re-spawn: the already-captured stdout buffer
+ *     is fed through the same text-extraction logic used by substrates
+ *     without a native JSON mode, and a `console.error` warning is logged
+ *     so operators can detect upstream envelope-shape changes before they
+ *     become silent regressions.
  *   - The `thinking`, `provider`, `apiKey`, and `tools` SubstrateRunOptions
  *     fields are ignored — Claude Code doesn't expose those knobs.
  *
@@ -69,25 +70,51 @@ export class ClaudeSubstrate implements Substrate {
         `claude exited with code ${raw.exitCode}: ${raw.stderr || raw.stdout}`,
       );
     }
-    // With --output-format json claude prints a JSON envelope whose
-    // `result` field holds the assistant's text reply. The lens prompt
-    // asks the assistant for a JSON-shaped reply, so the actual lens JSON
-    // sits inside `result` as a string. Parse twice: envelope, then
-    // result body. If either fails, fall back to text extraction.
+
+    // Claude Code's `--output-format json` envelope places the assistant's
+    // text reply in `.result`. The lens prompt asks the assistant for a
+    // JSON-shaped reply, so the actual lens body sits inside `.result` as
+    // a string. Parse twice (envelope, then result body) on the happy
+    // path; on every other path, fall through to `extractJson` over the
+    // ALREADY-CAPTURED stdout — never re-spawn (a second spawn doubles
+    // API spend on the failure path).
     try {
       const envelope = JSON.parse(raw.stdout) as unknown;
       const inner = pickClaudeResultText(envelope);
       if (inner !== undefined) {
-        const parsed = JSON.parse(inner) as T;
-        return { result: parsed, raw };
+        try {
+          const parsed = JSON.parse(inner) as T;
+          return { result: parsed, raw };
+        } catch {
+          // Inner string isn't bare JSON. Try lens-shape extraction on
+          // it — handles models that wrap their reply in prose or fences.
+          const recovered = extractJson<T>(inner);
+          if (recovered !== undefined) return { result: recovered, raw };
+        }
+      } else if (looksLensShaped(envelope)) {
+        // No `.result` field but the envelope itself is lens-shaped —
+        // some claude versions print the lens JSON bare when no tools
+        // were invoked.
+        return { result: envelope as T, raw };
       }
-      // Envelope shape didn't match — try treating the whole stdout as
-      // the JSON the caller wants. Some claude versions print the result
-      // bare when no tools were used.
-      return { result: envelope as T, raw };
     } catch {
-      return runJsonViaTextExtraction<T>((o) => this.run(o), opts);
+      // Envelope itself didn't parse — fall through to raw-stdout
+      // extraction below.
     }
+
+    // eslint-disable-next-line no-console
+    console.error(
+      "[sage:claude] native --output-format json parse failed; falling back to text extraction on captured stdout. " +
+        "Upstream envelope shape may have changed — check claude-code release notes.",
+    );
+
+    const recovered = extractJson<T>(raw.stdout);
+    if (recovered === undefined) {
+      throw new Error(
+        `claude output is not parseable as JSON (native envelope + text extraction both failed)\n--- stdout ---\n${raw.stdout}`,
+      );
+    }
+    return { result: recovered, raw };
   }
 
   private buildArgs(opts: SubstrateRunOptions, json: boolean): string[] {
@@ -110,57 +137,14 @@ export class ClaudeSubstrate implements Substrate {
     args: string[],
     opts: SubstrateRunOptions,
   ): Promise<SubstrateRunResult> {
-    const childEnv = buildSubstrateEnv({
-      substrate: "claude",
-      extra: opts.env,
-    });
-
-    const timeoutMs = opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS;
-    const started = Date.now();
-
-    return new Promise<SubstrateRunResult>((resolve, reject) => {
-      const child = spawn(this.bin, args, {
-        env: childEnv,
-        stdio: ["pipe", "pipe", "pipe"],
-        ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      });
-
-      let stdout = "";
-      let stderr = "";
-
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        reject(new Error(`claude substrate timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-
-      child.stdout.on("data", (c: Buffer) => {
-        stdout += c.toString("utf8");
-      });
-      child.stderr.on("data", (c: Buffer) => {
-        stderr += c.toString("utf8");
-      });
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-      child.on("close", (code: number | null) => {
-        clearTimeout(timer);
-        resolve({
-          stdout,
-          stderr,
-          exitCode: code ?? -1,
-          durationMs: Date.now() - started,
-        });
-      });
-
-      try {
-        if (opts.stdin !== undefined) child.stdin.write(opts.stdin);
-        child.stdin.end();
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        // eslint-disable-next-line no-console
-        console.error(`[sage:claude] stdin write/end after-close: ${m}`);
-      }
+    return spawnSubstrate({
+      bin: this.bin,
+      args,
+      env: buildSubstrateEnv({ substrate: "claude", extra: opts.env }),
+      ...(opts.cwd ? { cwd: opts.cwd } : {}),
+      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
+      timeoutMs: opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TIMEOUT_MS,
+      label: "claude",
     });
   }
 }
@@ -174,7 +158,8 @@ function envTimeoutMs(): number | undefined {
  * Claude Code's `--output-format json` envelope shape (as of claude-code
  * v1.x) places the assistant's text response in `.result`. Be defensive —
  * some legacy releases used `.response` instead. Returns undefined when
- * neither key is found, signaling the caller to try text extraction.
+ * neither key is found, signaling the caller to try the lens-shape branch
+ * or raw-stdout extraction.
  */
 function pickClaudeResultText(envelope: unknown): string | undefined {
   if (!envelope || typeof envelope !== "object") return undefined;
@@ -182,4 +167,14 @@ function pickClaudeResultText(envelope: unknown): string | undefined {
   if (typeof obj.result === "string") return obj.result;
   if (typeof obj.response === "string") return obj.response;
   return undefined;
+}
+
+function looksLensShaped(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    ("summary" in (value as Record<string, unknown>) ||
+      "findings" in (value as Record<string, unknown>))
+  );
 }
