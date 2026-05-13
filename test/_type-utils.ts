@@ -1,6 +1,11 @@
 /**
  * Type-level assertion helpers for compile-time invariants in tests.
  *
+ * Lives under `test/` (filename prefixed `_` so test runners skip it as
+ * an entry point) — kept off the production source tree because nothing
+ * in `src/` consumes these and `src/util/` should not become a dumping
+ * ground for compile-time-only test infrastructure.
+ *
  * Usage:
  *   type _Check = Expect<Equal<A, B>>;
  *

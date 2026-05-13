@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { Equal, Expect } from "../src/util/type-utils.ts";
+import type { Equal, Expect } from "./_type-utils.ts";
 import {
   TaskPayloadSchema,
   type ReviewTaskPayload,

@@ -41,16 +41,27 @@ export const TaskPayloadSchema = z
 export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
 
 /**
- * Sender-side narrowing of `ReviewTaskPayload`:
+ * Sender-side narrowing of `ReviewTaskPayload`. Built via `Pick` (not
+ * `Omit`) so the dispatcher type doesn't carry fields it never sends:
  *
  * - `pr_url` is REQUIRED (the dispatcher always knows the full URL — it
  *   constructs it from the parsed PR ref). The `owner/repo/number` alt is
- *   only used by webhooks-side producers, not this CLI's dispatcher.
+ *   only used by webhooks-side producers, not this CLI's dispatcher, so
+ *   those fields are deliberately absent here.
  * - `post` is `true | undefined`, never `false`. Sending an explicit
  *   `false` would clobber the bridge's `payload.post ?? cfg.postReviews`
  *   fallthrough (??-coalesce treats false as a value). See sage#8.
+ *
+ * Tradeoff vs `Omit<ReviewTaskPayload, "post" | "pr_url">`: future
+ * protocol fields added to `TaskPayloadSchema` (e.g. `priority`, `labels`,
+ * `target_lens`) do NOT auto-propagate here — they need an explicit add
+ * to the `Pick` set. The `shape-parity` test in `test/payload.test.ts`
+ * already enforces sender-is-subset-of-receiver, so the gap can only go
+ * one direction (sender lagging behind receiver, never sender drifting
+ * past it). Precision > automatic propagation for the dispatcher's
+ * tightly-scoped surface.
  */
-export type DispatchTaskPayload = Omit<ReviewTaskPayload, "post" | "pr_url"> & {
+export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms"> & {
   pr_url: string;
   post?: true;
 };
