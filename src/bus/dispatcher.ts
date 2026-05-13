@@ -28,7 +28,7 @@ export interface DispatchOptions {
   org: string;
   source: string;
   credsFile?: string | undefined;
-  /** Set to `true` to ask the receiver to post the review. Default false. */
+  /** CLI `--post`. See {@link buildReviewTaskPayload} for the omit-vs-false semantic. */
   post: boolean;
   /** Hard wait cap in seconds — exits non-zero if no completed/failed arrives. */
   waitSeconds: number;
@@ -42,6 +42,48 @@ export interface DispatchOptions {
 
 const td = new TextDecoder();
 const te = new TextEncoder();
+
+export interface BuildReviewTaskPayloadInput {
+  prUrl: string;
+  /** Boolean from CLI; only `true` → opt-in. `false` → omit field. */
+  post: boolean;
+  /** Optional per-lens pi timeout to forward to the daemon (seconds). */
+  timeoutSeconds?: number;
+}
+
+/**
+ * Outgoing shape of the dispatch envelope's payload. Sender-side counterpart
+ * to `bridge.ts`'s `ReviewTaskPayload` (incoming, Zod-validated) — same
+ * module, opposite direction, narrower contract (`post?: true` here vs
+ * `post?: boolean` there). See {@link buildReviewTaskPayload} for the
+ * omit-vs-false rationale.
+ */
+export interface DispatchTaskPayload {
+  pr_url: string;
+  post?: true;
+  timeout_ms?: number;
+}
+
+/**
+ * Pure helper that shapes the dispatch envelope's payload. Extracted so the
+ * fix for sage#8 is unit-testable without bringing up NATS. The function is
+ * a single-callsite helper today (only `dispatchReview` calls it in
+ * production); the explicit tradeoff is broader-public-surface for
+ * round-trip-free unit coverage of the subtle `??`-omit semantic.
+ *
+ * Semantic: `post` is OPT-IN only. The CLI's `--post` flag (default false)
+ * sends `payload.post=true` when set, and OMITS the field otherwise.
+ * Omitting lets the bridge's `payload.post ?? cfg.postReviews` lookup fall
+ * through to the daemon-side default; sending an explicit `false` would
+ * short-circuit past that default (??-coalesce treats false as a value).
+ */
+export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): DispatchTaskPayload {
+  return {
+    pr_url: input.prUrl,
+    ...(input.post ? { post: true as const } : {}),
+    ...(input.timeoutSeconds ? { timeout_ms: input.timeoutSeconds * 1000 } : {}),
+  };
+}
 
 export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   const ref = parsePrRef(opts.prRef);
@@ -58,11 +100,14 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     source: opts.source,
     type: "tasks.code-review.typescript",
     correlationId,
-    payload: {
-      pr_url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+    // Structural cast to satisfy buildEnvelope's `Record<string, unknown>`
+    // input; the precise DispatchTaskPayload shape is preserved at the
+    // helper's return type for tests and other readers.
+    payload: buildReviewTaskPayload({
+      prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
       post: opts.post,
-      ...(opts.timeoutSeconds ? { timeout_ms: opts.timeoutSeconds * 1000 } : {}),
-    },
+      ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+    }) as unknown as Record<string, unknown>,
   });
   const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
 
