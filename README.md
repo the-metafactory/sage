@@ -65,6 +65,17 @@ Without `--post` Sage renders the review to stdout. With `--post`, Sage submits 
 bun run src/cli/index.ts serve --nats nats://localhost:4222 --org metafactory
 ```
 
+### NATS-driven dispatch (with a running daemon)
+
+```bash
+bun run src/cli/index.ts dispatch the-metafactory/sage#1
+```
+
+Publishes a `tasks.code-review.typescript` envelope and streams the
+`dispatch.task.*` lifecycle + `code.pr.review.*` verdict back. Exits 0 on
+`completed`, 1 on `failed`, 2 on timeout. Pass `--post` to ask the receiver
+to post the review to GitHub via `gh`. Pass `--wait 1200` to bump the cap.
+
 Subscribes to:
 
 - `local.{org}.tasks.code-review.>` (broadcast — competing consumer)
@@ -146,7 +157,14 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/pi/env.ts` | `buildPiEnv()` — allow-listed env forwarding to the subprocess |
 | `src/github/gh.ts` | `gh pr view/diff/review` wrapper, PR-ref parser |
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
-| `src/lenses/code-quality.ts` | The first lens (CodeQuality). |
+| `src/lenses/base.ts` | Shared lens scaffolding (`runLens`, prompt template) |
+| `src/lenses/applicability.ts` | Trigger heuristics for conditional lenses |
+| `src/lenses/code-quality.ts` | CodeQuality lens (always fires) |
+| `src/lenses/security.ts` | Security lens — fires on auth/input/secret/crypto signals |
+| `src/lenses/architecture.ts` | Architecture lens — fires on new modules / schema / dep changes |
+| `src/lenses/ecosystem-compliance.ts` | EcosystemCompliance lens — fires on cortex.yaml / arc-manifest / hooks / SKILL.md |
+| `src/lenses/performance.ts` | Performance lens — fires on hot-path / sync-IO / N+1 signals |
+| `src/cli/dispatch.ts` | `sage dispatch` — bus-driven review trigger |
 | `src/lenses/workflow.ts` | Per-PR orchestration: fetch → lenses → verdict → optional post |
 | `persona.md` | Sage's reviewing voice and principles (root copy shipped by arc) |
 | `ISA.md` | Ideal State Articulation (E3 tier) |

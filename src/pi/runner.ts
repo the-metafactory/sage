@@ -23,6 +23,19 @@ export interface PiRunOptions {
    * anything that might exceed ARG_MAX.
    */
   stdin?: string;
+  /**
+   * Optional system prompt (sent as SYSTEM role to the underlying LLM via
+   * pi's `--system-prompt` flag). Use this for output-contract directives
+   * — the model obeys system-role instructions more strictly than
+   * user-message instructions.
+   */
+  systemPrompt?: string;
+  /**
+   * Thinking level passthrough — `off | minimal | low | medium | high | xhigh`.
+   * Sage's lens calls default to `off` because the chain-of-thought
+   * reasoning trace ALWAYS includes prose and broke the JSON contract.
+   */
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
   provider?: string;
   model?: string;
   tools?: readonly string[];
@@ -65,6 +78,16 @@ export async function runPi(opts: PiRunOptions): Promise<PiRunResult> {
   if (model) args.push("--model", model);
   if (apiKey) args.push("--api-key", apiKey);
   if (opts.tools && opts.tools.length) args.push("--tools", opts.tools.join(","));
+  // System-role prompting is stricter than passing instructions in the
+  // user message. Sage lens callers should always set systemPrompt for
+  // the JSON contract — improves contract adherence dramatically.
+  if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);
+  // Disable thinking by default for JSON-output callers — the chain-of-
+  // thought trace ALWAYS contains prose, which breaks the JSON contract
+  // (verified across Gemma, Gemini Flash, DeepSeek). Lens callers can
+  // override with thinking: "off" explicitly; absence means "default
+  // pi behavior" (don't pass the flag).
+  if (opts.thinking) args.push("--thinking", opts.thinking);
   args.push(opts.prompt);
 
   const started = Date.now();
@@ -174,45 +197,130 @@ export async function runPiJson<T>(opts: PiRunOptions): Promise<{ result: T; raw
  * Returns `undefined` if all four fail.
  */
 function extractJson<T>(text: string): T | undefined {
-  // 0) Raw text — preserves the happy path.
-  const candidates: string[] = [text];
+  // Candidate list across multiple shapes, tried in order. Raw goes FIRST
+  // (zero false-positive risk when the model obeys the contract — cheap
+  // happy path). Then the multi-shape fallbacks for verbose / chain-of-
+  // thought / fenced-block outputs.
+  const candidates: string[] = [];
 
-  // 1) Greedy fence.
-  const fenceGreedy = /^```(?:json)?\s*\n([\s\S]*)\n```\s*$/;
-  const g = text.match(fenceGreedy);
-  if (g && g[1]) candidates.push(g[1]);
+  // 1) Raw text — happy path for contract-obeying models.
+  candidates.push(text);
 
-  // 2) Brace slice with balanced-depth walk. Starts at the first `{` and
-  //    advances until depth returns to zero, respecting string literals and
-  //    escape sequences. Avoids feeding the parser a multi-megabyte string
-  //    when pi emits diagnostic prose alongside the JSON.
-  const balanced = findBalancedObject(text);
-  if (balanced) candidates.push(balanced);
+  // 2) All fenced blocks, LAST first. Captures both ```json … ``` and
+  //    plain ```…``` shapes. Verbose models with reasoning traces almost
+  //    always emit their final answer inside the LAST fenced block.
+  for (const block of allFencedBlocks(text).reverse()) {
+    candidates.push(block);
+  }
 
-  // 3) Non-greedy fence.
-  const fenceNonGreedy = /```(?:json)?\s*\n([\s\S]*?)\n```/;
-  const ng = text.match(fenceNonGreedy);
-  if (ng && ng[1]) candidates.push(ng[1]);
+  // 3) All balanced-brace objects in the text, LARGEST first. The model's
+  //    actual review JSON is typically the longest balanced span; smaller
+  //    spans tend to be example JSON inside the reasoning trace.
+  const balancedAll = findAllBalancedObjects(text).sort(
+    (a, b) => b.length - a.length,
+  );
+  for (const b of balancedAll) candidates.push(b);
 
+  // 4) Trailing balanced object — defensive: walks backwards from the LAST
+  //    `}` to find the matching `{`. Handles "reasoning trace + JSON-at-
+  //    very-end with no fence" shape that all the patterns above miss.
+  const trailing = findTrailingBalancedObject(text);
+  if (trailing) candidates.push(trailing);
+
+  for (const c of candidates) {
+    try {
+      const parsed = JSON.parse(c);
+      // Sanity: the lens contract requires an object with `summary` /
+      // `findings`. Accept any other JSON if it parses, but prefer an
+      // object that looks lens-shaped. First match wins.
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        ("summary" in parsed || "findings" in parsed)
+      ) {
+        return parsed as T;
+      }
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  // Last resort — accept ANY parseable JSON object/array even if it doesn't
+  // look lens-shaped. Caller may still get usable data; lens-shape mismatch
+  // surfaces as zero findings downstream rather than a crash.
   for (const c of candidates) {
     try {
       return JSON.parse(c) as T;
     } catch {
-      // Try next candidate.
+      // ignore
     }
   }
   return undefined;
 }
 
 /**
- * Walk from the first `{` and return the smallest balanced object span.
- * Respects string literals (so `{` inside `"…"` doesn't increment depth)
- * and backslash escapes. Returns undefined if the braces are unbalanced.
+ * Find EVERY balanced object span in the text. Used by extractJson to
+ * collect every plausible JSON candidate when the model emits a long
+ * reasoning trace with multiple `{...}` shapes inside (e.g. JSON examples
+ * inside the prompt instruction, then the actual review at the end).
  */
-function findBalancedObject(text: string): string | undefined {
-  const start = text.indexOf("{");
-  if (start === -1) return undefined;
+function findAllBalancedObjects(text: string): string[] {
+  const objects: string[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf("{", cursor);
+    if (start === -1) break;
+    const span = walkBalanced(text, start);
+    if (span) {
+      objects.push(span);
+      cursor = start + span.length;
+    } else {
+      cursor = start + 1;
+    }
+  }
+  return objects;
+}
 
+/**
+ * Mirror of findBalancedObject but walking BACKWARDS from the last `}`.
+ * Catches "reasoning trace + JSON-at-very-end" shapes where the trailing
+ * object is the answer and earlier balanced objects are examples.
+ */
+function findTrailingBalancedObject(text: string): string | undefined {
+  const end = text.lastIndexOf("}");
+  if (end === -1) return undefined;
+
+  let depth = 0;
+  let inString = false;
+
+  for (let i = end; i >= 0; i--) {
+    const ch = text[i];
+    // Backwards string-state tracking is asymmetric — escapes precede the
+    // escaped char, not follow it. The simplest approximation: track only
+    // unescaped quotes by looking at the preceding char each time. Good
+    // enough for the LLM-output case where strings are well-formed.
+    if (inString) {
+      if (ch === '"' && text[i - 1] !== "\\") inString = false;
+      continue;
+    }
+    if (ch === '"' && text[i - 1] !== "\\") {
+      inString = true;
+      continue;
+    }
+    if (ch === "}") depth++;
+    else if (ch === "{") {
+      depth--;
+      if (depth === 0) return text.slice(i, end + 1);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Shared forward-walk used by findBalancedObject and findAllBalancedObjects.
+ */
+function walkBalanced(text: string, start: number): string | undefined {
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -236,4 +344,22 @@ function findBalancedObject(text: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Extract every fenced block (```…``` and ```json…```) regardless of where
+ * it sits in the text. Returns the bodies in document order; caller
+ * decides priority.
+ */
+function allFencedBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  // Greedy across many fences: capture pairs `\`\`\`(json)?\n … \n\`\`\``.
+  // Use a stateful regex with `g` flag to walk the string. Non-greedy on
+  // the body so multi-block output yields separate captures.
+  const re = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m[1]) blocks.push(m[1]);
+  }
+  return blocks;
 }

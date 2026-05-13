@@ -1,5 +1,6 @@
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
-import { reviewCodeQuality } from "./code-quality.ts";
+import { persistVerdict } from "../util/persistence.ts";
+import { LENSES } from "./registry.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
 export interface ReviewOptions {
@@ -21,38 +22,48 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const pr = await prView(opts.ref);
   const diff = await prDiff(opts.ref);
 
+  const ctx = { pr, diff };
+  const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
   const lensReports: LensReport[] = [];
 
-  const cq = await reviewCodeQuality({
-    pr,
-    diff,
-    ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
-  });
-  lensReports.push(cq);
-  // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
-  // — a publish failure must not discard a completed review. Log and move on.
-  try {
-    await opts.onLensComplete?.(cq);
-  } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    console.error(`[sage] onLensComplete (CodeQuality) failed: ${m}`);
+  // Iterate the declared lens registry. Each entry self-describes its
+  // optional applicability predicate, so adding lens #6 is a single-file
+  // edit in src/lenses/registry.ts — no changes here. Per cortex/docs/
+  // design-pi-dev-review-agent.md §7.
+  for (const lens of LENSES) {
+    if (lens.applies && !lens.applies(ctx)) continue;
+    const report = await lens.review({ pr, diff, ...timeout });
+    lensReports.push(report);
+    // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
+    // — a publish failure must not discard a completed review. Log and move on.
+    try {
+      await opts.onLensComplete?.(report);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
+    }
   }
 
-  // Future lenses (Security, Architecture, EcosystemCompliance, Performance)
-  // plug in here. Each becomes an additional report appended to lensReports.
-
   const verdict = decideVerdict(lensReports);
+  const body = renderReviewBody(verdict);
+
+  // Persist the verdict + rendered body BEFORE the network call. If postReview
+  // fails permanently (network or otherwise), the operator can re-post from
+  // disk without re-running the lenses. ~/.config/sage/reviews/<repo>-<pr>.json
+  // holds the latest verdict per PR; older ones are overwritten on next run.
+  persistVerdict(opts.ref, verdict, body);
 
   if (opts.post) {
     await postReview({
       ref: opts.ref,
       event: verdictToEvent(verdict.decision),
-      body: renderReviewBody(verdict),
+      body,
     });
   }
 
   return { verdict, posted: opts.post === true };
 }
+
 
 function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
   switch (decision) {

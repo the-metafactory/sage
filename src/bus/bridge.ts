@@ -1,7 +1,7 @@
-import { connect, credsAuthenticator, type NatsConnection, type Subscription } from "nats";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { type NatsConnection, type Subscription } from "nats";
 import { z } from "zod";
+
+import { connectNats } from "./connect.ts";
 
 import {
   buildEnvelope,
@@ -33,6 +33,8 @@ export const ReviewTaskPayloadSchema = z
     repo: z.string().optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
+    /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */
+    timeout_ms: z.number().int().positive().optional(),
   })
   .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
     message: "payload must contain either pr_url or (owner, repo, number)",
@@ -120,24 +122,15 @@ export interface RunningBridge {
 }
 
 export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
-  const connectOpts: Parameters<typeof connect>[0] = { servers: cfg.natsUrl };
-
-  const credsPath = resolveCredsPath(cfg.credsFile ?? process.env.NATS_CREDS_FILE);
-  if (credsPath && existsSync(credsPath)) {
-    connectOpts.authenticator = credsAuthenticator(readFileSync(credsPath));
-    log(`bridge: using NATS creds at ${credsPath}`);
-  } else if (credsPath) {
-    // Env points at a creds file that doesn't exist — common when sage is
-    // installed via arc but `cortex creds issue sage` hasn't yet run
-    // (cortex daemon not up, or operator using an unauthenticated local
-    // broker). Soft-fall to unauthenticated rather than crash on
-    // ENOENT — daemon retry loop should not flap on a recoverable state.
-    log(`bridge: NATS_CREDS_FILE=${credsPath} does not exist — connecting unauthenticated`);
-  } else {
-    log(`bridge: connecting unauthenticated (no NATS_CREDS_FILE / cfg.credsFile)`);
-  }
-
-  const nc = await connect(connectOpts);
+  // Connect via the shared helper. It handles creds-path resolution, the
+  // ENOENT soft-fallback (missing sage.creds file is a legitimate dev
+  // state), and authenticator setup. Both bridge.ts and dispatcher.ts
+  // use the same helper so transport behavior can't drift between them.
+  const nc = await connectNats({
+    natsUrl: cfg.natsUrl,
+    ...(cfg.credsFile ? { credsFile: cfg.credsFile } : {}),
+    log: (m) => log(`bridge: ${m}`),
+  });
   // Register connection-level event listeners BEFORE any subscribe/publish.
   // The nats.js client emits 'error' on the connection (not via thrown
   // exceptions) for transport-level failures during fire-and-forget
@@ -278,6 +271,7 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     const result = await reviewPr({
       ref,
       post: payload.post ?? cfg.postReviews ?? false,
+      ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
       onLensComplete: async (lens) => {
         await publish(
           nc,
@@ -362,11 +356,6 @@ function resolvePrRef(payload: ReviewTaskPayload): PrRef | undefined {
   return undefined;
 }
 
-function resolveCredsPath(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  if (raw.startsWith("~/")) return raw.replace(/^~/, homedir());
-  return raw;
-}
 
 /**
  * Stream NATS connection status events to the log so a transport hiccup
