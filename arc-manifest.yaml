@@ -108,13 +108,9 @@ capabilities:
       - git             # repo introspection
       - bun             # runtime
       - launchctl       # daemon lifecycle (install/uninstall scripts only)
+  # All optional. Whichever provider key is set in the daemon env reaches
+  # the pi subprocess via buildPiEnv allow-list (src/pi/env.ts).
   secrets:
-    - name: OPENROUTER_API_KEY
-      optional: true
-      reason: pi.dev provider auth — forwarded to subprocess via buildPiEnv allow-list
-    - name: ANTHROPIC_API_KEY
-      optional: true
-      reason: alternate pi.dev provider
-    - name: OPENAI_API_KEY
-      optional: true
-      reason: alternate pi.dev provider
+    - OPENROUTER_API_KEY
+    - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
