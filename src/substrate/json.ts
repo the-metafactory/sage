@@ -1,4 +1,4 @@
-import type { SubstrateRunOptions, SubstrateRunResult } from "./types.ts";
+import type { Substrate, SubstrateRunOptions, SubstrateRunResult } from "./types.ts";
 
 /**
  * JSON-extraction utilities for substrate output.
@@ -44,6 +44,12 @@ export async function runJsonViaTextExtraction<T>(
     );
   }
   return { result: parsed, raw };
+}
+
+export function textExtractionRunJson(
+  run: (opts: SubstrateRunOptions) => Promise<SubstrateRunResult>,
+): Substrate["runJson"] {
+  return <T>(opts: SubstrateRunOptions) => runJsonViaTextExtraction<T>(run, opts);
 }
 
 export function extractJson<T>(text: string): T | undefined {

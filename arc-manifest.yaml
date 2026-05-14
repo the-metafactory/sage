@@ -50,11 +50,11 @@ depends_on:
       version: ">=1.1.0"
     - name: gh
       version: ">=2.0.0"
-    # One of these LLM substrate binaries is also required:
-    # - name: pi | claude | codex
-    #   version: "at least one required; enforced by lifecycle.preinstall"
+    - name: pi
+      version: "default LLM substrate; claude or codex may be used instead"
   # arc/v1 cannot express one-of tool dependencies. The lifecycle preinstall
-  # script enforces that at least one supported LLM substrate is installed.
+  # script enforces that at least one supported LLM substrate is installed:
+  # pi, claude, or codex.
 
 provides:
   # Cortex host (arc 0.26.0 CortexHostAdapter):

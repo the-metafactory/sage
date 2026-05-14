@@ -1,4 +1,4 @@
-import { runJsonViaTextExtraction } from "./json.ts";
+import { textExtractionRunJson } from "./json.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
@@ -36,6 +36,7 @@ export interface PiSubstrateConfig {
 export class PiSubstrate implements Substrate {
   readonly name = "pi" as const;
   readonly displayName = "pi.dev";
+  readonly runJson = textExtractionRunJson((opts) => this.run(opts));
 
   constructor(private readonly cfg: PiSubstrateConfig = {}) {}
 
@@ -77,7 +78,4 @@ export class PiSubstrate implements Substrate {
     });
   }
 
-  runJson<T>(opts: SubstrateRunOptions): Promise<{ result: T; raw: SubstrateRunResult }> {
-    return runJsonViaTextExtraction<T>((o) => this.run(o), opts);
-  }
 }

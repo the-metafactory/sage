@@ -5,8 +5,8 @@ displayName: Sage
 roles: [agent-restricted]
 trust: [luna, holly, ivy, pilot, fern]
 runtime:
-  # Cortex fragments expose a scalar substrate field, so this records the
-  # default; Sage also supports Claude Code and Codex CLI at runtime.
+  # pi-dev default; also supports claude and codex at runtime.
+  # Cortex fragment schema exposes only this scalar substrate field.
   substrate: pi-dev
   mode: standalone
   capabilities:
