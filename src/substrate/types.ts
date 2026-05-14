@@ -9,7 +9,7 @@
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
  *   2. Register it in three sites:
- *        - the `SUBSTRATE_NAMES` tuple in `names.ts`
+ *        - the `SUBSTRATE_NAMES` tuple exported from this module
  *        - the `build()` switch in `select.ts`
  *        - the `SageConfigFile.substrate.<name>` typed field in
  *          `select.ts` so the config loader can carry substrate-specific
