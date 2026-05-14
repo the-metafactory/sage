@@ -40,8 +40,6 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).toEqual([
       "exec",
       "--ephemeral",
-      "--ask-for-approval",
-      "never",
       "--sandbox",
       "read-only",
       "--model",
@@ -83,8 +81,6 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).toEqual([
       "exec",
       "--ephemeral",
-      "--ask-for-approval",
-      "never",
       "--sandbox",
       "workspace-write",
       "--profile",

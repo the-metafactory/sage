@@ -55,11 +55,16 @@ export class CodexSubstrate implements Substrate {
         ? parseSandbox("CODEX_SANDBOX", process.env.CODEX_SANDBOX)
         : parseSandbox("codex sandbox config", this.cfg.sandbox);
 
+    // codex 0.130+ removed `--ask-for-approval` from `codex exec`. `exec`
+    // is non-interactive by construction (no TTY = no prompts), so the
+    // prior `--ask-for-approval never` was already a no-op on those
+    // versions and is now a hard parse error (`error: unexpected
+    // argument '--ask-for-approval' found`). Rely on `--sandbox` as the
+    // safety boundary; approval policy, if a caller needs to pin it
+    // explicitly, is now set through TOML override (`-c approval_policy=...`).
     const args: string[] = [
       "exec",
       "--ephemeral",
-      "--ask-for-approval",
-      "never",
       "--sandbox",
       sandbox,
     ];
