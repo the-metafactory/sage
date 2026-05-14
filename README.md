@@ -85,7 +85,8 @@ Subscribes to:
 
 Publishes:
 
-- `local.{org}.dispatch.task.{started,progress,completed,failed}`
+- `local.{org}.dispatch.task.{started,progress,completed,failed,post-failed}`
+  - `post-failed` (sage#16): lens work succeeded but the `gh pr review` call threw. Verdict is on disk at `~/.config/sage/reviews/<owner>-<repo>-<n>.{json,md}`; the envelope payload carries the original `verdict` plus a structured `error: { message }`. Sibling of `failed` in the lifecycle namespace because it describes what happened to the message, not the message itself.
 - `local.{org}.code.pr.review.{approved,changes-requested,commented}`
 
 ### Task envelope payload

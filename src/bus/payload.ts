@@ -19,11 +19,33 @@ import { z } from "zod";
  * Refinement: an envelope must carry EITHER a `pr_url` or the
  * `owner+repo+number` triple. The daemon's `resolvePrRef` handles both.
  */
+/**
+ * GitHub character set for org logins and repository names. Logins are
+ * `[A-Za-z0-9]` plus single (non-consecutive) dashes — no leading,
+ * trailing, or double dashes — capped at 39 chars; repo names
+ * additionally allow `.` and `_` up to 100 chars. We use a narrow
+ * safe-character regex because these values cross the NATS bus trust
+ * boundary and are eventually rendered into operator-facing shell
+ * hints (sage#16 review). Anything that's not a valid GitHub identifier
+ * shouldn't reach the daemon in the first place.
+ *
+ * Owner regex enforces GitHub's actual "no consecutive hyphens" rule
+ * via a positive lookahead — each `-` must be followed by another
+ * alphanumeric.
+ */
+const GH_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+// Repo names: alphanumeric, `_`, `-`, and `.` — but NO leading/trailing
+// `.` and NO consecutive `..`. `..` in particular is a path-traversal
+// vector if it ever reached on-disk filename construction
+// (sage#16 round-6 review). Positive-lookahead trick: every `.` must
+// be followed by a non-dot.
+const GH_REPO_RE = /^[A-Za-z0-9_-](?:[A-Za-z0-9_-]|\.(?=[A-Za-z0-9_-])){0,99}$/;
+
 export const TaskPayloadSchema = z
   .object({
     pr_url: z.string().url().optional(),
-    owner: z.string().optional(),
-    repo: z.string().optional(),
+    owner: z.string().regex(GH_OWNER_RE).max(39).optional(),
+    repo: z.string().regex(GH_REPO_RE).max(100).optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
     /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */

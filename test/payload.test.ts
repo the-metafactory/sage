@@ -103,6 +103,53 @@ describe("TaskPayloadSchema (runtime)", () => {
     const r = TaskPayloadSchema.safeParse({ pr_url: "not a url" });
     expect(r.success).toBe(false);
   });
+
+  // sage#16 round 2 — owner/repo cross the NATS bus trust boundary and
+  // get interpolated into operator-typeable shell hints, so they must
+  // match the actual GitHub character set. The dispatcher applies a
+  // second defense-in-depth sanitize, but malformed envelopes shouldn't
+  // even reach `resolvePrRef`.
+  test.each([
+    "owner with spaces",
+    "owner;rm -rf /",
+    "$(whoami)",
+    "`id`",
+    "owner/extra-slash",
+    "-leading-dash",
+    "trailing-dash-",
+    "double--dash",
+    "a--b", // embedded consecutive hyphens — explicit pin per round-5 review
+    "a".repeat(40), // length cap: GitHub permits at most 39
+    "",
+  ])("rejects unsafe owner=%s", (owner) => {
+    const r = TaskPayloadSchema.safeParse({ owner, repo: "y", number: 1 });
+    expect(r.success).toBe(false);
+  });
+
+  test.each([
+    "repo;rm -rf /",
+    "$(whoami)",
+    "repo/extra",
+    "with spaces",
+    ".leading-dot",
+    "trailing-dot.",
+    "double..dot", // path-traversal vector — must reject
+    "..",
+    ".",
+    "",
+  ])("rejects unsafe repo=%s", (repo) => {
+    const r = TaskPayloadSchema.safeParse({ owner: "x", repo, number: 1 });
+    expect(r.success).toBe(false);
+  });
+
+  test("accepts realistic GitHub owner + repo names", () => {
+    const r = TaskPayloadSchema.safeParse({
+      owner: "the-metafactory",
+      repo: "sage-v2.foo_bar",
+      number: 1,
+    });
+    expect(r.success).toBe(true);
+  });
 });
 
 describe("DispatchTaskPayload (sender narrowing)", () => {

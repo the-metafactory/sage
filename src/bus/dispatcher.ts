@@ -131,9 +131,27 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
     void consume(lifecycleSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
-      const detail = (env.payload as Record<string, unknown>) ?? {};
-      if (Object.keys(detail).length > 0) {
-        log(`  payload: ${JSON.stringify(detail)}`);
+      const payload = (env.payload as Record<string, unknown>) ?? {};
+
+      // `dispatch.task.post-failed` (sage#16) is the operational sibling
+      // of `dispatch.task.failed` — lens work succeeded, GH post
+      // crashed. The verdict is on disk at
+      // ~/.config/sage/reviews/<safe>-<safe>-<n>.{json,md}; surface a
+      // recovery hint with operator-typeable values. CRITICAL: the ref
+      // owner/repo come from a NATS publisher that this process does
+      // NOT control, so they pass through `sanitizeRefSegment` before
+      // any string interpolation — same character class
+      // `persistVerdict` uses for its on-disk filename, which also
+      // means the printed `cat` path matches what's actually on disk.
+      if (env.type === "dispatch.task.post-failed") {
+        handlePostFailed(payload);
+        // dispatch.task.completed still arrives after this — let it
+        // resolve the dispatcher exit code.
+        return;
+      }
+
+      if (Object.keys(payload).length > 0) {
+        log(`  payload: ${JSON.stringify(payload)}`);
       }
       if (env.type === "dispatch.task.completed") {
         finish(0);
@@ -194,3 +212,47 @@ function log(msg: string): void {
   // eslint-disable-next-line no-console
   console.error(`${LOG_PREFIX} ${msg}`);
 }
+
+/**
+ * Format the `dispatch.task.post-failed` envelope payload into operator-
+ * facing log lines: the error summary plus the recovery hint.
+ *
+ * Uses ONLY `payload.recovery_path` for the hint — `ref.owner` and
+ * `ref.repo` are NOT interpolated to avoid any possibility of shell
+ * metacharacters in attacker-influenced fields reaching the operator's
+ * terminal via `console.error`. The operator copies the printed `cat`
+ * command and pipes it to their own `gh pr review` invocation with
+ * the repo coords they already know.
+ */
+/**
+ * Whitelist for the recovery_path string — absolute path, slug-safe
+ * segments, ends with `.md`. CRITICALLY: rejects any segment that is
+ * `..` (path-traversal vector). Anything else means the envelope was
+ * malformed or hostile; we drop the recovery hint rather than echo
+ * arbitrary text into the operator's terminal.
+ */
+function isSafeRecoveryPath(p: string): boolean {
+  if (!p.startsWith("/") || !p.endsWith(".md")) return false;
+  if (!/^[A-Za-z0-9_./-]+$/.test(p)) return false;
+  // Reject any `..` segment — `/foo/../bar.md` could traverse out of
+  // the reviews directory. The slug regex above lets `..` through as
+  // chars; this explicit segment check closes that gap.
+  return !p.split("/").includes("..");
+}
+
+function handlePostFailed(payload: Record<string, unknown>): void {
+  const errObj = payload.error as { message?: unknown } | string | undefined;
+  const errorMsg =
+    typeof errObj === "string"
+      ? errObj
+      : typeof errObj?.message === "string"
+        ? errObj.message
+        : "<no error message>";
+  log(`  post-failed: ${errorMsg}`);
+
+  const recoveryPath = payload.recovery_path;
+  if (typeof recoveryPath === "string" && isSafeRecoveryPath(recoveryPath)) {
+    log(`  recover: cat ${recoveryPath} | gh pr review --body-file -  # add --repo OWNER/REPO and PR number`);
+  }
+}
+

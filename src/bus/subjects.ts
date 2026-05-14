@@ -11,8 +11,16 @@ export type { SubjectConfig };
  *   - Direct:     local.{org}.tasks.@did-mf-sage.>
  *
  * Outbound (publish):
- *   - Lifecycle:  local.{org}.dispatch.task.{started|progress|completed|failed}
+ *   - Lifecycle:  local.{org}.dispatch.task.{started|progress|completed|failed|post-failed}
  *   - Verdict:    local.{org}.code.pr.review.{approved|changes-requested|commented}
+ *
+ * Boundary: the `code.pr.review.>` root is reserved for *review outcomes*
+ * (the persona's verdict on the PR). Operational signals like a GH-post
+ * delivery failure (`post-failed`) live under the dispatch lifecycle
+ * namespace, not the verdict namespace — they describe what happened to
+ * the message, not the message itself. The previous placement under
+ * `code.pr.review.post-failed` (sage#16 PR #20 round 1) conflated those
+ * two concerns and forced verdict-wildcard consumers to filter.
  */
 
 export function broadcastSubject(cfg: SubjectConfig): string {
@@ -25,10 +33,15 @@ export function directSubject(cfg: SubjectConfig): string {
 
 export function dispatchSubject(
   cfg: Pick<SubjectConfig, "org">,
-  phase: "started" | "progress" | "completed" | "failed",
+  phase: "started" | "progress" | "completed" | "failed" | "post-failed",
 ): string {
   return `local.${cfg.org}.dispatch.task.${phase}`;
 }
+// `post-failed` is in the phase union (not a separate function) because
+// it IS just another lifecycle phase from the subject hierarchy's
+// perspective. The earlier `postFailedSubject` wrapper added vocabulary
+// without hiding anything — bridge.ts calls `dispatchSubject({org},
+// "post-failed")` directly.
 
 export function verdictSubject(
   cfg: Pick<SubjectConfig, "org">,

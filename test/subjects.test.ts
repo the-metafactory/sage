@@ -61,4 +61,21 @@ describe("publish-side concrete subjects", () => {
       );
     }
   });
+
+  // `post-failed` sits under the DISPATCH LIFECYCLE namespace (sage#16
+  // PR #20 round 2 review): verdict outcomes describe the message, post
+  // failures describe what happened to it — different facts. The
+  // dispatchLifecycleWildcard subscriber on the dispatcher receives it
+  // without a separate subscription. Goes through `dispatchSubject`
+  // directly — the prior thin wrapper added no logic (round-4 review).
+  test("dispatchSubject('post-failed') lives under dispatch lifecycle root", () => {
+    expect(dispatchSubject({ org: "metafactory" }, "post-failed")).toBe(
+      "local.metafactory.dispatch.task.post-failed",
+    );
+    expect(
+      dispatchSubject({ org: "metafactory" }, "post-failed").startsWith(
+        dispatchLifecycleWildcard({ org: "metafactory" }).replace(".>", "."),
+      ),
+    ).toBe(true);
+  });
 });

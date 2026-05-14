@@ -310,16 +310,63 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       verdictSubject({ org: cfg.org }, result.verdict.decision),
     );
 
-    await publish(
+    // sage#16: post-failed is a lifecycle event, not a verdict outcome.
+    // Recovery path is built by `workflow.ts` (the layer that already
+    // owns persist + post); bridge just relays it on the envelope.
+    const completedPublish = publish(
       nc,
       buildEnvelope({
         source: cfg.source,
         type: "dispatch.task.completed",
         correlationId: env.correlation_id ?? env.id,
-        payload: { ref, decision: result.verdict.decision },
+        payload: {
+          ref,
+          decision: result.verdict.decision,
+          posted: result.posted,
+        },
       }),
       dispatchSubject({ org: cfg.org }, "completed"),
     );
+
+    const publishes: Promise<void>[] = [completedPublish];
+    if (result.postError) {
+      publishes.push(
+        publish(
+          nc,
+          buildEnvelope({
+            source: cfg.source,
+            type: "dispatch.task.post-failed",
+            correlationId: env.correlation_id ?? env.id,
+            payload: {
+              // `ref` is the schema-validated value the bridge received
+              // at ingress via `TaskPayloadSchema`; consumers can trust
+              // it without re-validating.
+              ref,
+              verdict: result.verdict,
+              error: result.postError,
+              recovery_path: result.recoveryPath,
+            },
+            extensions: { substrate: cfg.substrate.name },
+          }),
+          dispatchSubject({ org: cfg.org }, "post-failed"),
+        ),
+      );
+    }
+
+    // `Promise.allSettled` so a NATS hiccup on one envelope can't
+    // suppress the other — `Promise.all` would reject on first failure
+    // and the dispatcher would never see `completed`, hanging until
+    // its --wait expires. `publish` already catches its own errors
+    // (the NATS client publish is fire-and-forget); this is a
+    // belt-and-braces guard for any future caller-side path.
+    const settled = await Promise.allSettled(publishes);
+    for (const s of settled) {
+      if (s.status === "rejected") {
+        log(
+          `bridge: outcome publish failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`,
+        );
+      }
+    }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     await publish(
