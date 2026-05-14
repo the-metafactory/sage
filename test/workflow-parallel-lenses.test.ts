@@ -214,6 +214,50 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     );
   });
 
+  test("onLensComplete fires for errored lenses too (sage#27 Holly round 2 #2)", async () => {
+    // Pre-fix the synthesis happened in a post-allSettled map, which
+    // skipped the callback for rejected slots. The bridge's
+    // dispatch.task.progress stream silently dropped the most
+    // important event — a lens crashing. Round-2 fix: catch inline so
+    // the callback fires uniformly.
+    const realRegistry = await import("../src/lenses/registry.ts");
+    const realLenses = realRegistry.LENSES;
+
+    mock.module("../src/lenses/registry.ts", () => ({
+      ...realRegistry,
+      LENSES: realLenses.map((lens) =>
+        lens.name === "Performance"
+          ? {
+              ...lens,
+              review: async () => {
+                throw new Error("performance lens crashed");
+              },
+            }
+          : lens,
+      ),
+    }));
+
+    const fired: { lens: string; errored?: boolean }[] = [];
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+      onLensComplete: (report) => {
+        fired.push({ lens: report.lens, errored: report.errored });
+      },
+    });
+
+    // All six callbacks fired — clean lenses AND the crashed one.
+    expect(fired.length).toBe(6);
+    const perf = fired.find((f) => f.lens === "Performance");
+    expect(perf).toBeDefined();
+    expect(perf?.errored).toBe(true);
+    // Peers fired without spurious errored flags.
+    const security = fired.find((f) => f.lens === "Security");
+    expect(security?.errored).toBeUndefined();
+  });
+
   test("a lens runtime throw does NOT discard peer reports; errored slot synthesized", async () => {
     // `runLens` (base.ts) wraps substrate errors and returns a finding
     // fallback, so a lens normally cannot throw. This test pins the

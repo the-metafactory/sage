@@ -105,84 +105,85 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // operator paid for, not correctness. Per cortex/docs/design-pi-dev-
   // review-agent.md §7 + sage#26.
   //
-  // `Promise.allSettled` (not `Promise.all`) isolates failures: one lens
-  // throwing must not discard reports already produced by its peers.
-  // Each rejection is converted into a degraded `LensReport` in the
-  // mapping step below so the verdict body still has a slot per lens.
+  // Each lens runs in its own async slot with an inline try/catch:
+  //   - on success: the lens's own `LensReport` is returned
+  //   - on throw:   an `errored: true` `LensReport` is synthesized
+  //                 (severity `important`, captured elapsed time,
+  //                 captured error message)
   //
-  // Order is preserved by filtering against the registry first and
-  // aligning `settled[i]` with `applicable[i]`. The rendered review body
-  // therefore reads the same way regardless of which lens happened to
-  // finish first, which keeps verdict diffs stable for downstream
-  // consumers (cortex dashboard, pilot loop) and matches the registry-
-  // declared reading order in src/lenses/registry.ts §canonical lens
-  // order.
+  // Catching inline (rather than via `Promise.allSettled` post-processing)
+  // ensures `onLensComplete` fires for BOTH the success and failure
+  // paths. Per Holly re-review of sage#27 (finding #2): the lens-
+  // failure event is the most important event in the progress stream,
+  // and silently skipping the callback on rejection meant bridge
+  // consumers never saw it. The lens-completion callback now has a
+  // uniform contract: fires exactly once per applicable lens, with the
+  // report (real or synthesized) the verdict will see.
+  //
+  // Order is preserved by filtering against the registry first;
+  // `Promise.all` keeps the result array aligned with the input. The
+  // rendered review body therefore reads the same way regardless of
+  // which lens happened to finish first, which keeps verdict diffs
+  // stable for downstream consumers (cortex dashboard, pilot loop) and
+  // matches the registry-declared reading order in src/lenses/registry.ts
+  // §canonical lens order.
   const applicable = LENSES.filter(
     (lens) => !lens.applies || lens.applies(ctx),
   );
 
-  const settled = await Promise.allSettled(
+  const lensReports: LensReport[] = await Promise.all(
     applicable.map(async (lens) => {
-      const report = await lens.review({
-        pr,
-        diff,
-        substrate: opts.substrate,
-        ...timeout,
-      });
+      const lensStartedAt = Date.now();
+      let report: LensReport;
+      try {
+        report = await lens.review({
+          pr,
+          diff,
+          substrate: opts.substrate,
+          ...timeout,
+        });
+      } catch (err) {
+        // Defense in depth — `runLens` (base.ts) catches substrate
+        // errors and returns an `errored: true` report rather than
+        // throwing, so today this branch is reached only by lens
+        // implementations that bypass `runLens`. Behavior matches
+        // base.ts's substrate-fallback path so both failure surfaces
+        // produce the same verdict gate and the same rendered body.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
+        );
+        report = {
+          lens: lens.name,
+          summary: `Lens "${lens.name}" failed to execute; verdict cannot rely on this lens.`,
+          findings: [
+            {
+              path: "(lens runtime)",
+              line: 0,
+              severity: "important" as const,
+              title: `${lens.name}: lens runtime error`,
+              rationale: msg,
+            },
+          ],
+          durationMs: Date.now() - lensStartedAt,
+          errored: true,
+        };
+      }
       // Progress callbacks (e.g., NATS publish in daemon mode) fire as
-      // each lens completes — order is now completion-order, not
-      // registry-order. Bridge consumers already treat
-      // `dispatch.task.progress` events as a stream, so the relaxed
-      // ordering matches what they expect. Callback failures stay
-      // non-critical: a publish error must not discard a completed
-      // review.
+      // each lens completes, INCLUDING errored ones. Order is
+      // completion-order, not registry-order — bridge consumers treat
+      // `dispatch.task.progress` events as a stream. Callback failures
+      // are non-critical: a publish error must not discard a completed
+      // lens report.
       try {
         await opts.onLensComplete?.(report);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
+      } catch (cbErr) {
+        const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
         console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
       }
       return report;
     }),
   );
-
-  const lensReports: LensReport[] = settled.map((result, i) => {
-    if (result.status === "fulfilled") return result.value;
-    // A lens throw is unexpected — `runLens` (base.ts) catches substrate
-    // errors and downgrades to a finding internally — but defense in
-    // depth: an unhandled throw from a future lens shouldn't sink peer
-    // reports.
-    //
-    // Severity is `important` (not `nit`) and the report carries
-    // `errored: true`. Both gates feed into `decideVerdict`: a crashed
-    // lens blocks merge because its absence is itself the signal — we
-    // don't know what the lens would have flagged. Per Holly review of
-    // sage#27 (findings #1 and #2): a silently-crashed Security lens
-    // must not produce a `commented` verdict next to five clean reports.
-    const lensName = applicable[i].name;
-    const msg =
-      result.reason instanceof Error
-        ? result.reason.message
-        : String(result.reason);
-    console.error(
-      `[workflow] lens "${lensName}" threw — synthesizing errored report: ${msg}`,
-    );
-    return {
-      lens: lensName,
-      summary: `Lens "${lensName}" failed to execute; verdict cannot rely on this lens.`,
-      findings: [
-        {
-          path: "(lens runtime)",
-          line: 0,
-          severity: "important" as const,
-          title: `${lensName}: lens runtime error`,
-          rationale: msg,
-        },
-      ],
-      durationMs: 0,
-      errored: true,
-    };
-  });
 
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
@@ -293,6 +294,18 @@ function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
 export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string): string {
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
   const sections = verdict.lenses.map((lens) => {
+    // Errored lenses get a distinctive heading + callout so operators
+    // see at a glance that a lens didn't actually run. The synthesized
+    // `important` finding is still rendered below — the callout exists
+    // because matching on path `(lens runtime)` / `(lens output)` was
+    // the only signal in round-1 of sage#27, which Holly correctly
+    // called inadequate. Round-2 fix: load-bearing visual marker.
+    const heading = lens.errored
+      ? `### ${lens.lens} — DID NOT RUN`
+      : `### ${lens.lens}`;
+    const callout = lens.errored
+      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging.\n\n"
+      : "";
     const body =
       lens.findings.length === 0
         ? "_No findings._"
@@ -304,7 +317,7 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
               return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
             })
             .join("\n\n");
-    return `### ${lens.lens}\n${lens.summary}\n\n${body}`;
+    return `${heading}\n${callout}${lens.summary}\n\n${body}`;
   });
   const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
   return [head, ...sections, footer].join("\n\n");

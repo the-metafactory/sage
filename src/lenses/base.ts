@@ -165,24 +165,35 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     console.error(`[sage] ${spec.name} lens JSON extraction failed — falling back to prose finding`);
   }
 
-  // Prose-fallback: model produced output but extractJson couldn't parse it.
-  // Rather than crashing the whole review, ship the raw output back as a
-  // single `nit` finding. The operator still sees the model's analysis on
-  // the PR, and downstream lenses keep firing.
+  // Substrate/extraction-fallback: the lens did not produce a usable
+  // verdict. This is the dominant in-production failure mode — the
+  // running daemon's err.log shows it firing regularly as
+  // `CodeQuality lens JSON extraction failed — falling back to prose
+  // finding`. Operator still sees what happened, and downstream lenses
+  // keep firing.
+  //
+  // Severity is `important` (not `nit`) and `errored: true` is set so
+  // the verdict mechanically blocks merge. Per Holly review of sage#27
+  // round 2 (finding #1): a silently-degraded lens is the same failure
+  // class as a thrown lens, and the verdict gate must treat both the
+  // same. The workflow layer's allSettled-rejection synthesis already
+  // sets these; this branch is the higher-volume path that was missed
+  // in round 1.
   if (!lensResult) {
     return {
       lens: spec.name,
-      summary: "Model output did not match the JSON contract; raw text captured below.",
+      summary: "Lens did not produce a usable verdict; verdict cannot rely on this lens.",
       findings: [
         {
           path: "(lens output)",
           line: 0,
-          severity: "nit",
+          severity: "important",
           title: `${spec.name}: model deviated from JSON contract`,
           rationale: truncate(extractionError, 4000),
         },
       ],
       durationMs: Date.now() - started,
+      errored: true,
     };
   }
 

@@ -18,11 +18,26 @@ export interface LensReport {
   findings: Finding[];
   durationMs: number;
   /**
-   * True when the lens failed to execute (runtime throw, substrate
-   * unavailable). The accompanying `findings` typically carry a single
-   * synthesized `important` entry describing the failure mode, but the
-   * absence of real findings is the load-bearing fact — the verdict must
-   * not approve a PR whose lenses didn't actually run.
+   * True when the lens failed to execute — runtime throw, substrate
+   * unavailable, or model output unparseable as JSON. The accompanying
+   * `findings` carry a single synthesized `important` entry describing
+   * the failure mode, but the absence of real findings is the load-
+   * bearing fact: the verdict must not approve a PR whose lenses didn't
+   * actually run.
+   *
+   * Bus contract — this `LensReport` shape rides NATS via
+   * `onLensComplete` → bridge → `dispatch.task.progress` (lens-level)
+   * and is embedded in the final `code.pr.review.*` verdict envelope.
+   * Downstream consumers fall into two categories:
+   *
+   *   - **trustworthiness-aware** (cortex dashboard verdict trust scoring,
+   *     pilot-loop retry decisions, audit log): SHOULD branch on
+   *     `errored` to distinguish "lens ran, found nothing" from "lens
+   *     never ran"
+   *   - **severity-only** (rendering, merge-gate counters): MAY ignore
+   *     the flag — the synthesized `important` finding ensures their
+   *     existing severity-based logic still flags merge-block via
+   *     `decideVerdict`
    *
    * Optional / omitted on the success path so the on-disk verdict JSON
    * for clean reviews stays byte-identical to pre-#26 output.
