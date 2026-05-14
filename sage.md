@@ -13,17 +13,6 @@ runtime:
     - code-review
     - typescript
     - github-pr-review
-capabilities:
-  bash:
-    allowed: true
-    restricted_to:
-      - pi
-      - claude
-      - codex
-      - gh
-      - git
-      - bun
-      - launchctl
 ---
 
 # Sage — Persona

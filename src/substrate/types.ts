@@ -9,7 +9,7 @@
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
  *   2. Register it in three sites:
- *        - the `SUBSTRATE_NAMES` tuple exported from this module
+ *        - the `SUBSTRATE_NAMES` tuple in `registry.ts`
  *        - the `build()` switch in `select.ts`
  *        - the `SageConfigFile.substrate.<name>` typed field in
  *          `select.ts` so the config loader can carry substrate-specific
@@ -20,8 +20,9 @@
  * only sees this interface.
  */
 
-export const SUBSTRATE_NAMES = ["pi", "claude", "codex"] as const;
-export type SubstrateName = (typeof SUBSTRATE_NAMES)[number];
+import type { SubstrateName } from "./registry.ts";
+
+export type { SubstrateName };
 
 /**
  * Thinking-level passthrough. Sage's lens calls default to `off` because the

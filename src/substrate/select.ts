@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { ClaudeSubstrate, type ClaudeSubstrateConfig } from "./claude.ts";
 import { CodexSubstrate, type CodexSubstrateConfig } from "./codex.ts";
 import { PiSubstrate, type PiSubstrateConfig } from "./pi.ts";
-import { SUBSTRATE_NAMES, type Substrate, type SubstrateName } from "./types.ts";
+import { SUBSTRATE_NAMES } from "./registry.ts";
+import type { Substrate, SubstrateName } from "./types.ts";
 
 /**
  * Resolve which substrate Sage uses for this process. Resolution order

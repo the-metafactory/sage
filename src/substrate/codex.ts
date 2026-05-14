@@ -14,12 +14,16 @@ import type {
  *   - `CODEX_MODEL`      (default model passed as `--model`)
  *   - `CODEX_PROFILE`    (default config profile passed as `--profile`)
  *   - `CODEX_SANDBOX`    (default sandbox; built-in default `read-only`)
+ *   - `CODEX_SYSTEM_PROMPT_MODE` (`inband`, or `native` for CLIs verified to
+ *     support `--system-prompt`; default `inband`)
  *   - `CODEX_TIMEOUT_MS` (default timeout)
  */
 
 const DEFAULT_SANDBOX = "read-only";
 const CODEX_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"] as const;
 type CodexSandbox = (typeof CODEX_SANDBOXES)[number];
+const CODEX_SYSTEM_PROMPT_MODES = ["inband", "native"] as const;
+type CodexSystemPromptMode = (typeof CODEX_SYSTEM_PROMPT_MODES)[number];
 
 export interface CodexSubstrateConfig {
   /** Default `codex` binary on PATH; override for pinned installs. */
@@ -61,7 +65,7 @@ export class CodexSubstrate implements Substrate {
     ];
     if (model) args.push("--model", model);
     if (profile) args.push("--profile", profile);
-    args.push(buildPrompt(opts));
+    args.push(...buildPromptArgs(opts));
 
     return spawnSubstrateFor({
       name: "codex",
@@ -86,15 +90,27 @@ function isCodexSandbox(raw: string): raw is CodexSandbox {
   return CODEX_SANDBOXES.includes(raw as CodexSandbox);
 }
 
-function buildPrompt(opts: SubstrateRunOptions): string {
-  if (!opts.systemPrompt) return opts.prompt;
-  // Codex CLI does not currently expose a native --system-prompt flag, so keep
-  // Sage's system instructions in-band until that CLI surface exists.
-  return [
+function buildPromptArgs(opts: SubstrateRunOptions): string[] {
+  if (!opts.systemPrompt) return [opts.prompt];
+  const mode = parseSystemPromptMode(process.env.CODEX_SYSTEM_PROMPT_MODE);
+  if (mode === "native") return ["--system-prompt", opts.systemPrompt, opts.prompt];
+  return [[
     "System instructions:",
     opts.systemPrompt,
     "",
     "User task:",
     opts.prompt,
-  ].join("\n");
+  ].join("\n")];
+}
+
+function parseSystemPromptMode(raw: string | undefined): CodexSystemPromptMode {
+  const mode = raw?.trim() || "inband";
+  if (isSystemPromptMode(mode)) return mode;
+  throw new Error(
+    `invalid CODEX_SYSTEM_PROMPT_MODE "${mode}" — supported: ${CODEX_SYSTEM_PROMPT_MODES.join(", ")}`,
+  );
+}
+
+function isSystemPromptMode(raw: string): raw is CodexSystemPromptMode {
+  return CODEX_SYSTEM_PROMPT_MODES.includes(raw as CodexSystemPromptMode);
 }
