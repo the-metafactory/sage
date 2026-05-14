@@ -1,5 +1,4 @@
-import { buildSubstrateEnv } from "./env.ts";
-import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
+import { spawnSubstrateFor } from "./base.ts";
 import { runJsonViaTextExtraction } from "./json.ts";
 import type {
   Substrate,
@@ -18,7 +17,6 @@ import type {
  *   - `CODEX_TIMEOUT_MS` (default timeout)
  */
 
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_SANDBOX = "read-only";
 const CODEX_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"] as const;
 type CodexSandbox = (typeof CODEX_SANDBOXES)[number];
@@ -61,15 +59,11 @@ export class CodexSubstrate implements Substrate {
     if (profile) args.push("--profile", profile);
     args.push(buildPrompt(opts));
 
-    return spawnSubstrate({
+    return spawnSubstrateFor({
+      name: "codex",
       bin: this.bin,
       args,
-      env: buildSubstrateEnv({ substrate: "codex", extra: opts.env }),
-      ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs:
-        opts.timeoutMs ?? readTimeoutFromEnv("CODEX_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
-      label: "codex",
+      opts,
     });
   }
 

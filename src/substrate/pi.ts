@@ -1,5 +1,4 @@
-import { buildSubstrateEnv } from "./env.ts";
-import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
+import { spawnSubstrateFor } from "./base.ts";
 import { runJsonViaTextExtraction } from "./json.ts";
 import type {
   Substrate,
@@ -22,10 +21,6 @@ import type {
  *     env-only auth path, so the argv approach is the documented surface.)
  *   - `PI_TIMEOUT_MS`  (default timeout)
  */
-
-// 10 minutes. Big PRs (multi-commit, large diffs) often need >5min on
-// mid-tier providers; the previous 5min default surfaced as opaque timeouts.
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export interface PiSubstrateConfig {
   /** Default `pi` binary on PATH; override for pinned installs. */
@@ -74,14 +69,11 @@ export class PiSubstrate implements Substrate {
     if (opts.thinking) args.push("--thinking", opts.thinking);
     args.push(opts.prompt);
 
-    return spawnSubstrate({
+    return spawnSubstrateFor({
+      name: "pi",
       bin: this.bin,
       args,
-      env: buildSubstrateEnv({ substrate: "pi", extra: opts.env }),
-      ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs: opts.timeoutMs ?? readTimeoutFromEnv("PI_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
-      label: "pi",
+      opts,
     });
   }
 
