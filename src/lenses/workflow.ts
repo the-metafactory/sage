@@ -149,31 +149,38 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const lensReports: LensReport[] = settled.map((result, i) => {
     if (result.status === "fulfilled") return result.value;
     // A lens throw is unexpected — `runLens` (base.ts) catches substrate
-    // errors and downgrades to a `nit` finding internally — but defense
-    // in depth: an unhandled throw from a future lens shouldn't sink
-    // peer reports. Synthesize a degraded report so the verdict still
-    // has a slot per lens and the operator sees what happened.
+    // errors and downgrades to a finding internally — but defense in
+    // depth: an unhandled throw from a future lens shouldn't sink peer
+    // reports.
+    //
+    // Severity is `important` (not `nit`) and the report carries
+    // `errored: true`. Both gates feed into `decideVerdict`: a crashed
+    // lens blocks merge because its absence is itself the signal — we
+    // don't know what the lens would have flagged. Per Holly review of
+    // sage#27 (findings #1 and #2): a silently-crashed Security lens
+    // must not produce a `commented` verdict next to five clean reports.
     const lensName = applicable[i].name;
     const msg =
       result.reason instanceof Error
         ? result.reason.message
         : String(result.reason);
     console.error(
-      `[workflow] lens "${lensName}" threw — synthesizing degraded report: ${msg}`,
+      `[workflow] lens "${lensName}" threw — synthesizing errored report: ${msg}`,
     );
     return {
       lens: lensName,
-      summary: `Lens "${lensName}" failed to execute; other lenses still ran.`,
+      summary: `Lens "${lensName}" failed to execute; verdict cannot rely on this lens.`,
       findings: [
         {
           path: "(lens runtime)",
           line: 0,
-          severity: "nit" as const,
+          severity: "important" as const,
           title: `${lensName}: lens runtime error`,
           rationale: msg,
         },
       ],
       durationMs: 0,
+      errored: true,
     };
   });
 

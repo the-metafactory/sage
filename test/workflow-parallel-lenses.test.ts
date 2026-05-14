@@ -119,6 +119,14 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     // silently passing. The barrier resolves only once all six lenses
     // are simultaneously inside runJson — that is the falsifiable test
     // for parallelism.
+    //
+    // NOTE on what `peakInFlight` measures (Holly #8): the counter
+    // sits on the `runJson` seam, not on `lens.review`. Every lens
+    // in-tree today goes through `runLens` → `substrate.runJson`, so
+    // the two are 1:1. If a future lens skips the substrate (cached,
+    // heuristic-only, deterministic-from-diff) this gauge would
+    // undercount it. Re-pin against a `lens.review` spy if that
+    // happens.
     const EXPECTED_LENSES = 6; // CodeQuality + 5 conditional, all apply for a .ts PR
     let barrierResolve!: () => void;
     const barrier = new Promise<void>((resolve) => {
@@ -206,11 +214,17 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     );
   });
 
-  test("a lens runtime throw does NOT discard peer reports; degraded slot synthesized", async () => {
-    // `runLens` (base.ts) wraps substrate errors and returns a
-    // nit-finding fallback, so a lens normally cannot throw. This test
-    // pins the defense-in-depth path: if a future lens implementation
-    // does throw, peers' reports must survive.
+  test("a lens runtime throw does NOT discard peer reports; errored slot synthesized", async () => {
+    // `runLens` (base.ts) wraps substrate errors and returns a finding
+    // fallback, so a lens normally cannot throw. This test pins the
+    // defense-in-depth path: if a future lens implementation does
+    // throw, peers' reports must survive AND the verdict must reflect
+    // that one lens didn't actually run.
+    //
+    // Per Holly review of sage#27 (findings #1 + #2): the synthesized
+    // slot carries `errored: true` and severity `important`, not the
+    // pre-fix `nit`. A crashed lens blocks merge — its absence is the
+    // signal.
     //
     // Force a throw by mocking the registry to inject a lens that
     // bypasses runLens entirely. The other five real lenses continue
@@ -250,11 +264,71 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     ]);
 
     const security = result.verdict.lenses.find((l) => l.lens === "Security");
+    expect(security?.errored).toBe(true);
     expect(security?.findings.length).toBe(1);
-    expect(security?.findings[0].severity).toBe("nit");
+    expect(security?.findings[0].severity).toBe("important");
     expect(security?.findings[0].rationale).toMatch(/simulated lens crash/);
-    // Peer lenses still produced clean reports.
+    // Peer lenses still produced clean reports without spurious `errored` flags.
     const codeQuality = result.verdict.lenses.find((l) => l.lens === "CodeQuality");
     expect(codeQuality?.findings.length).toBe(0);
+    expect(codeQuality?.errored).toBeUndefined();
+
+    // Verdict mechanically blocks merge — the `important` finding flips
+    // the decision to changes-requested, AND the verdict summary names
+    // the failed lens so the operator can see which coverage they lost.
+    expect(result.verdict.decision).toBe("changes-requested");
+    expect(result.verdict.summary).toMatch(/lens\(es\) failed to run: Security/);
+  });
+
+  test("multi-lens throw — each gets its own errored slot, peers stay clean", async () => {
+    // Holly review of sage#27 (finding #7): a future reviewer who
+    // refactors the synthesis into a shared error accumulator would
+    // pass the single-throw test and silently regress this case. Pin
+    // it now.
+    const realRegistry = await import("../src/lenses/registry.ts");
+    const realLenses = realRegistry.LENSES;
+    const throwers = new Set(["Security", "Architecture", "Performance"]);
+
+    mock.module("../src/lenses/registry.ts", () => ({
+      ...realRegistry,
+      LENSES: realLenses.map((lens) =>
+        throwers.has(lens.name)
+          ? {
+              ...lens,
+              review: async () => {
+                throw new Error(`${lens.name} crashed`);
+              },
+            }
+          : lens,
+      ),
+    }));
+
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+    });
+
+    // Every thrower has its own errored slot referencing its own message.
+    for (const name of throwers) {
+      const slot = result.verdict.lenses.find((l) => l.lens === name);
+      expect(slot?.errored).toBe(true);
+      expect(slot?.findings[0]?.rationale).toMatch(new RegExp(`${name} crashed`));
+    }
+
+    // Peer lenses stayed clean.
+    const peerNames = ["CodeQuality", "EcosystemCompliance", "Maintainability"];
+    for (const name of peerNames) {
+      const peer = result.verdict.lenses.find((l) => l.lens === name);
+      expect(peer?.errored).toBeUndefined();
+      expect(peer?.findings.length).toBe(0);
+    }
+
+    // Verdict summary names all three failures.
+    expect(result.verdict.decision).toBe("changes-requested");
+    expect(result.verdict.summary).toMatch(/Security/);
+    expect(result.verdict.summary).toMatch(/Architecture/);
+    expect(result.verdict.summary).toMatch(/Performance/);
   });
 });

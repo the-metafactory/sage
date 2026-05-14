@@ -77,4 +77,67 @@ describe("decideVerdict", () => {
     expect(v.summary).toMatch(/2 suggestion/);
     expect(v.summary).toMatch(/1 nit/);
   });
+
+  // Holly review of sage#27 (findings #1 + #2): a lens that errored
+  // before producing real findings blocks merge. Its absence is the
+  // signal — we don't know what the lens would have flagged.
+  describe("errored lens (sage#27 Holly review)", () => {
+    function erroredLens(name: string): LensReport {
+      return {
+        lens: name,
+        summary: "lens did not run",
+        findings: [],
+        durationMs: 0,
+        errored: true,
+      };
+    }
+
+    test("errored lens with no findings → changes-requested, not approved", () => {
+      const v = decideVerdict([
+        lens("CodeQuality", []),
+        erroredLens("Security"),
+      ]);
+      expect(v.decision).toBe("changes-requested");
+    });
+
+    test("errored lens summary names the failed lens", () => {
+      const v = decideVerdict([
+        lens("CodeQuality", []),
+        erroredLens("Security"),
+      ]);
+      expect(v.summary).toMatch(/lens\(es\) failed to run: Security/);
+    });
+
+    test("multiple errored lenses all named in summary", () => {
+      const v = decideVerdict([
+        lens("CodeQuality", []),
+        erroredLens("Security"),
+        erroredLens("Performance"),
+      ]);
+      expect(v.summary).toMatch(/Security/);
+      expect(v.summary).toMatch(/Performance/);
+      expect(v.summary).toMatch(/2 lens\(es\)/);
+    });
+
+    test("errored lens combined with real findings — both surface in summary", () => {
+      const v = decideVerdict([
+        lens("CodeQuality", [
+          { path: "a", line: 1, severity: "suggestion", title: "t", rationale: "r" },
+        ]),
+        erroredLens("Security"),
+      ]);
+      expect(v.decision).toBe("changes-requested");
+      expect(v.summary).toMatch(/1 finding/);
+      expect(v.summary).toMatch(/Security/);
+    });
+
+    test("all-clean run stays byte-stable in the summary text", () => {
+      // The pre-#27 "No findings. Sage approves." string is part of
+      // the operator-facing review body; on-disk verdict JSON is
+      // already pinned by other tests. Sanity-check that adding the
+      // errored branch didn't perturb the clean-path summary.
+      const v = decideVerdict([lens("CodeQuality", [])]);
+      expect(v.summary).toBe("No findings. Sage approves.");
+    });
+  });
 });
