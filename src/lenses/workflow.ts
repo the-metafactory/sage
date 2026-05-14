@@ -2,7 +2,12 @@ import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../git
 import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
-import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
+import {
+  buildErroredLensReport,
+  decideVerdict,
+  type LensReport,
+  type ReviewVerdict,
+} from "./types.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -98,25 +103,85 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
-  const lensReports: LensReport[] = [];
 
-  // Iterate the declared lens registry. Each entry self-describes its
-  // optional applicability predicate, so adding lens #6 is a single-file
-  // edit in src/lenses/registry.ts — no changes here. Per cortex/docs/
-  // design-pi-dev-review-agent.md §7.
-  for (const lens of LENSES) {
-    if (lens.applies && !lens.applies(ctx)) continue;
-    const report = await lens.review({ pr, diff, substrate: opts.substrate, ...timeout });
-    lensReports.push(report);
-    // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
-    // — a publish failure must not discard a completed review. Log and move on.
-    try {
-      await opts.onLensComplete?.(report);
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
-    }
-  }
+  // Lens execution is parallel: each lens runs against the same read-only
+  // `pr`/`diff` inputs and produces a disjoint `LensReport`, so the
+  // sequential awaits in the prior implementation were latency the
+  // operator paid for, not correctness. Per cortex/docs/design-pi-dev-
+  // review-agent.md §7 + sage#26.
+  //
+  // Each lens runs in its own async slot with an inline try/catch:
+  //   - on success: the lens's own `LensReport` is returned
+  //   - on throw:   an `errored: true` `LensReport` is synthesized
+  //                 (severity `important`, captured elapsed time,
+  //                 captured error message)
+  //
+  // Catching inline (rather than via `Promise.allSettled` post-processing)
+  // ensures `onLensComplete` fires for BOTH the success and failure
+  // paths. Per Holly re-review of sage#27 (finding #2): the lens-
+  // failure event is the most important event in the progress stream,
+  // and silently skipping the callback on rejection meant bridge
+  // consumers never saw it. The lens-completion callback now has a
+  // uniform contract: fires exactly once per applicable lens, with the
+  // report (real or synthesized) the verdict will see.
+  //
+  // Order is preserved by filtering against the registry first;
+  // `Promise.all` keeps the result array aligned with the input. The
+  // rendered review body therefore reads the same way regardless of
+  // which lens happened to finish first, which keeps verdict diffs
+  // stable for downstream consumers (cortex dashboard, pilot loop) and
+  // matches the registry-declared reading order in src/lenses/registry.ts
+  // §canonical lens order.
+  const applicable = LENSES.filter(
+    (lens) => !lens.applies || lens.applies(ctx),
+  );
+
+  const lensReports: LensReport[] = await Promise.all(
+    applicable.map(async (lens) => {
+      const lensStartedAt = Date.now();
+      let report: LensReport;
+      try {
+        report = await lens.review({
+          pr,
+          diff,
+          substrate: opts.substrate,
+          ...timeout,
+        });
+      } catch (err) {
+        // Defense in depth — `runLens` (base.ts) catches substrate
+        // errors and returns an `errored: true` report rather than
+        // throwing, so today this branch is reached only by lens
+        // implementations that bypass `runLens`. Both synthesis sites
+        // share `buildErroredLensReport` (types.ts) so the verdict
+        // gate, renderer, and bus contract see byte-stable shape
+        // regardless of which failure path triggered (Holly round 3,
+        // finding #2).
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
+        );
+        report = buildErroredLensReport({
+          lens: lens.name,
+          rationale: msg,
+          durationMs: Date.now() - lensStartedAt,
+          source: "runtime",
+        });
+      }
+      // Progress callbacks (e.g., NATS publish in daemon mode) fire as
+      // each lens completes, INCLUDING errored ones. Order is
+      // completion-order, not registry-order — bridge consumers treat
+      // `dispatch.task.progress` events as a stream. Callback failures
+      // are non-critical: a publish error must not discard a completed
+      // lens report.
+      try {
+        await opts.onLensComplete?.(report);
+      } catch (cbErr) {
+        const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
+        console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
+      }
+      return report;
+    }),
+  );
 
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
@@ -227,6 +292,18 @@ function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
 export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string): string {
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
   const sections = verdict.lenses.map((lens) => {
+    // Errored lenses get a distinctive heading + callout so operators
+    // see at a glance that a lens didn't actually run. The `lens.summary`
+    // line is dropped on errored sections to avoid the triple-redundant
+    // statement (heading + callout + summary all saying the same thing
+    // — Holly round 3, finding #3). The synthesized `important` finding
+    // still renders below with the substrate-specific rationale.
+    const heading = lens.errored
+      ? `### ${lens.lens} — DID NOT RUN`
+      : `### ${lens.lens}`;
+    const intro = lens.errored
+      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging."
+      : lens.summary;
     const body =
       lens.findings.length === 0
         ? "_No findings._"
@@ -238,7 +315,7 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
               return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
             })
             .join("\n\n");
-    return `### ${lens.lens}\n${lens.summary}\n\n${body}`;
+    return `${heading}\n${intro}\n\n${body}`;
   });
   const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
   return [head, ...sections, footer].join("\n\n");

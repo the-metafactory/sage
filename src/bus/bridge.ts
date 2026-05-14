@@ -313,6 +313,17 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // sage#16: post-failed is a lifecycle event, not a verdict outcome.
     // Recovery path is built by `workflow.ts` (the layer that already
     // owns persist + post); bridge just relays it on the envelope.
+    //
+    // dispatch.task.completed vs dispatch.task.failed contract
+    // (Holly round 3, sage#27 finding #4): a task is `completed` when
+    // it produced a verdict — even if every applicable lens errored.
+    // `failed` is reserved for the case where no verdict could be
+    // produced at all (e.g., prView/prDiff threw, lens registry
+    // empty). The verdict envelope's `lenses[].errored` flag is the
+    // signal a 6/6-errored run carries; trustworthiness-aware
+    // consumers (cortex dashboard, pilot-loop) must inspect that
+    // field rather than relying on the dispatch.task.{completed,failed}
+    // split.
     const completedPublish = publish(
       nc,
       buildEnvelope({
