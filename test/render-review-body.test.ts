@@ -66,6 +66,28 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
     );
   });
 
+  test("errored section does NOT render lens.summary line (no triple-redundancy)", () => {
+    // Holly round 3 finding #3: pre-fix the operator saw the failure
+    // stated three times — heading, callout, AND lens.summary. The
+    // renderer now drops the lens.summary line on errored sections.
+    // The summary content (`Lens "X" did not produce a usable
+    // verdict; verdict cannot rely on this lens.`) must not appear in
+    // the rendered body even though it's on the LensReport object.
+    const verdict: ReviewVerdict = {
+      decision: "changes-requested",
+      summary: "1 lens(es) failed to run: Security.",
+      lenses: [erroredLens("Security", "pi unreachable")],
+    };
+    const body = renderReviewBody(verdict, "pi.dev");
+    expect(body).not.toMatch(
+      /Lens "Security" failed to execute; verdict cannot rely on this lens\.|did not produce a usable verdict/,
+    );
+    // But the callout (which says roughly the same thing in a more
+    // distinctive form) IS present — single source of truth in the
+    // body.
+    expect(body).toMatch(/Lens failed to execute/);
+  });
+
   test("mixed verdict — errored section marked, clean sections plain", () => {
     const verdict: ReviewVerdict = {
       decision: "changes-requested",

@@ -51,6 +51,58 @@ export interface ReviewVerdict {
   lenses: LensReport[];
 }
 
+/**
+ * Construct an errored `LensReport`. Used at both synthesis sites:
+ *
+ *   - `runLens` (src/lenses/base.ts) — substrate-fallback path; the
+ *     lens's substrate.runJson threw or the model output couldn't be
+ *     parsed. `source: "output"`.
+ *   - `reviewPr` (src/lenses/workflow.ts) — inline-catch path; the
+ *     lens implementation bypassed `runLens` and threw directly.
+ *     `source: "runtime"`.
+ *
+ * Sharing the constructor keeps the `errored: true` contract
+ * byte-stable across both sites — pre-extraction the two sites
+ * carried slightly different summary strings (Holly review of sage#27
+ * round 3, finding #2), which made the rendered review body look
+ * inconsistent depending on which path failed.
+ */
+export interface ErroredLensReportInput {
+  lens: string;
+  rationale: string;
+  durationMs: number;
+  /**
+   * Where the failure surfaced. `runtime` → lens-level throw (the
+   * lens implementation itself crashed). `output` → substrate-level
+   * fallback (the substrate ran but didn't produce a usable verdict).
+   * Only affects the diagnostic finding's `path` and `title` —
+   * everything else is identical between the two paths so the verdict
+   * gate, renderer, and bus contract all behave the same.
+   */
+  source: "runtime" | "output";
+}
+
+export function buildErroredLensReport(opts: ErroredLensReportInput): LensReport {
+  const isRuntime = opts.source === "runtime";
+  return {
+    lens: opts.lens,
+    summary: `Lens "${opts.lens}" did not produce a usable verdict; verdict cannot rely on this lens.`,
+    findings: [
+      {
+        path: isRuntime ? "(lens runtime)" : "(lens output)",
+        line: 0,
+        severity: "important",
+        title: isRuntime
+          ? `${opts.lens}: lens runtime error`
+          : `${opts.lens}: model deviated from JSON contract`,
+        rationale: opts.rationale,
+      },
+    ],
+    durationMs: opts.durationMs,
+    errored: true,
+  };
+}
+
 export function decideVerdict(lenses: LensReport[]): ReviewVerdict {
   const all = lenses.flatMap((l) => l.findings);
   const hasBlocker = all.some((f) => f.severity === "blocker");

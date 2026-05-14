@@ -1,6 +1,6 @@
 import type { PrMetadata } from "../github/gh.ts";
 import type { Substrate } from "../substrate/types.ts";
-import type { Finding, LensReport } from "./types.ts";
+import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
 /**
  * Shared scaffolding for all lenses. Each concrete lens supplies a name,
@@ -162,39 +162,29 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   } catch (err) {
     extractionError = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
-    console.error(`[sage] ${spec.name} lens JSON extraction failed — falling back to prose finding`);
+    console.error(`[sage] ${spec.name} lens substrate/extraction failed — synthesizing errored report`);
   }
 
   // Substrate/extraction-fallback: the lens did not produce a usable
   // verdict. This is the dominant in-production failure mode — the
-  // running daemon's err.log shows it firing regularly as
-  // `CodeQuality lens JSON extraction failed — falling back to prose
-  // finding`. Operator still sees what happened, and downstream lenses
-  // keep firing.
+  // running daemon's err.log shows it firing regularly. Operator still
+  // sees what happened via the synthesized finding, and downstream
+  // lenses keep firing.
   //
-  // Severity is `important` (not `nit`) and `errored: true` is set so
-  // the verdict mechanically blocks merge. Per Holly review of sage#27
-  // round 2 (finding #1): a silently-degraded lens is the same failure
-  // class as a thrown lens, and the verdict gate must treat both the
-  // same. The workflow layer's allSettled-rejection synthesis already
-  // sets these; this branch is the higher-volume path that was missed
-  // in round 1.
+  // Severity is `important` and `errored: true` is set so the verdict
+  // mechanically blocks merge. Per Holly review of sage#27 round 2
+  // (finding #1): a silently-degraded lens is the same failure class
+  // as a thrown lens, and the verdict gate must treat both the same.
+  // The workflow layer's inline-catch synthesis (workflow.ts) is the
+  // sibling path; both go through `buildErroredLensReport` so the
+  // contract stays byte-stable (Holly round 3, finding #2).
   if (!lensResult) {
-    return {
+    return buildErroredLensReport({
       lens: spec.name,
-      summary: "Lens did not produce a usable verdict; verdict cannot rely on this lens.",
-      findings: [
-        {
-          path: "(lens output)",
-          line: 0,
-          severity: "important",
-          title: `${spec.name}: model deviated from JSON contract`,
-          rationale: truncate(extractionError, 4000),
-        },
-      ],
+      rationale: truncate(extractionError, 4000),
       durationMs: Date.now() - started,
-      errored: true,
-    };
+      source: "output",
+    });
   }
 
   const findings = (lensResult.result.findings ?? []).map<Finding>((f) => ({

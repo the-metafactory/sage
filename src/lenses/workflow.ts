@@ -2,7 +2,12 @@ import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../git
 import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
-import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
+import {
+  buildErroredLensReport,
+  decideVerdict,
+  type LensReport,
+  type ReviewVerdict,
+} from "./types.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -146,28 +151,21 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
         // Defense in depth — `runLens` (base.ts) catches substrate
         // errors and returns an `errored: true` report rather than
         // throwing, so today this branch is reached only by lens
-        // implementations that bypass `runLens`. Behavior matches
-        // base.ts's substrate-fallback path so both failure surfaces
-        // produce the same verdict gate and the same rendered body.
+        // implementations that bypass `runLens`. Both synthesis sites
+        // share `buildErroredLensReport` (types.ts) so the verdict
+        // gate, renderer, and bus contract see byte-stable shape
+        // regardless of which failure path triggered (Holly round 3,
+        // finding #2).
         const msg = err instanceof Error ? err.message : String(err);
         console.error(
           `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
         );
-        report = {
+        report = buildErroredLensReport({
           lens: lens.name,
-          summary: `Lens "${lens.name}" failed to execute; verdict cannot rely on this lens.`,
-          findings: [
-            {
-              path: "(lens runtime)",
-              line: 0,
-              severity: "important" as const,
-              title: `${lens.name}: lens runtime error`,
-              rationale: msg,
-            },
-          ],
+          rationale: msg,
           durationMs: Date.now() - lensStartedAt,
-          errored: true,
-        };
+          source: "runtime",
+        });
       }
       // Progress callbacks (e.g., NATS publish in daemon mode) fire as
       // each lens completes, INCLUDING errored ones. Order is
@@ -295,17 +293,17 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
   const sections = verdict.lenses.map((lens) => {
     // Errored lenses get a distinctive heading + callout so operators
-    // see at a glance that a lens didn't actually run. The synthesized
-    // `important` finding is still rendered below — the callout exists
-    // because matching on path `(lens runtime)` / `(lens output)` was
-    // the only signal in round-1 of sage#27, which Holly correctly
-    // called inadequate. Round-2 fix: load-bearing visual marker.
+    // see at a glance that a lens didn't actually run. The `lens.summary`
+    // line is dropped on errored sections to avoid the triple-redundant
+    // statement (heading + callout + summary all saying the same thing
+    // — Holly round 3, finding #3). The synthesized `important` finding
+    // still renders below with the substrate-specific rationale.
     const heading = lens.errored
       ? `### ${lens.lens} — DID NOT RUN`
       : `### ${lens.lens}`;
-    const callout = lens.errored
-      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging.\n\n"
-      : "";
+    const intro = lens.errored
+      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging."
+      : lens.summary;
     const body =
       lens.findings.length === 0
         ? "_No findings._"
@@ -317,7 +315,7 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
               return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
             })
             .join("\n\n");
-    return `${heading}\n${callout}${lens.summary}\n\n${body}`;
+    return `${heading}\n${intro}\n\n${body}`;
   });
   const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
   return [head, ...sections, footer].join("\n\n");
