@@ -142,6 +142,42 @@ describe("deriveSubject", () => {
     });
     expect(deriveSubject(env)).toBe("federated.acme.code.pr.review");
   });
+
+  // sage#22: deriveSubject is now a shim over @the-metafactory/myelin's
+  // canonical subject grammar. With a stack segment, the 6-segment form
+  // is emitted — needed for the stack-aware TASKS stream filter
+  // (cortex#138). Without a stack the call shape is identical to before.
+  test("local + stack → local.{org}.{stack}.{type}", () => {
+    const env = buildEnvelope({
+      source: "metafactory.sage.local",
+      type: "code.pr.review.approved",
+      payload: {},
+    });
+    expect(deriveSubject(env, "ts")).toBe(
+      "local.metafactory.ts.code.pr.review.approved",
+    );
+  });
+
+  test("federated + stack inserts the stack segment", () => {
+    const env = buildEnvelope({
+      source: "acme.bot.prod",
+      type: "code.pr.review",
+      sovereignty: { classification: "federated" },
+      payload: {},
+    });
+    expect(deriveSubject(env, "py")).toBe("federated.acme.py.code.pr.review");
+  });
+
+  test("invalid stack segment surfaces upstream rejection", () => {
+    const env = buildEnvelope({
+      source: "metafactory.sage.local",
+      type: "code.pr.review.approved",
+      payload: {},
+    });
+    // Upper-case isn't allowed by myelin's STACK_SEGMENT_REGEX — let
+    // the upstream throw bubble out so callers see the real error.
+    expect(() => deriveSubject(env, "TS-Bad")).toThrow(/stack segment/i);
+  });
 });
 
 describe("encodeDidSegment", () => {
