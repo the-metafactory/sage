@@ -1,6 +1,6 @@
 import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
 import type { Substrate } from "../substrate/types.ts";
-import { persistVerdict } from "../util/persistence.ts";
+import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
 import { decideVerdict, type ReviewVerdict, type LensReport } from "./types.ts";
 
@@ -39,34 +39,24 @@ export interface ReviewResult {
    */
   postedEvent?: ReviewEvent;
   downgraded?: boolean;
-  /**
-   * Set when `opts.post` was true but `postReview` threw. The lens work
-   * itself succeeded — the verdict is on disk via `persistVerdict` and
-   * the caller can re-post manually. Bridge mode publishes a separate
-   * `dispatch.task.post-failed` envelope so operators can distinguish a
-   * post failure from a lens / dispatch failure (sage#16).
-   *
-   * Structured (not `Error`) so it can cross the NATS bus boundary
-   * without serialization gymnastics and so future fields (`code`,
-   * `retryable`, …) can be added without a breaking change to
-   * `ReviewResult`.
-   */
+  /** Post-step failure detail (set only when `opts.post && !posted`). */
   postError?: PostError;
+  /**
+   * Absolute path to the on-disk verdict file (`.md` form, ready for
+   * `gh pr review --body-file`). Always set when `persistVerdict`
+   * succeeded — the operator can re-post manually after a post
+   * failure. Built by workflow (which already owns the persist/post
+   * sequence) so the bus layer doesn't need to know the storage
+   * layout (sage#16 round-5 review).
+   */
+  recoveryPath?: string;
 }
 
 /**
- * Structured shape for a post-step failure. Crosses process boundaries
- * via the bus, so the contract is plain JSON-shaped data — no `Error`
- * prototype, no stack trace (which leaks file paths from the daemon's
- * filesystem).
+ * Structured shape for a post-step failure. Plain JSON — no `Error`
+ * prototype, no stack trace — so it can cross the NATS bus.
  */
 export interface PostError {
-  /**
-   * Operator-facing error message. Truncated to `POST_ERROR_MAX_LEN` to
-   * cap blast radius if `gh`'s stderr ever echoes unexpected content
-   * (the rejection message in `runGh` embeds the subprocess stderr
-   * verbatim).
-   */
   message: string;
 }
 
@@ -74,12 +64,10 @@ export interface PostError {
  * Cap on UTF-16 characters of `gh` stderr that ride the post-failed
  * envelope. 500 is enough to surface a typical `gh pr review` failure
  * (auth message, HTTP status + body snippet) without becoming a vector
- * for stderr-stuffing if the subprocess crashes mid-output.
- *
- * @internal Exported for the truncation test; not part of the supported
- * API surface.
+ * for stderr-stuffing if the subprocess crashes mid-output. Internal —
+ * tests assert observable truncation behavior, not this constant.
  */
-export const POST_ERROR_MAX_LEN = 500;
+const POST_ERROR_MAX_LEN = 500;
 
 /**
  * Strip control bytes and ANSI escape sequences from a string. `gh`'s
@@ -139,6 +127,12 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // ~/.config/sage/reviews/<owner>-<repo>-<pr>.{json,md} holds the latest
   // verdict per PR; older ones are overwritten on next run.
   persistVerdict(opts.ref, verdict, body);
+  // The recovery path is built here (workflow already owns persist +
+  // post) and threaded through `ReviewResult`. Bridge ships the opaque
+  // string in the post-failed envelope payload, so neither bus nor
+  // dispatcher needs a compile-time dependency on the storage layout
+  // (sage#16 round-5 review).
+  const recoveryPath = verdictFilePath(opts.ref, "md");
 
   const { posted, postedEvent, downgraded, postError } = opts.post
     ? await attemptPost(opts.ref, verdict, body)
@@ -146,6 +140,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   return {
     verdict,
     posted,
+    recoveryPath,
     ...(postedEvent !== undefined ? { postedEvent } : {}),
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),

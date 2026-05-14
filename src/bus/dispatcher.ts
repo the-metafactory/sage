@@ -217,17 +217,12 @@ function log(msg: string): void {
  * Format the `dispatch.task.post-failed` envelope payload into operator-
  * facing log lines: the error summary plus the recovery hint.
  *
- * Extracted from the consume callback so that callback stays a flat
- * dispatch table. The recovery path is taken from
- * `payload.recovery_path` (built by the bridge that knows the storage
- * layout) — this dispatcher keeps no compile-time dependency on the
- * persistence module's path layout.
- *
- * Every field is treated as untrusted: the publisher might be anyone
- * with NATS publish rights on this org's subject space. We extract
- * the bits we need with guarded typeofs and fall through to defensive
- * defaults rather than crashing the consumer loop on a malformed
- * envelope.
+ * Uses ONLY `payload.recovery_path` for the hint — `ref.owner` and
+ * `ref.repo` are NOT interpolated to avoid any possibility of shell
+ * metacharacters in attacker-influenced fields reaching the operator's
+ * terminal via `console.error`. The operator copies the printed `cat`
+ * command and pipes it to their own `gh pr review` invocation with
+ * the repo coords they already know.
  */
 function handlePostFailed(payload: Record<string, unknown>): void {
   const errObj = payload.error as { message?: unknown } | string | undefined;
@@ -239,21 +234,9 @@ function handlePostFailed(payload: Record<string, unknown>): void {
         : "<no error message>";
   log(`  post-failed: ${errorMsg}`);
 
-  const ref = payload.ref as
-    | { owner?: unknown; repo?: unknown; number?: unknown }
-    | undefined;
   const recoveryPath = payload.recovery_path;
-
-  if (
-    ref &&
-    typeof ref.owner === "string" &&
-    typeof ref.repo === "string" &&
-    typeof ref.number === "number" &&
-    typeof recoveryPath === "string"
-  ) {
-    log(
-      `  recover: cat ${recoveryPath} | gh pr review ${ref.number} --repo ${ref.owner}/${ref.repo} --body-file -`,
-    );
+  if (typeof recoveryPath === "string" && recoveryPath.length > 0) {
+    log(`  recover: cat ${recoveryPath} | gh pr review --body-file -  # add --repo OWNER/REPO and PR number`);
   }
 }
 

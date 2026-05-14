@@ -18,7 +18,6 @@ import {
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
 import type { Substrate } from "../substrate/types.ts";
-import { verdictFilePath } from "../util/persistence.ts";
 import { TaskPayloadSchema, type ReviewTaskPayload } from "./payload.ts";
 
 const td = new TextDecoder();
@@ -311,24 +310,9 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       verdictSubject({ org: cfg.org }, result.verdict.decision),
     );
 
-    // Surface a post-step failure on its own envelope so operators can
-    // distinguish "lens work failed" (dispatch.task.failed) from "lens
-    // work succeeded but `gh pr review` crashed" (dispatch.task.post-
-    // failed). Pre-#16 a post error was thrown out of `reviewPr` and
-    // landed in the outer catch below, kicking the whole task to
-    // dispatch.task.failed — which conflated the two failure modes and
-    // discarded an otherwise-valid verdict. The verdict is still
-    // persisted to disk by `persistVerdict`, so a recovery path exists
-    // even when this envelope is the only signal.
-    //
-    // post-failed lives under the dispatch lifecycle namespace (not the
-    // verdict namespace) because it describes what happened to the
-    // message, not the message itself — verdict outcomes and delivery
-    // outcomes are different kinds of facts.
-    // Build post-failed + completed envelopes in parallel when both
-    // need to publish. Neither depends on the other's result; the
-    // sequential `await` chain pre-#16 round-4 traded two NATS
-    // round-trips for no behavioral guarantee.
+    // sage#16: post-failed is a lifecycle event, not a verdict outcome.
+    // Recovery path is built by `workflow.ts` (the layer that already
+    // owns persist + post); bridge just relays it on the envelope.
     const completedPublish = publish(
       nc,
       buildEnvelope({
@@ -344,33 +328,44 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       dispatchSubject({ org: cfg.org }, "completed"),
     );
 
+    const publishes: Promise<void>[] = [completedPublish];
     if (result.postError) {
-      // The recovery path is constructed HERE (in the bridge, which
-      // already owns the persist-then-post sequence) and shipped in the
-      // envelope payload as an opaque string. Dispatcher prints it
-      // without knowing or caring how the path was built — this keeps
-      // the bus layer (`src/bus/`) free of compile-time dependencies on
-      // the persistence layout in `src/util/persistence.ts`.
-      const recoveryPath = verdictFilePath(ref, "md");
-      const postFailedPublish = publish(
-        nc,
-        buildEnvelope({
-          source: cfg.source,
-          type: "dispatch.task.post-failed",
-          correlationId: env.correlation_id ?? env.id,
-          payload: {
-            ref,
-            verdict: result.verdict,
-            error: result.postError,
-            recovery_path: recoveryPath,
-          },
-          extensions: { substrate: cfg.substrate.name },
-        }),
-        dispatchSubject({ org: cfg.org }, "post-failed"),
+      publishes.push(
+        publish(
+          nc,
+          buildEnvelope({
+            source: cfg.source,
+            type: "dispatch.task.post-failed",
+            correlationId: env.correlation_id ?? env.id,
+            payload: {
+              // `ref` is the schema-validated value the bridge received
+              // at ingress via `TaskPayloadSchema`; consumers can trust
+              // it without re-validating.
+              ref,
+              verdict: result.verdict,
+              error: result.postError,
+              recovery_path: result.recoveryPath,
+            },
+            extensions: { substrate: cfg.substrate.name },
+          }),
+          dispatchSubject({ org: cfg.org }, "post-failed"),
+        ),
       );
-      await Promise.all([postFailedPublish, completedPublish]);
-    } else {
-      await completedPublish;
+    }
+
+    // `Promise.allSettled` so a NATS hiccup on one envelope can't
+    // suppress the other — `Promise.all` would reject on first failure
+    // and the dispatcher would never see `completed`, hanging until
+    // its --wait expires. `publish` already catches its own errors
+    // (the NATS client publish is fire-and-forget); this is a
+    // belt-and-braces guard for any future caller-side path.
+    const settled = await Promise.allSettled(publishes);
+    for (const s of settled) {
+      if (s.status === "rejected") {
+        log(
+          `bridge: outcome publish failed: ${s.reason instanceof Error ? s.reason.message : String(s.reason)}`,
+        );
+      }
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);

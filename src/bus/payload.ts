@@ -39,8 +39,8 @@ const GH_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
 export const TaskPayloadSchema = z
   .object({
     pr_url: z.string().url().optional(),
-    owner: z.string().regex(GH_OWNER_RE).optional(),
-    repo: z.string().regex(GH_REPO_RE).optional(),
+    owner: z.string().regex(GH_OWNER_RE).max(39).optional(),
+    repo: z.string().regex(GH_REPO_RE).max(100).optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
     /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */

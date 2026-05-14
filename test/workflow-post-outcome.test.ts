@@ -70,6 +70,9 @@ beforeEach(() => {
     persistVerdict: () => {
       persistedCount++;
     },
+    verdictFilePath: (ref: { owner: string; repo: string; number: number }, ext: string) =>
+      `/tmp/sage-test/${ref.owner}-${ref.repo}-${ref.number}.${ext}`,
+    safeRefSegment: (v: string) => v.replace(/[^a-zA-Z0-9._-]/g, "_"),
   }));
 });
 
@@ -89,6 +92,10 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     expect(result.postError).toBeUndefined();
     expect(persistedCount).toBe(1);
     expect(postReviewCalls).toBe(1);
+    // recoveryPath is set whenever the verdict was persisted (sage#16
+    // round-5 review) — bridge ships it on the post-failed envelope so
+    // dispatcher doesn't need to know storage layout.
+    expect(result.recoveryPath).toBe("/tmp/sage-test/x-y-42.md");
   });
 
   test("posted=false + postError set when postReview throws (does NOT re-throw)", async () => {
@@ -127,8 +134,10 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     });
     expect(result.posted).toBe(false);
     const msg = result.postError?.message ?? "";
-    // Tighter behavioral bound: original message was 5000+ chars; the
+    // Behavioral bound only — original message was 5000+ chars; the
     // truncated form must be under 700 (cap + worst-case suffix).
+    // POST_ERROR_MAX_LEN is module-private; assert on the observable
+    // outcome instead of importing the constant.
     expect(msg.length).toBeLessThanOrEqual(700);
     expect(msg).toMatch(/truncated \d+ chars/);
   });

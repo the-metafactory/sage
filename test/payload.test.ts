@@ -118,6 +118,8 @@ describe("TaskPayloadSchema (runtime)", () => {
     "-leading-dash",
     "trailing-dash-",
     "double--dash",
+    "a--b", // embedded consecutive hyphens — explicit pin per round-5 review
+    "a".repeat(40), // length cap: GitHub permits at most 39
     "",
   ])("rejects unsafe owner=%s", (owner) => {
     const r = TaskPayloadSchema.safeParse({ owner, repo: "y", number: 1 });
