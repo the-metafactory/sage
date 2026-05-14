@@ -13,7 +13,9 @@ const program = new Command();
 
 program
   .name("sage")
-  .description("Sage — botanical code-review agent on pi.dev or Claude Code, speaking Myelin envelopes")
+  .description(
+    "Sage — botanical code-review agent on pi.dev, Claude Code, or Codex CLI, speaking Myelin envelopes",
+  )
   .version("0.1.0");
 
 program
@@ -23,7 +25,7 @@ program
   .option("--post", "Post the review back to the PR via gh", false)
   .option(
     "--substrate <name>",
-    "Coding harness Sage runs through ({pi|claude}). Falls back to SAGE_SUBSTRATE / config / pi.",
+    "Coding harness Sage runs through ({pi|claude|codex}). Falls back to SAGE_SUBSTRATE / config / pi.",
   )
   .option(
     "--timeout <seconds>",
@@ -69,7 +71,7 @@ program
   .option("--did <did>", "Sage's DID", process.env.SAGE_DID ?? "did:mf:sage")
   .option(
     "--substrate <name>",
-    "Coding harness Sage runs through ({pi|claude}). Falls back to SAGE_SUBSTRATE / config / pi.",
+    "Coding harness Sage runs through ({pi|claude|codex}). Falls back to SAGE_SUBSTRATE / config / pi.",
   )
   .option("--no-post", "Do not post reviews back to GitHub (dry-run)")
   .option(
@@ -240,6 +242,10 @@ program
             model: process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6",
             permissionMode: "acceptEdits",
           },
+          codex: {
+            model: process.env.CODEX_MODEL ?? "gpt-5.2",
+            sandbox: "read-only",
+          },
         },
       },
       null,
@@ -253,13 +259,17 @@ program
       "SAGE_SOURCE=metafactory.sage.local",
       "SAGE_ORG=metafactory",
       "SAGE_DATA_RESIDENCY=CH",
-      "# Substrate selection: pi (default) or claude. Falls back to sage.config.json / pi.",
+      "# Substrate selection: pi (default), claude, or codex. Falls back to sage.config.json / pi.",
       "# SAGE_SUBSTRATE=pi",
       "PI_BIN=pi",
       "PI_PROVIDER=anthropic",
       "PI_MODEL=anthropic/claude-sonnet-4-6",
       "# CLAUDE_BIN=claude",
       "# CLAUDE_MODEL=claude-sonnet-4-6",
+      "# CODEX_BIN=codex",
+      "# CODEX_MODEL=gpt-5.2",
+      "# CODEX_PROFILE=reviewer",
+      "# CODEX_SANDBOX=read-only",
       "",
     ].join("\n");
 

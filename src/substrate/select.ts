@@ -3,14 +3,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { ClaudeSubstrate, type ClaudeSubstrateConfig } from "./claude.ts";
+import { CodexSubstrate, type CodexSubstrateConfig } from "./codex.ts";
 import { PiSubstrate, type PiSubstrateConfig } from "./pi.ts";
+import { SUBSTRATE_NAMES } from "./registry.ts";
 import type { Substrate, SubstrateName } from "./types.ts";
 
 /**
  * Resolve which substrate Sage uses for this process. Resolution order
  * (first non-empty wins):
  *
- *   1. CLI flag    — explicit `--substrate {pi|claude}`
+ *   1. CLI flag    — explicit `--substrate {pi|claude|codex}`
  *   2. Env         — `SAGE_SUBSTRATE`
  *   3. Config file — ~/.config/sage/config.json → `substrate.default`
  *   4. Built-in    — "pi" (preserves pre-#14 behavior)
@@ -33,6 +35,7 @@ export interface SageConfigFile {
     default?: SubstrateName;
     pi?: PiSubstrateConfig;
     claude?: ClaudeSubstrateConfig;
+    codex?: CodexSubstrateConfig;
   };
 }
 
@@ -46,8 +49,6 @@ export interface SelectSubstrateOptions {
   /** Pre-loaded config for tests; skips disk read when set. */
   config?: SageConfigFile;
 }
-
-const VALID: readonly SubstrateName[] = ["pi", "claude"];
 
 export function selectSubstrate(opts: SelectSubstrateOptions = {}): SubstrateSelection {
   const env = opts.env ?? process.env;
@@ -91,9 +92,9 @@ function normalize(raw: string | undefined | null): SubstrateName | undefined {
   if (!raw) return undefined;
   const lower = raw.trim().toLowerCase();
   if (lower === "") return undefined;
-  if (!VALID.includes(lower as SubstrateName)) {
+  if (!SUBSTRATE_NAMES.includes(lower as SubstrateName)) {
     throw new Error(
-      `unknown substrate "${raw}" — supported: ${VALID.join(", ")}`,
+      `unknown substrate "${raw}" — supported: ${SUBSTRATE_NAMES.join(", ")}`,
     );
   }
   return lower as SubstrateName;
@@ -105,6 +106,8 @@ function build(name: SubstrateName, cfg: SageConfigFile | undefined): Substrate 
       return new PiSubstrate(cfg?.substrate?.pi ?? {});
     case "claude":
       return new ClaudeSubstrate(cfg?.substrate?.claude ?? {});
+    case "codex":
+      return new CodexSubstrate(cfg?.substrate?.codex ?? {});
   }
 }
 

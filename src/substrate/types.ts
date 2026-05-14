@@ -9,8 +9,8 @@
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
  *   2. Register it in three sites:
- *        - the `SubstrateName` union below
- *        - the `VALID` list and the `build()` switch in `select.ts`
+ *        - the `SUBSTRATE_NAMES` tuple in `registry.ts`
+ *        - the `build()` switch in `select.ts`
  *        - the `SageConfigFile.substrate.<name>` typed field in
  *          `select.ts` so the config loader can carry substrate-specific
  *          overrides
@@ -20,7 +20,9 @@
  * only sees this interface.
  */
 
-export type SubstrateName = "pi" | "claude";
+import type { SubstrateName } from "./registry.ts";
+
+export type { SubstrateName };
 
 /**
  * Thinking-level passthrough. Sage's lens calls default to `off` because the
@@ -91,7 +93,7 @@ export interface Substrate {
 
   /**
    * Convenience for when the prompt asks for a single JSON-shaped reply.
-   * Default implementation in `base.ts` strips fenced code blocks and
+   * `runJsonViaTextExtraction` strips fenced code blocks and
    * JSON.parses the result. Substrates with a native structured-output
    * mode (Claude Code's `--output-format json`) override directly.
    */

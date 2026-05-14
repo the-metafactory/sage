@@ -1,6 +1,5 @@
-import { buildSubstrateEnv } from "./env.ts";
-import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
-import { runJsonViaTextExtraction } from "./json.ts";
+import { textExtractionRunJson } from "./json.ts";
+import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -23,10 +22,6 @@ import type {
  *   - `PI_TIMEOUT_MS`  (default timeout)
  */
 
-// 10 minutes. Big PRs (multi-commit, large diffs) often need >5min on
-// mid-tier providers; the previous 5min default surfaced as opaque timeouts.
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
-
 export interface PiSubstrateConfig {
   /** Default `pi` binary on PATH; override for pinned installs. */
   bin?: string;
@@ -41,6 +36,7 @@ export interface PiSubstrateConfig {
 export class PiSubstrate implements Substrate {
   readonly name = "pi" as const;
   readonly displayName = "pi.dev";
+  readonly runJson = textExtractionRunJson((opts) => this.run(opts));
 
   constructor(private readonly cfg: PiSubstrateConfig = {}) {}
 
@@ -74,18 +70,12 @@ export class PiSubstrate implements Substrate {
     if (opts.thinking) args.push("--thinking", opts.thinking);
     args.push(opts.prompt);
 
-    return spawnSubstrate({
+    return spawnSubstrateFor({
+      name: "pi",
       bin: this.bin,
       args,
-      env: buildSubstrateEnv({ substrate: "pi", extra: opts.env }),
-      ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs: opts.timeoutMs ?? readTimeoutFromEnv("PI_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
-      label: "pi",
+      opts,
     });
   }
 
-  runJson<T>(opts: SubstrateRunOptions): Promise<{ result: T; raw: SubstrateRunResult }> {
-    return runJsonViaTextExtraction<T>((o) => this.run(o), opts);
-  }
 }

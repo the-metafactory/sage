@@ -1,6 +1,6 @@
 # Sage
 
-> Botanical-named code review agent. Runs on pi.dev (default) or Claude Code via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh`.
+> Botanical-named code review agent. Runs on pi.dev (default), Claude Code, or Codex CLI via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh`.
 
 Sage reviews GitHub pull requests through composable lenses (CodeQuality first; Security, Architecture, EcosystemCompliance, Performance to follow) and publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render.
 
@@ -47,6 +47,7 @@ Prerequisites:
 - One of the supported substrates on `$PATH`:
   - [`pi`](https://pi.dev/docs/latest/usage) (default) — `npm i -g @earendil-works/pi-coding-agent`
   - [`claude`](https://docs.claude.com/en/docs/agents-and-tools/claude-code/overview) — for `--substrate claude`
+  - `codex` CLI — for `--substrate codex`
 - NATS broker reachable at `$NATS_URL` for `serve` mode (optional for `review` mode)
 
 ## Usage
@@ -157,10 +158,12 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/bus/subjects.ts` | Subject helpers (broadcast / direct / dispatch / verdict) |
 | `src/bus/bridge.ts` | NATS connect, subscribe, dispatch, publish |
 | `src/substrate/types.ts` | `Substrate` interface — substrate-neutral surface every coding harness implements |
-| `src/substrate/base.ts` | `runJsonViaTextExtraction` — forgiving JSON extractor reused by substrates without native structured output |
-| `src/substrate/env.ts` | `buildSubstrateEnv()` — allow-listed env forwarding with PI_*/CLAUDE_*/ANTHROPIC_* namespaces |
+| `src/substrate/spawn.ts` | Shared subprocess helpers for substrate wrappers |
+| `src/substrate/json.ts` | `runJsonViaTextExtraction` — forgiving JSON extractor reused by substrates without native structured output |
+| `src/substrate/env.ts` | `buildSubstrateEnv()` — allow-listed env forwarding with PI_*/CLAUDE_*/ANTHROPIC_*/CODEX_* namespaces |
 | `src/substrate/pi.ts` | `PiSubstrate` — wraps `pi -p` |
 | `src/substrate/claude.ts` | `ClaudeSubstrate` — wraps `claude -p` with native `--output-format json` |
+| `src/substrate/codex.ts` | `CodexSubstrate` — wraps `codex exec` |
 | `src/substrate/select.ts` | `selectSubstrate()` — flag > env > config > pi resolution |
 | `src/github/gh.ts` | `gh pr view/diff/review` wrapper, PR-ref parser |
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
@@ -178,11 +181,11 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 
 ## Substrate selection
 
-Sage runs the lens prompts through one of two coding-harness subprocesses.
+Sage runs the lens prompts through one of three coding-harness subprocesses.
 Selection is daemon-level — resolved once at startup, applied to every task
 this process handles:
 
-1. CLI `--substrate {pi|claude}` flag (on `sage review` / `sage serve`)
+1. CLI `--substrate {pi|claude|codex}` flag (on `sage review` / `sage serve`)
 2. Env `SAGE_SUBSTRATE`
 3. Config file `~/.config/sage/config.json` → `substrate.default`
 4. Built-in default: `pi` (preserves pre-#14 behavior)
@@ -196,6 +199,7 @@ comparison trivial without diluting verdict reproducibility.
 |-----------|--------|-------------|-------|
 | `pi` (default) | `pi -p` | text-extraction | Honors `--provider`, `--model`, `--api-key`, `--tools`, `--thinking` |
 | `claude` | `claude -p` | `--output-format json` | Reads `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE` (default `acceptEdits` for daemons) |
+| `codex` | `codex exec` | text-extraction | Reads `CODEX_MODEL`, `CODEX_PROFILE`, `CODEX_SANDBOX`; defaults to read-only sandbox + no approvals |
 
 ## Provider keys
 
@@ -215,7 +219,8 @@ Auto-forwarded by default:
 - AWS (Bedrock): `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
   `AWS_SESSION_TOKEN`, `AWS_REGION`
 - Substrate-scoped namespaces: `PI_*` (forwarded only when substrate=pi);
-  `CLAUDE_*` and `ANTHROPIC_*` (forwarded only when substrate=claude)
+  `CLAUDE_*` and `ANTHROPIC_*` (forwarded only when substrate=claude);
+  `CODEX_*` (forwarded only when substrate=codex)
 - Shell essentials: `PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TZ`, …
 
 Adjust without code changes:

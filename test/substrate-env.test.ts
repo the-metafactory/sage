@@ -67,6 +67,20 @@ describe("buildSubstrateEnv allow-list", () => {
     expect(claude.PI_PROVIDER).toBeUndefined();
   });
 
+  test("forwards CODEX_* namespace only to codex substrate", () => {
+    const codex = buildSubstrateEnv({
+      substrate: "codex",
+      parent: {
+        CODEX_MODEL: "gpt-5.2",
+        PI_PROVIDER: "anthropic",
+        CLAUDE_MODEL: "sonnet",
+      },
+    });
+    expect(codex.CODEX_MODEL).toBe("gpt-5.2");
+    expect(codex.PI_PROVIDER).toBeUndefined();
+    expect(codex.CLAUDE_MODEL).toBeUndefined();
+  });
+
   test("SAGE_ENV_DENY blocks otherwise-allowed keys", () => {
     const env = buildSubstrateEnv({
       substrate: "pi",

@@ -1,20 +1,22 @@
 import { spawn } from "node:child_process";
 
-import type { SubstrateRunResult } from "./types.ts";
+import { buildSubstrateEnv } from "./env.ts";
+import type {
+  SubstrateName,
+  SubstrateRunOptions,
+  SubstrateRunResult,
+} from "./types.ts";
 
 /**
- * Shared subprocess primitive for substrates.
+ * Shared subprocess helpers for substrates.
  *
- * Spawn the binary, buffer stdout/stderr, enforce a timeout via SIGKILL,
- * write optional stdin, return the captured streams. Lifted out of the
- * old per-substrate spawn blocks (sage#15 review) so a third substrate
- * (Codex, Aider) only has to build its argv and call this helper.
- *
- * JSON-extraction utilities live in `./json.ts` — kept separate because
- * spawning and parsing are independent concerns.
+ * Substrate implementations should use `spawnSubstrateFor`, which applies the
+ * common env allow-list and timeout convention. The lower-level
+ * `spawnSubstrate` primitive stays private to this module so new substrates
+ * don't bypass those policies by accident.
  */
 
-export interface SpawnSubstrateInput {
+interface SpawnSubstrateInput {
   /** Binary name or path. */
   bin: string;
   /** Argv to pass after the binary. */
@@ -29,24 +31,47 @@ export interface SpawnSubstrateInput {
   timeoutMs: number;
   /**
    * Short label used in error messages and the after-close stdin warning
-   * (e.g. `pi`, `claude`). Lets a future substrate add itself without
+   * (e.g. `pi`, `claude`, `codex`). Lets a future substrate add itself without
    * patching the spawn path.
    */
   label: string;
 }
 
+const DEFAULT_SUBSTRATE_TIMEOUT_MS = 10 * 60 * 1000;
+
+interface SpawnSubstrateForInput {
+  name: SubstrateName;
+  bin: string;
+  args: string[];
+  opts: SubstrateRunOptions;
+}
+
+export function spawnSubstrateFor(input: SpawnSubstrateForInput): Promise<SubstrateRunResult> {
+  const timeoutKey = `${input.name.toUpperCase()}_TIMEOUT_MS`;
+  const opts = input.opts;
+  return spawnSubstrate({
+    bin: input.bin,
+    args: input.args,
+    env: buildSubstrateEnv({ substrate: input.name, extra: opts.env }),
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
+    timeoutMs:
+      opts.timeoutMs ?? readTimeoutFromEnv(timeoutKey) ?? DEFAULT_SUBSTRATE_TIMEOUT_MS,
+    label: input.name,
+  });
+}
+
 /**
  * Read a substrate-specific timeout env var (PI_TIMEOUT_MS,
- * CLAUDE_TIMEOUT_MS, …). Shared helper so a third substrate doesn't need
- * to copy-paste the parse + guard. Returns `undefined` when the env var
- * is unset, NaN, or non-positive — caller decides the substrate default.
+ * CLAUDE_TIMEOUT_MS, CODEX_TIMEOUT_MS, …). Returns `undefined` when the env var
+ * is unset, NaN, or non-positive so callers can apply the shared default.
  */
-export function readTimeoutFromEnv(key: string): number | undefined {
+function readTimeoutFromEnv(key: string): number | undefined {
   const raw = Number(process.env[key]);
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
 }
 
-export async function spawnSubstrate(input: SpawnSubstrateInput): Promise<SubstrateRunResult> {
+async function spawnSubstrate(input: SpawnSubstrateInput): Promise<SubstrateRunResult> {
   const started = Date.now();
   return new Promise<SubstrateRunResult>((resolve, reject) => {
     const child = spawn(input.bin, input.args, {
@@ -83,10 +108,8 @@ export async function spawnSubstrate(input: SpawnSubstrateInput): Promise<Substr
       });
     });
 
-    // Write any large content via stdin BEFORE we'd otherwise hit ARG_MAX
-    // on the argv path. Wrap in try/catch — if the child exited in the
-    // same tick (e.g., binary missing), stdin may already be ended and
-    // `write/end` would otherwise become an unhandled rejection.
+    // Write large content via stdin before it would otherwise hit ARG_MAX on
+    // the argv path. The child may exit in the same tick, so keep this guarded.
     try {
       if (input.stdin !== undefined) child.stdin.write(input.stdin);
       child.stdin.end();

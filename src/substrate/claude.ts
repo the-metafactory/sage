@@ -1,6 +1,5 @@
-import { buildSubstrateEnv } from "./env.ts";
-import { readTimeoutFromEnv, spawnSubstrate } from "./base.ts";
 import { extractJson, isLensShaped } from "./json.ts";
+import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -36,7 +35,6 @@ import type {
  *   - `ANTHROPIC_API_KEY`      (forwarded automatically by the env builder)
  */
 
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_PERMISSION_MODE = "acceptEdits";
 
 export interface ClaudeSubstrateConfig {
@@ -135,14 +133,11 @@ export class ClaudeSubstrate implements Substrate {
     args: string[],
     opts: SubstrateRunOptions,
   ): Promise<SubstrateRunResult> {
-    return spawnSubstrate({
+    return spawnSubstrateFor({
+      name: "claude",
       bin: this.bin,
       args,
-      env: buildSubstrateEnv({ substrate: "claude", extra: opts.env }),
-      ...(opts.cwd ? { cwd: opts.cwd } : {}),
-      ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-      timeoutMs: opts.timeoutMs ?? readTimeoutFromEnv("CLAUDE_TIMEOUT_MS") ?? DEFAULT_TIMEOUT_MS,
-      label: "claude",
+      opts,
     });
   }
 }

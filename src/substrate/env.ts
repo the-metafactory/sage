@@ -7,9 +7,10 @@
  *      configured for.
  *   2. Forward shell essentials (PATH, HOME, USER, LANG, …) so the binary
  *      resolves and finds its config.
- *   3. Forward substrate-specific namespaces — `PI_*` only to pi, `CLAUDE_*`
- *      and `ANTHROPIC_*` only to claude. Keeps each substrate's config env
- *      isolated.
+ *   3. Forward substrate-specific namespaces: `PI_*` only to pi,
+ *      `CLAUDE_*` and `ANTHROPIC_*` only to claude, and `CODEX_*` only
+ *      to codex. Namespaces for inactive substrates are not forwarded,
+ *      which keeps each substrate's config env isolated.
  *   4. Avoid blanket `process.env` passthrough — keeps secret blast radius
  *      tight when Sage runs as a daemon under systemd / launchd and inherits
  *      a noisy parent env.
@@ -84,14 +85,15 @@ const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
 
 /**
  * Substrate namespaces. Each substrate's own config env (PI_PROVIDER,
- * CLAUDE_MODEL, ANTHROPIC_API_KEY, …) is forwarded only to that substrate.
+ * CLAUDE_MODEL, CODEX_MODEL, …) is forwarded only to that substrate.
  * Provider keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) are forwarded
  * unconditionally via PROVIDER_KEYS — listing ANTHROPIC_ here only ensures
- * any *other* ANTHROPIC_* config var also makes it through.
+ * any *other* ANTHROPIC_* config var also makes it through for Claude.
  */
 const SUBSTRATE_NAMESPACES = {
   pi: ["PI_"],
   claude: ["CLAUDE_", "ANTHROPIC_"],
+  codex: ["CODEX_"],
 } as const;
 
 export type SubstrateNamespaceKey = keyof typeof SUBSTRATE_NAMESPACES;
@@ -113,7 +115,7 @@ export interface BuildSubstrateEnvOptions {
  * Sage-internal keys that must NEVER reach the substrate. Some are
  * forwarding-policy (`SAGE_ENV_ALLOW/DENY`, legacy `PI_ENV_ALLOW/DENY`);
  * others are the daemon's own identity (`SAGE_DID`, `SAGE_ORG`, …) which
- * pi/claude have no business with.
+ * substrates have no business with.
  */
 const SAGE_INTERNAL_KEYS = new Set<string>([
   "SAGE_ENV_ALLOW",
