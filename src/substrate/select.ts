@@ -49,6 +49,7 @@ export interface SelectSubstrateOptions {
   config?: SageConfigFile;
 }
 
+// Keep in sync with `SubstrateName`; used for user-facing validation errors.
 const VALID: readonly SubstrateName[] = ["pi", "claude", "codex"];
 
 export function selectSubstrate(opts: SelectSubstrateOptions = {}): SubstrateSelection {
