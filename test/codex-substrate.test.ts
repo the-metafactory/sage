@@ -18,6 +18,9 @@ beforeEach(() => {
 
 afterEach(() => {
   process.env = { ...ORIGINAL_ENV };
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
 });
 
 describe("CodexSubstrate", () => {
@@ -90,6 +93,18 @@ describe("CodexSubstrate", () => {
     ]);
   });
 
+  test("invalid CODEX_SANDBOX fails before spawning", async () => {
+    process.env.CODEX_SANDBOX = "seatbelt";
+    const substrate = new CodexSubstrate({ bin: writeRecorder() });
+
+    await expect(
+      substrate.run({
+        prompt: "review",
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/invalid CODEX_SANDBOX/);
+  });
+
   test("runJson extracts lens-shaped JSON from codex output", async () => {
     const bin = writeJsonResponder();
     const substrate = new CodexSubstrate({ bin });
@@ -107,7 +122,7 @@ function writeRecorder(): string {
   return writeExecutable(`
 #!/usr/bin/env bun
 const chunks = [];
-for await (const chunk of Bun.stdin.stream()) chunks.push(Buffer.from(chunk));
+for await (const chunk of Bun.stdin.stream()) chunks.push(chunk);
 process.stdout.write(JSON.stringify({
   argv: process.argv.slice(2),
   stdin: Buffer.concat(chunks).toString("utf8"),
@@ -124,11 +139,11 @@ process.stdout.write(JSON.stringify({ summary: "ok", findings: [] }));
 
 function writeExecutable(source: string): string {
   const dir = mkdtempSync(join(tmpdir(), "sage-codex-test-"));
+  tempDirs.push(dir);
   const path = join(dir, "codex-recorder");
   writeFileSync(path, source.trimStart(), "utf8");
   chmodSync(path, 0o755);
-  // Cleanup is best-effort after the spawned process has already opened
-  // the file; tests run in a temp directory so a failed cleanup is harmless.
-  afterEach(() => rmSync(dir, { recursive: true, force: true }));
   return path;
 }
+
+const tempDirs: string[] = [];

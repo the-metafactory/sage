@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
-# Preinstall: verify the pi.dev binary is available.
-# Sage's entire reason for existing is to run reviews through pi —
-# refuse to install without it.
+# Preinstall: verify at least one supported LLM substrate is available.
 set -euo pipefail
 
-if ! command -v pi >/dev/null 2>&1; then
-  echo "sage preinstall: 'pi' (pi.dev coding agent) not on PATH" >&2
-  echo "  install with: npm i -g @earendil-works/pi-coding-agent" >&2
-  echo "  docs: https://pi.dev/docs/latest/usage" >&2
+substrates=()
+for bin in pi claude codex; do
+  if command -v "$bin" >/dev/null 2>&1; then
+    substrates+=("$bin")
+  fi
+done
+
+if [ "${#substrates[@]}" -eq 0 ]; then
+  echo "sage preinstall: no supported LLM substrate on PATH (need one of: pi, claude, codex)" >&2
+  echo "  pi docs: https://pi.dev/docs/latest/usage" >&2
+  echo "  claude docs: https://docs.claude.com/en/docs/agents-and-tools/claude-code/overview" >&2
+  echo "  codex: install the Codex CLI and run Sage with --substrate codex" >&2
   exit 1
 fi
 

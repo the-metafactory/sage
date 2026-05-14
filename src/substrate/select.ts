@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ClaudeSubstrate, type ClaudeSubstrateConfig } from "./claude.ts";
 import { CodexSubstrate, type CodexSubstrateConfig } from "./codex.ts";
 import { PiSubstrate, type PiSubstrateConfig } from "./pi.ts";
-import type { Substrate, SubstrateName } from "./types.ts";
+import { SUBSTRATE_NAMES, type Substrate, type SubstrateName } from "./types.ts";
 
 /**
  * Resolve which substrate Sage uses for this process. Resolution order
@@ -49,8 +49,7 @@ export interface SelectSubstrateOptions {
   config?: SageConfigFile;
 }
 
-// Keep in sync with `SubstrateName`; used for user-facing validation errors.
-const VALID: readonly SubstrateName[] = ["pi", "claude", "codex"];
+const VALID: readonly SubstrateName[] = SUBSTRATE_NAMES;
 
 export function selectSubstrate(opts: SelectSubstrateOptions = {}): SubstrateSelection {
   const env = opts.env ?? process.env;

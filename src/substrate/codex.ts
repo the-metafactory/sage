@@ -20,6 +20,8 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_SANDBOX = "read-only";
+const CODEX_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"] as const;
+type CodexSandbox = (typeof CODEX_SANDBOXES)[number];
 
 export interface CodexSubstrateConfig {
   /** Default `codex` binary on PATH; override for pinned installs. */
@@ -29,7 +31,7 @@ export interface CodexSubstrateConfig {
   /** Default config profile passed via `--profile`. */
   profile?: string;
   /** Default sandbox passed via `--sandbox`. */
-  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  sandbox?: CodexSandbox;
 }
 
 export class CodexSubstrate implements Substrate {
@@ -45,7 +47,7 @@ export class CodexSubstrate implements Substrate {
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {
     const model = opts.model ?? process.env.CODEX_MODEL ?? this.cfg.model;
     const profile = process.env.CODEX_PROFILE ?? this.cfg.profile;
-    const sandbox = process.env.CODEX_SANDBOX ?? this.cfg.sandbox ?? DEFAULT_SANDBOX;
+    const sandbox = resolveSandbox(process.env.CODEX_SANDBOX ?? this.cfg.sandbox);
 
     const args: string[] = [
       "exec",
@@ -74,6 +76,18 @@ export class CodexSubstrate implements Substrate {
   runJson<T>(opts: SubstrateRunOptions): Promise<{ result: T; raw: SubstrateRunResult }> {
     return runJsonViaTextExtraction<T>((o) => this.run(o), opts);
   }
+}
+
+function resolveSandbox(raw: string | undefined): CodexSandbox {
+  if (raw === undefined || raw === "") return DEFAULT_SANDBOX;
+  if (isCodexSandbox(raw)) return raw;
+  throw new Error(
+    `invalid CODEX_SANDBOX "${raw}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
+  );
+}
+
+function isCodexSandbox(raw: string): raw is CodexSandbox {
+  return CODEX_SANDBOXES.includes(raw as CodexSandbox);
 }
 
 function buildPrompt(opts: SubstrateRunOptions): string {

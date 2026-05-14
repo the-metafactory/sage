@@ -1,11 +1,11 @@
-# sage — code reviewer agent on the pi.dev substrate.
+# sage — code reviewer agent on pi.dev, Claude Code, or Codex CLI.
 #
 # Shape: standalone worked example from docs/design-arc-agent-bots.md §3.2
 # (in the the-metafactory/cortex repo). Installs into cortex's HostAdapter
 # per arc#117 (identity fragment + persona + NATS creds) AND into the
 # darwin-launchd HostAdapter (binary + plist).
 #
-# Sage runs as its own daemon (pi.dev process) and connects to the same
+# Sage runs as its own daemon, uses a configured LLM substrate, and connects to the same
 # NATS bus cortex is on. Cortex sees Sage only via the fragment in
 # agents.d/, the NATS capability registry, and the envelopes Sage publishes.
 
@@ -15,7 +15,7 @@ version: 0.1.0
 type: agent
 targets: [cortex, darwin-launchd]
 description: >-
-  Code review agent on the pi.dev substrate. Subscribes to Myelin
+  Code review agent on pi.dev, Claude Code, or Codex CLI. Subscribes to Myelin
   code-review tasks, reviews PRs through composable lenses, posts via gh,
   publishes verdict envelopes back to the bus.
 license: MIT
@@ -25,7 +25,7 @@ author:
   github: jcfischer
 
 runtime:
-  substrate: pi-dev
+  substrate: [pi-dev, claude-code, codex-cli]
   mode: standalone
   capabilities:
     - code-review
@@ -46,8 +46,20 @@ depends_on:
   tools:
     - name: bun
       version: ">=1.1.0"
+    # At least one LLM substrate below must be installed. The lifecycle
+    # preinstall check enforces that alternative-substrate contract.
     - name: pi
       version: ">=0.1.0"
+      optional: true
+      reason: optional LLM substrate (--substrate pi)
+    - name: claude
+      version: ">=1.0.0"
+      optional: true
+      reason: optional LLM substrate (--substrate claude)
+    - name: codex
+      version: ">=0.0.0"
+      optional: true
+      reason: optional LLM substrate (--substrate codex)
     - name: gh
       version: ">=2.0.0"
 
@@ -72,7 +84,7 @@ scripts:
 lifecycle:
   preinstall:
     - scripts/check-cortex-version.sh    # cortex CLI on PATH (arc CortexHostAdapter.detect parity)
-    - scripts/check-pi-installed.sh      # pi.dev binary on PATH — Sage cannot function without it
+    - scripts/check-pi-installed.sh      # at least one supported LLM substrate on PATH
   postinstall:
     - scripts/signal-cortex-reload.sh    # FIRST — daemon registers sage from agents.d/ BEFORE creds issue
     - scripts/issue-nats-creds.sh        # THEN — cortex creds issue sage (scoped to declared capabilities)
@@ -111,7 +123,7 @@ capabilities:
       - bun             # runtime
       - launchctl       # daemon lifecycle (install/uninstall scripts only)
   # All optional. Whichever provider key is set in the daemon env reaches
-  # the pi subprocess via buildPiEnv allow-list (src/pi/env.ts).
+  # the active substrate subprocess via buildSubstrateEnv allow-list.
   secrets:
     - OPENROUTER_API_KEY
     - ANTHROPIC_API_KEY
