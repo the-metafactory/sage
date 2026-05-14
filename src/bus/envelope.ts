@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 
+import { deriveSubject as upstreamDeriveSubject } from "@the-metafactory/myelin/subjects";
+
 /**
  * Myelin envelope v1 — Zod mirror of myelin/schemas/envelope.schema.json
  * Source of truth: https://myelin.metafactory.ai/schemas/envelope/v1
@@ -109,16 +111,29 @@ export function buildEnvelope<P extends object = Record<string, unknown>>(
 /**
  * Derive NATS subject from envelope per myelin/specs/namespace.md.
  *
- * - prefix from sovereignty.classification
- * - org from source's first segment (omitted for public)
- * - type field is appended as-is
+ * Thin shim around `@the-metafactory/myelin/subjects.deriveSubject` —
+ * upstream owns the rules (5-segment `{classification}.{org}.{type}` and
+ * 6-segment `{classification}.{org}.{stack}.{type}`), Sage just
+ * destructures the envelope into the upstream arg list.
+ *
+ * The shim shape was adopted in sage#22 — pre-fix Sage carried its own
+ * port of the 5-segment form, which would have broken silently when the
+ * myelin-side stack-aware TASKS stream filter (cortex#138) shipped 6-
+ * segment subjects. Routing through upstream means Sage tracks myelin's
+ * subject grammar automatically.
+ *
+ * The empty-org-segment guard is preserved here because upstream
+ * accepts any string for `org`; Sage's `source` regex already rejects
+ * empty first segments, but a defensive check at the daemon's
+ * publish-side surface stays cheap.
  */
-export function deriveSubject(env: Envelope): string {
-  const prefix = env.sovereignty.classification;
-  if (prefix === "public") return `public.${env.type}`;
+export function deriveSubject(env: Envelope, stack?: string): string {
+  if (env.sovereignty.classification === "public") {
+    return upstreamDeriveSubject("public", "", env.type);
+  }
   const org = env.source.split(".")[0];
   if (!org) throw new Error(`invalid source for subject derivation: ${env.source}`);
-  return `${prefix}.${org}.${env.type}`;
+  return upstreamDeriveSubject(env.sovereignty.classification, org, env.type, stack);
 }
 
 /**
