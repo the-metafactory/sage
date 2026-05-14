@@ -22,11 +22,21 @@
  *   - The `extra` argument is merged last and wins on conflict.
  */
 
-/** Provider keys Sage forwards by default. Add to this list when a new provider matters. */
+/**
+ * Provider keys Sage forwards by default. Add to this list when a new
+ * provider matters. Names track pi.dev's own env-var contract (run
+ * `pi --help` to see the canonical list) so an operator who sets the
+ * variable pi reads doesn't also have to add it to a sage allowlist.
+ */
 const PROVIDER_KEYS = [
   "OPENROUTER_API_KEY",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
+  // Google Gemini ships under three different variable names across the
+  // ecosystem; forward all three so an operator can use whichever their
+  // shell / CI already exports. `GEMINI_API_KEY` is the name pi.dev's
+  // `google` provider (its default) actually reads.
+  "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
   "GROQ_API_KEY",
@@ -36,6 +46,10 @@ const PROVIDER_KEYS = [
   "XAI_API_KEY",
   "PERPLEXITY_API_KEY",
   "FIREWORKS_API_KEY",
+  "CEREBRAS_API_KEY",
+  // Azure OpenAI — both the legacy `AZURE_API_*` triad and the newer
+  // `AZURE_OPENAI_API_KEY` shape pi.dev documents.
+  "AZURE_OPENAI_API_KEY",
   "AZURE_API_KEY",
   "AZURE_API_BASE",
   "AZURE_API_VERSION",
