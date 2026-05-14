@@ -79,10 +79,11 @@ export class CodexSubstrate implements Substrate {
 }
 
 function resolveSandbox(raw: string | undefined): CodexSandbox {
-  if (raw === undefined || raw === "") return DEFAULT_SANDBOX;
-  if (isCodexSandbox(raw)) return raw;
+  const trimmed = raw?.trim();
+  if (trimmed === undefined || trimmed === "") return DEFAULT_SANDBOX;
+  if (isCodexSandbox(trimmed)) return trimmed;
   throw new Error(
-    `invalid CODEX_SANDBOX "${raw}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
+    `invalid CODEX_SANDBOX "${trimmed}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
   );
 }
 

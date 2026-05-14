@@ -25,7 +25,7 @@ author:
   github: jcfischer
 
 runtime:
-  substrate: [pi-dev, claude-code, codex-cli]
+  substrate: pi-dev
   mode: standalone
   capabilities:
     - code-review
@@ -46,22 +46,10 @@ depends_on:
   tools:
     - name: bun
       version: ">=1.1.0"
-    # At least one LLM substrate below must be installed. The lifecycle
-    # preinstall check enforces that alternative-substrate contract.
-    - name: pi
-      version: ">=0.1.0"
-      optional: true
-      reason: optional LLM substrate (--substrate pi)
-    - name: claude
-      version: ">=1.0.0"
-      optional: true
-      reason: optional LLM substrate (--substrate claude)
-    - name: codex
-      version: ">=0.0.0"
-      optional: true
-      reason: optional LLM substrate (--substrate codex)
     - name: gh
       version: ">=2.0.0"
+  # arc/v1 cannot express one-of tool dependencies. The lifecycle preinstall
+  # script enforces that at least one supported LLM substrate is installed.
 
 provides:
   # Cortex host (arc 0.26.0 CortexHostAdapter):
@@ -84,7 +72,7 @@ scripts:
 lifecycle:
   preinstall:
     - scripts/check-cortex-version.sh    # cortex CLI on PATH (arc CortexHostAdapter.detect parity)
-    - scripts/check-pi-installed.sh      # at least one supported LLM substrate on PATH
+    - scripts/check-substrate-installed.sh # one supported LLM substrate on PATH
   postinstall:
     - scripts/signal-cortex-reload.sh    # FIRST — daemon registers sage from agents.d/ BEFORE creds issue
     - scripts/issue-nats-creds.sh        # THEN — cortex creds issue sage (scoped to declared capabilities)
@@ -108,15 +96,16 @@ capabilities:
     - domain: api.github.com
       reason: gh CLI fetches PR diff and posts review (auth piggybacks on user's gh login)
     - domain: api.openrouter.ai
-      reason: pi.dev subprocess uses OpenRouter as primary provider (when configured)
+      reason: substrate provider option (when configured)
     - domain: api.anthropic.com
-      reason: pi.dev subprocess provider option
+      reason: substrate provider option
     - domain: api.openai.com
-      reason: pi.dev subprocess provider option
+      reason: substrate provider option
   bash:
     allowed: true
     restricted_to:
       - pi              # LLM substrate subprocess
+      - claude          # optional LLM substrate subprocess
       - codex           # optional LLM substrate subprocess
       - gh              # GitHub CLI
       - git             # repo introspection

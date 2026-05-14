@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import { ClaudeSubstrate, type ClaudeSubstrateConfig } from "./claude.ts";
 import { CodexSubstrate, type CodexSubstrateConfig } from "./codex.ts";
+import { SUBSTRATE_NAMES } from "./names.ts";
 import { PiSubstrate, type PiSubstrateConfig } from "./pi.ts";
-import { SUBSTRATE_NAMES, type Substrate, type SubstrateName } from "./types.ts";
+import type { Substrate, SubstrateName } from "./types.ts";
 
 /**
  * Resolve which substrate Sage uses for this process. Resolution order
@@ -49,8 +50,6 @@ export interface SelectSubstrateOptions {
   config?: SageConfigFile;
 }
 
-const VALID: readonly SubstrateName[] = SUBSTRATE_NAMES;
-
 export function selectSubstrate(opts: SelectSubstrateOptions = {}): SubstrateSelection {
   const env = opts.env ?? process.env;
 
@@ -93,9 +92,9 @@ function normalize(raw: string | undefined | null): SubstrateName | undefined {
   if (!raw) return undefined;
   const lower = raw.trim().toLowerCase();
   if (lower === "") return undefined;
-  if (!VALID.includes(lower as SubstrateName)) {
+  if (!SUBSTRATE_NAMES.includes(lower as SubstrateName)) {
     throw new Error(
-      `unknown substrate "${raw}" — supported: ${VALID.join(", ")}`,
+      `unknown substrate "${raw}" — supported: ${SUBSTRATE_NAMES.join(", ")}`,
     );
   }
   return lower as SubstrateName;

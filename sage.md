@@ -5,7 +5,7 @@ displayName: Sage
 roles: [agent-restricted]
 trust: [luna, holly, ivy, pilot, fern]
 runtime:
-  substrate: [pi-dev, claude-code, codex-cli]
+  substrate: pi-dev
   mode: standalone
   capabilities:
     - code-review

@@ -105,6 +105,21 @@ describe("CodexSubstrate", () => {
     ).rejects.toThrow(/invalid CODEX_SANDBOX/);
   });
 
+  test("CODEX_SANDBOX trims surrounding whitespace", async () => {
+    process.env.CODEX_SANDBOX = " workspace-write ";
+    const bin = writeRecorder();
+    const substrate = new CodexSubstrate({ bin });
+
+    const raw = await substrate.run({
+      prompt: "review",
+      timeoutMs: 5_000,
+    });
+
+    const captured = JSON.parse(raw.stdout) as { argv: string[] };
+    expect(captured.argv).toContain("workspace-write");
+    expect(captured.argv).not.toContain(" workspace-write ");
+  });
+
   test("runJson extracts lens-shaped JSON from codex output", async () => {
     const bin = writeJsonResponder();
     const substrate = new CodexSubstrate({ bin });
