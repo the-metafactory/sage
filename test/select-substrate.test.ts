@@ -91,18 +91,25 @@ describe("selectSubstrate resolution precedence", () => {
   });
 
   test("codex config overrides are wired through", () => {
-    const out = selectSubstrate({
-      flag: "codex",
-      env: {},
-      config: {
-        substrate: {
-          default: "pi",
-          codex: { bin: "/custom/path/codex", model: "gpt-5.2" },
+    const originalCodexBin = process.env.CODEX_BIN;
+    delete process.env.CODEX_BIN;
+    try {
+      const out = selectSubstrate({
+        flag: "codex",
+        env: {},
+        config: {
+          substrate: {
+            default: "pi",
+            codex: { bin: "/custom/path/codex", model: "gpt-5.2" },
+          },
         },
-      },
-    });
-    expect(out.substrate.name).toBe("codex");
-    expect(out.substrate.bin).toBe("/custom/path/codex");
+      });
+      expect(out.substrate.name).toBe("codex");
+      expect(out.substrate.bin).toBe("/custom/path/codex");
+    } finally {
+      if (originalCodexBin === undefined) delete process.env.CODEX_BIN;
+      else process.env.CODEX_BIN = originalCodexBin;
+    }
   });
 
   test("case-insensitive normalization", () => {

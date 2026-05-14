@@ -46,7 +46,10 @@ export class CodexSubstrate implements Substrate {
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {
     const model = opts.model ?? process.env.CODEX_MODEL ?? this.cfg.model;
     const profile = process.env.CODEX_PROFILE ?? this.cfg.profile;
-    const sandbox = resolveSandbox(process.env.CODEX_SANDBOX ?? this.cfg.sandbox);
+    const sandbox =
+      process.env.CODEX_SANDBOX !== undefined
+        ? parseSandboxEnv(process.env.CODEX_SANDBOX)
+        : resolveSandbox(this.cfg.sandbox);
 
     const args: string[] = [
       "exec",
@@ -70,9 +73,13 @@ export class CodexSubstrate implements Substrate {
 
 }
 
-function resolveSandbox(raw: string | undefined): CodexSandbox {
-  const trimmed = raw?.trim();
-  if (trimmed === undefined || trimmed === "") return DEFAULT_SANDBOX;
+function resolveSandbox(raw: CodexSandbox | undefined): CodexSandbox {
+  return raw ?? DEFAULT_SANDBOX;
+}
+
+function parseSandboxEnv(raw: string): CodexSandbox {
+  const trimmed = raw.trim();
+  if (trimmed === "") return DEFAULT_SANDBOX;
   if (isCodexSandbox(trimmed)) return trimmed;
   throw new Error(
     `invalid CODEX_SANDBOX "${trimmed}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
@@ -85,6 +92,8 @@ function isCodexSandbox(raw: string): raw is CodexSandbox {
 
 function buildPrompt(opts: SubstrateRunOptions): string {
   if (!opts.systemPrompt) return opts.prompt;
+  // Codex CLI does not currently expose a native --system-prompt flag, so keep
+  // Sage's system instructions in-band until that CLI surface exists.
   return [
     "System instructions:",
     opts.systemPrompt,

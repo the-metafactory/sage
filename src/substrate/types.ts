@@ -20,10 +20,8 @@
  * only sees this interface.
  */
 
-import type { SubstrateName } from "./names.ts";
-
-export { SUBSTRATE_NAMES } from "./names.ts";
-export type { SubstrateName };
+export const SUBSTRATE_NAMES = ["pi", "claude", "codex"] as const;
+export type SubstrateName = (typeof SUBSTRATE_NAMES)[number];
 
 /**
  * Thinking-level passthrough. Sage's lens calls default to `off` because the

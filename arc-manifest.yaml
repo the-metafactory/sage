@@ -50,10 +50,6 @@ depends_on:
       version: ">=1.1.0"
     - name: gh
       version: ">=2.0.0"
-    # Default LLM substrate. arc/v1 cannot express that claude or codex may be
-    # used instead; lifecycle.preinstall enforces the one-of requirement below.
-    - name: pi
-      version: ">=0.0.0"
   # arc/v1 cannot express one-of tool dependencies. The lifecycle preinstall
   # script enforces that at least one supported LLM substrate is installed:
   # pi, claude, or codex.
