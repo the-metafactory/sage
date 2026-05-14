@@ -3,11 +3,11 @@ import type { SubstrateRunOptions, SubstrateRunResult } from "./types.ts";
 /**
  * JSON-extraction utilities for substrate output.
  *
- * Separated from `base.ts` (which owns subprocess spawning) so each
+ * Separated from `spawn.ts` (which owns subprocess spawning) so each
  * module has a single concern. `claude.ts` uses `extractJson` directly
  * to recover lens data from its native-envelope inner string;
- * `pi.ts` uses `runJsonViaTextExtraction` to run the full extract-or-
- * throw pipeline against pi's text output.
+ * `pi.ts` and `codex.ts` use `runJsonViaTextExtraction` to run the full
+ * extract-or-throw pipeline against text output.
  *
  * Strategy (preserved byte-for-byte from the previous src/pi/runner.ts):
  *   0. Raw text — happy path for contract-obeying models.

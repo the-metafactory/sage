@@ -158,7 +158,7 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/bus/subjects.ts` | Subject helpers (broadcast / direct / dispatch / verdict) |
 | `src/bus/bridge.ts` | NATS connect, subscribe, dispatch, publish |
 | `src/substrate/types.ts` | `Substrate` interface — substrate-neutral surface every coding harness implements |
-| `src/substrate/base.ts` | Shared subprocess primitive for substrate wrappers |
+| `src/substrate/spawn.ts` | Shared subprocess helpers for substrate wrappers |
 | `src/substrate/json.ts` | `runJsonViaTextExtraction` — forgiving JSON extractor reused by substrates without native structured output |
 | `src/substrate/env.ts` | `buildSubstrateEnv()` — allow-listed env forwarding with PI_*/CLAUDE_*/ANTHROPIC_*/CODEX_* namespaces |
 | `src/substrate/pi.ts` | `PiSubstrate` — wraps `pi -p` |

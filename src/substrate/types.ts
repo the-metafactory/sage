@@ -94,7 +94,7 @@ export interface Substrate {
 
   /**
    * Convenience for when the prompt asks for a single JSON-shaped reply.
-   * Default implementation in `base.ts` strips fenced code blocks and
+   * `runJsonViaTextExtraction` strips fenced code blocks and
    * JSON.parses the result. Substrates with a native structured-output
    * mode (Claude Code's `--output-format json`) override directly.
    */
