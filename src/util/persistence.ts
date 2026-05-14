@@ -38,7 +38,9 @@ export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
 
 /**
  * Persist a rendered review verdict to disk so a postReview failure can be
- * recovered manually. Best-effort — write errors log but don't propagate.
+ * recovered manually. Returns `true` on success, `false` on any write
+ * failure (caller decides whether to promise a recovery path that may
+ * not exist on disk — sage#16 round-6 review).
  *
  * Output location: ~/.config/sage/reviews/<owner>-<repo>-<number>.{json,md}
  * The .json holds the full verdict object (machine-readable); the .md is
@@ -48,7 +50,7 @@ export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
  * are orchestration concerns, not lens-domain logic. workflow.ts only
  * orchestrates — actual persistence is a separable concern.
  */
-export function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string): void {
+export function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string): boolean {
   try {
     mkdirSync(REVIEWS_DIR, { recursive: true });
     const json = {
@@ -59,9 +61,11 @@ export function persistVerdict(ref: PrRef, verdict: ReviewVerdict, body: string)
     };
     writeFileSync(verdictFilePath(ref, "json"), JSON.stringify(json, null, 2));
     writeFileSync(verdictFilePath(ref, "md"), body);
+    return true;
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
     console.error(`[sage] persistVerdict failed (non-fatal): ${m}`);
+    return false;
   }
 }

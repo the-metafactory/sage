@@ -131,6 +131,11 @@ describe("TaskPayloadSchema (runtime)", () => {
     "$(whoami)",
     "repo/extra",
     "with spaces",
+    ".leading-dot",
+    "trailing-dot.",
+    "double..dot", // path-traversal vector — must reject
+    "..",
+    ".",
     "",
   ])("rejects unsafe repo=%s", (repo) => {
     const r = TaskPayloadSchema.safeParse({ owner: "x", repo, number: 1 });

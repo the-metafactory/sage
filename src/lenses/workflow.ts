@@ -126,13 +126,15 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // without re-running the lenses. The file at
   // ~/.config/sage/reviews/<owner>-<repo>-<pr>.{json,md} holds the latest
   // verdict per PR; older ones are overwritten on next run.
-  persistVerdict(opts.ref, verdict, body);
   // The recovery path is built here (workflow already owns persist +
-  // post) and threaded through `ReviewResult`. Bridge ships the opaque
-  // string in the post-failed envelope payload, so neither bus nor
-  // dispatcher needs a compile-time dependency on the storage layout
-  // (sage#16 round-5 review).
-  const recoveryPath = verdictFilePath(opts.ref, "md");
+  // post) and threaded through `ReviewResult` only when persistence
+  // actually succeeded. Bridge ships the opaque string in the
+  // post-failed envelope payload; neither bus nor dispatcher needs a
+  // compile-time dependency on the storage layout (sage#16 round-5).
+  // Persist-failure → `recoveryPath` stays undefined so we don't
+  // promise a file that isn't there (sage#16 round-6).
+  const persisted = persistVerdict(opts.ref, verdict, body);
+  const recoveryPath = persisted ? verdictFilePath(opts.ref, "md") : undefined;
 
   const { posted, postedEvent, downgraded, postError } = opts.post
     ? await attemptPost(opts.ref, verdict, body)
@@ -140,7 +142,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   return {
     verdict,
     posted,
-    recoveryPath,
+    ...(recoveryPath !== undefined ? { recoveryPath } : {}),
     ...(postedEvent !== undefined ? { postedEvent } : {}),
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),

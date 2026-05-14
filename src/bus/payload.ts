@@ -34,7 +34,12 @@ import { z } from "zod";
  * alphanumeric.
  */
 const GH_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
-const GH_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
+// Repo names: alphanumeric, `_`, `-`, and `.` — but NO leading/trailing
+// `.` and NO consecutive `..`. `..` in particular is a path-traversal
+// vector if it ever reached on-disk filename construction
+// (sage#16 round-6 review). Positive-lookahead trick: every `.` must
+// be followed by a non-dot.
+const GH_REPO_RE = /^[A-Za-z0-9_-](?:[A-Za-z0-9_-]|\.(?=[A-Za-z0-9_-])){0,99}$/;
 
 export const TaskPayloadSchema = z
   .object({

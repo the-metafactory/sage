@@ -39,12 +39,14 @@ const stubSubstrate = {
 };
 
 let persistedCount = 0;
+let persistBehavior: "success" | "fail" = "success";
 let postReviewBehavior: "success" | "throw" = "success";
 let postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 let postReviewCalls = 0;
 
 beforeEach(() => {
   persistedCount = 0;
+  persistBehavior = "success";
   postReviewCalls = 0;
   postReviewBehavior = "success";
   postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
@@ -69,6 +71,7 @@ beforeEach(() => {
   mock.module("../src/util/persistence.ts", () => ({
     persistVerdict: () => {
       persistedCount++;
+      return persistBehavior === "success";
     },
     verdictFilePath: (ref: { owner: string; repo: string; number: number }, ext: string) =>
       `/tmp/sage-test/${ref.owner}-${ref.repo}-${ref.number}.${ext}`,
@@ -168,6 +171,21 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     // Visible characters are preserved.
     expect(msg).toContain("ERROR");
     expect(msg).toContain("unsafe");
+  });
+
+  test("recoveryPath is undefined when persistVerdict fails (sage#16 round-6)", async () => {
+    // Pre-#16-round-6 the field was unconditionally set even when the
+    // on-disk write threw — promising operators a recovery file that
+    // didn't exist.
+    persistBehavior = "fail";
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 42 },
+      substrate: stubSubstrate,
+      post: false,
+    });
+    expect(result.recoveryPath).toBeUndefined();
+    expect(persistedCount).toBe(1); // persist was attempted
   });
 
   test("posted=false + postReview NOT called when opts.post is false", async () => {
