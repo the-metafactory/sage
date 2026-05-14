@@ -225,13 +225,20 @@ function log(msg: string): void {
  * the repo coords they already know.
  */
 /**
- * Whitelist for the recovery_path string — absolute path under the
- * sage reviews directory, alphanumeric segment chars + `.`/`_`/`-`.
- * Anything else means the envelope was malformed or hostile; we drop
- * the recovery hint rather than echo arbitrary text into the
- * operator's terminal.
+ * Whitelist for the recovery_path string — absolute path, slug-safe
+ * segments, ends with `.md`. CRITICALLY: rejects any segment that is
+ * `..` (path-traversal vector). Anything else means the envelope was
+ * malformed or hostile; we drop the recovery hint rather than echo
+ * arbitrary text into the operator's terminal.
  */
-const RECOVERY_PATH_RE = /^\/[A-Za-z0-9_./-]+\.md$/;
+function isSafeRecoveryPath(p: string): boolean {
+  if (!p.startsWith("/") || !p.endsWith(".md")) return false;
+  if (!/^[A-Za-z0-9_./-]+$/.test(p)) return false;
+  // Reject any `..` segment — `/foo/../bar.md` could traverse out of
+  // the reviews directory. The slug regex above lets `..` through as
+  // chars; this explicit segment check closes that gap.
+  return !p.split("/").includes("..");
+}
 
 function handlePostFailed(payload: Record<string, unknown>): void {
   const errObj = payload.error as { message?: unknown } | string | undefined;
@@ -244,7 +251,7 @@ function handlePostFailed(payload: Record<string, unknown>): void {
   log(`  post-failed: ${errorMsg}`);
 
   const recoveryPath = payload.recovery_path;
-  if (typeof recoveryPath === "string" && RECOVERY_PATH_RE.test(recoveryPath)) {
+  if (typeof recoveryPath === "string" && isSafeRecoveryPath(recoveryPath)) {
     log(`  recover: cat ${recoveryPath} | gh pr review --body-file -  # add --repo OWNER/REPO and PR number`);
   }
 }
