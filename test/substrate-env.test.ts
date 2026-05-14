@@ -39,7 +39,7 @@ describe("buildSubstrateEnv allow-list", () => {
   );
 
   test.each(["AZURE_OPENAI_API_KEY", "CEREBRAS_API_KEY"])(
-    "forwards %s (added in sage#post-16 cleanup)",
+    "forwards %s (newer provider-key shape)",
     (key) => {
       const env = buildSubstrateEnv({
         substrate: "pi",
