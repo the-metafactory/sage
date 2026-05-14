@@ -22,6 +22,7 @@
 
 import type { SubstrateName } from "./names.ts";
 
+export { SUBSTRATE_NAMES } from "./names.ts";
 export type { SubstrateName };
 
 /**

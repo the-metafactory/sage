@@ -26,7 +26,7 @@ author:
 
 runtime:
   # arc/v1 exposes a scalar substrate field, so keep the default substrate here;
-  # Sage can also run on Claude Code or Codex CLI via CLI/config/env selection.
+  # see bash.restricted_to and depends_on.tools comments for the full substrate list.
   substrate: pi-dev
   mode: standalone
   capabilities:
@@ -50,6 +50,9 @@ depends_on:
       version: ">=1.1.0"
     - name: gh
       version: ">=2.0.0"
+    # One of these LLM substrate binaries is also required:
+    # - name: pi | claude | codex
+    #   version: "at least one required; enforced by lifecycle.preinstall"
   # arc/v1 cannot express one-of tool dependencies. The lifecycle preinstall
   # script enforces that at least one supported LLM substrate is installed.
 
