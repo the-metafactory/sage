@@ -22,6 +22,18 @@ describe("selectSubstrate resolution precedence", () => {
     expect(out.source).toBe("env");
   });
 
+  test("supports codex as an explicit substrate", () => {
+    const out = selectSubstrate({
+      flag: "codex",
+      env: { SAGE_SUBSTRATE: "pi" },
+      config: { substrate: { default: "claude" } },
+    });
+    expect(out.name).toBe("codex");
+    expect(out.source).toBe("flag");
+    expect(out.substrate.name).toBe("codex");
+    expect(out.substrate.displayName).toBe("Codex CLI");
+  });
+
   test("config wins over default when flag + env absent", () => {
     const out = selectSubstrate({
       env: {},
@@ -38,7 +50,7 @@ describe("selectSubstrate resolution precedence", () => {
   });
 
   test("unknown substrate throws", () => {
-    expect(() => selectSubstrate({ flag: "codex" })).toThrow(/unknown substrate/);
+    expect(() => selectSubstrate({ flag: "cortex" })).toThrow(/unknown substrate/);
   });
 
   test("empty / whitespace-only flag is ignored, env wins", () => {
@@ -76,6 +88,21 @@ describe("selectSubstrate resolution precedence", () => {
     });
     expect(out.substrate.name).toBe("claude");
     expect(out.substrate.bin).toBe("/custom/path/claude");
+  });
+
+  test("codex config overrides are wired through", () => {
+    const out = selectSubstrate({
+      flag: "codex",
+      env: {},
+      config: {
+        substrate: {
+          default: "pi",
+          codex: { bin: "/custom/path/codex", model: "gpt-5.2" },
+        },
+      },
+    });
+    expect(out.substrate.name).toBe("codex");
+    expect(out.substrate.bin).toBe("/custom/path/codex");
   });
 
   test("case-insensitive normalization", () => {

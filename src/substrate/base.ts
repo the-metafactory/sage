@@ -7,7 +7,7 @@ import type { SubstrateRunResult } from "./types.ts";
  *
  * Spawn the binary, buffer stdout/stderr, enforce a timeout via SIGKILL,
  * write optional stdin, return the captured streams. Lifted out of the
- * old per-substrate spawn blocks (sage#15 review) so a third substrate
+ * old per-substrate spawn blocks (sage#15 review) so another substrate
  * (Codex, Aider) only has to build its argv and call this helper.
  *
  * JSON-extraction utilities live in `./json.ts` — kept separate because
@@ -37,7 +37,7 @@ export interface SpawnSubstrateInput {
 
 /**
  * Read a substrate-specific timeout env var (PI_TIMEOUT_MS,
- * CLAUDE_TIMEOUT_MS, …). Shared helper so a third substrate doesn't need
+ * CLAUDE_TIMEOUT_MS, …). Shared helper so another substrate doesn't need
  * to copy-paste the parse + guard. Returns `undefined` when the env var
  * is unset, NaN, or non-positive — caller decides the substrate default.
  */

@@ -20,7 +20,7 @@
  * only sees this interface.
  */
 
-export type SubstrateName = "pi" | "claude";
+export type SubstrateName = "pi" | "claude" | "codex";
 
 /**
  * Thinking-level passthrough. Sage's lens calls default to `off` because the

@@ -28,7 +28,7 @@ A PR drops into the Myelin bus as `local.metafactory.tasks.code-review.typescrip
 
 ## Principles
 
-1. **Substrate-independent**: Sage's persona, lens prompts, and verdict logic must not depend on which LLM substrate runs them. Substrate selection is a runtime decision — pi.dev (default) or Claude Code, resolved at startup via `selectSubstrate()` (CLI flag > env > config > pi). The substrate is replaceable; everything else is pure code. See `src/substrate/`.
+1. **Substrate-independent**: Sage's persona, lens prompts, and verdict logic must not depend on which LLM substrate runs them. Substrate selection is a runtime decision — pi.dev (default), Claude Code, or Codex CLI, resolved at startup via `selectSubstrate()` (CLI flag > env > config > pi). The substrate is replaceable; everything else is pure code. See `src/substrate/`.
 2. **Bus as contract**: the envelope is the integration. Anyone speaking Myelin can talk to Sage.
 3. **Substitute, don't reinvent**: piggyback on `gh` for GitHub and `pi` for LLM rather than re-implementing OAuth / HTTP-API clients.
 4. **No findings is a valid review.** The lens prompt and verdict logic must support empty findings without forcing a "looks good" filler.
@@ -40,7 +40,7 @@ A PR drops into the Myelin bus as `local.metafactory.tasks.code-review.typescrip
 - No Python. No npm/yarn/pnpm.
 - Myelin envelope conformance (`myelin/schemas/envelope.schema.json` v1) is non-negotiable.
 - `gh` CLI auth is the only GitHub credential path. No PAT in env.
-- Substrates (`pi`, `claude`) are invoked as subprocesses (`pi -p`, `claude -p`) — no SDK dependency.
+- Substrates (`pi`, `claude`, `codex`) are invoked as subprocesses (`pi -p`, `claude -p`, `codex exec`) — no SDK dependency.
 
 ## Goal
 

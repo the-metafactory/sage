@@ -105,6 +105,7 @@ capabilities:
     allowed: true
     restricted_to:
       - pi              # LLM substrate subprocess
+      - codex           # optional LLM substrate subprocess
       - gh              # GitHub CLI
       - git             # repo introspection
       - bun             # runtime
