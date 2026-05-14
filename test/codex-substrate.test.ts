@@ -105,6 +105,20 @@ describe("CodexSubstrate", () => {
     ).rejects.toThrow(/invalid CODEX_SANDBOX/);
   });
 
+  test("invalid config sandbox fails before spawning", async () => {
+    const substrate = new CodexSubstrate({
+      bin: writeRecorder(),
+      sandbox: "seatbelt" as never,
+    });
+
+    await expect(
+      substrate.run({
+        prompt: "review",
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrow(/invalid codex sandbox config/);
+  });
+
   test("CODEX_SANDBOX trims surrounding whitespace", async () => {
     process.env.CODEX_SANDBOX = " workspace-write ";
     const bin = writeRecorder();

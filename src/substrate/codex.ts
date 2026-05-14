@@ -48,8 +48,8 @@ export class CodexSubstrate implements Substrate {
     const profile = process.env.CODEX_PROFILE ?? this.cfg.profile;
     const sandbox =
       process.env.CODEX_SANDBOX !== undefined
-        ? parseSandboxEnv(process.env.CODEX_SANDBOX)
-        : resolveSandbox(this.cfg.sandbox);
+        ? parseSandbox("CODEX_SANDBOX", process.env.CODEX_SANDBOX)
+        : parseSandbox("codex sandbox config", this.cfg.sandbox);
 
     const args: string[] = [
       "exec",
@@ -73,16 +73,12 @@ export class CodexSubstrate implements Substrate {
 
 }
 
-function resolveSandbox(raw: CodexSandbox | undefined): CodexSandbox {
-  return raw ?? DEFAULT_SANDBOX;
-}
-
-function parseSandboxEnv(raw: string): CodexSandbox {
-  const trimmed = raw.trim();
-  if (trimmed === "") return DEFAULT_SANDBOX;
+function parseSandbox(source: string, raw: string | undefined): CodexSandbox {
+  const trimmed = raw?.trim();
+  if (trimmed === undefined || trimmed === "") return DEFAULT_SANDBOX;
   if (isCodexSandbox(trimmed)) return trimmed;
   throw new Error(
-    `invalid CODEX_SANDBOX "${trimmed}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
+    `invalid ${source} "${trimmed}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
   );
 }
 
