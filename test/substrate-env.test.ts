@@ -21,6 +21,34 @@ describe("buildSubstrateEnv allow-list", () => {
     expect(env.UNRELATED_VAR).toBeUndefined();
   });
 
+  // pi.dev's `google` provider (its default) reads `GEMINI_API_KEY`.
+  // Sage previously only forwarded `GOOGLE_API_KEY` /
+  // `GOOGLE_GENERATIVE_AI_API_KEY`, so the key never reached pi and
+  // operators saw "missing API key" errors despite having Gemini
+  // configured. Forwarding all three names covers every documented
+  // env-var shape.
+  test.each(["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"])(
+    "forwards %s for Gemini",
+    (key) => {
+      const env = buildSubstrateEnv({
+        substrate: "pi",
+        parent: { [key]: "AIza-xxxx" },
+      });
+      expect(env[key]).toBe("AIza-xxxx");
+    },
+  );
+
+  test.each(["AZURE_OPENAI_API_KEY", "CEREBRAS_API_KEY"])(
+    "forwards %s (newer provider-key shape)",
+    (key) => {
+      const env = buildSubstrateEnv({
+        substrate: "pi",
+        parent: { [key]: "secret" },
+      });
+      expect(env[key]).toBe("secret");
+    },
+  );
+
   test("forwards PI_* namespace only to pi substrate", () => {
     const pi = buildSubstrateEnv({
       substrate: "pi",
