@@ -1,5 +1,5 @@
-import { spawnSubstrateFor } from "./base.ts";
 import { extractJson, isLensShaped } from "./json.ts";
+import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
   SubstrateRunOptions,

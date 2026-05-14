@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { buildSubstrateEnv } from "./env.ts";
-import type { SubstrateName, SubstrateRunOptions, SubstrateRunResult } from "./types.ts";
+import type { SubstrateRunResult } from "./types.ts";
 
 /**
  * Shared subprocess primitive for substrates.
@@ -38,13 +37,6 @@ export interface SpawnSubstrateInput {
 
 export const DEFAULT_SUBSTRATE_TIMEOUT_MS = 10 * 60 * 1000;
 
-export interface SpawnSubstrateForInput {
-  name: SubstrateName;
-  bin: string;
-  args: string[];
-  opts: SubstrateRunOptions;
-}
-
 /**
  * Read a substrate-specific timeout env var (PI_TIMEOUT_MS,
  * CLAUDE_TIMEOUT_MS, CODEX_TIMEOUT_MS, …). Shared helper so substrates don't need
@@ -54,21 +46,6 @@ export interface SpawnSubstrateForInput {
 export function readTimeoutFromEnv(key: string): number | undefined {
   const raw = Number(process.env[key]);
   return Number.isFinite(raw) && raw > 0 ? raw : undefined;
-}
-
-export function spawnSubstrateFor(input: SpawnSubstrateForInput): Promise<SubstrateRunResult> {
-  const timeoutKey = `${input.name.toUpperCase()}_TIMEOUT_MS`;
-  const opts = input.opts;
-  return spawnSubstrate({
-    bin: input.bin,
-    args: input.args,
-    env: buildSubstrateEnv({ substrate: input.name, extra: opts.env }),
-    ...(opts.cwd ? { cwd: opts.cwd } : {}),
-    ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
-    timeoutMs:
-      opts.timeoutMs ?? readTimeoutFromEnv(timeoutKey) ?? DEFAULT_SUBSTRATE_TIMEOUT_MS,
-    label: input.name,
-  });
 }
 
 export async function spawnSubstrate(input: SpawnSubstrateInput): Promise<SubstrateRunResult> {

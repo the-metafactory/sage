@@ -25,6 +25,8 @@ author:
   github: jcfischer
 
 runtime:
+  # arc/v1 exposes a scalar substrate field, so keep the default substrate here;
+  # Sage can also run on Claude Code or Codex CLI via CLI/config/env selection.
   substrate: pi-dev
   mode: standalone
   capabilities:
