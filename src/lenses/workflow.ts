@@ -98,25 +98,84 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
-  const lensReports: LensReport[] = [];
 
-  // Iterate the declared lens registry. Each entry self-describes its
-  // optional applicability predicate, so adding lens #6 is a single-file
-  // edit in src/lenses/registry.ts — no changes here. Per cortex/docs/
-  // design-pi-dev-review-agent.md §7.
-  for (const lens of LENSES) {
-    if (lens.applies && !lens.applies(ctx)) continue;
-    const report = await lens.review({ pr, diff, substrate: opts.substrate, ...timeout });
-    lensReports.push(report);
-    // Progress callbacks (e.g., NATS publish in daemon mode) are non-critical
-    // — a publish failure must not discard a completed review. Log and move on.
-    try {
-      await opts.onLensComplete?.(report);
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
-    }
-  }
+  // Lens execution is parallel: each lens runs against the same read-only
+  // `pr`/`diff` inputs and produces a disjoint `LensReport`, so the
+  // sequential awaits in the prior implementation were latency the
+  // operator paid for, not correctness. Per cortex/docs/design-pi-dev-
+  // review-agent.md §7 + sage#26.
+  //
+  // `Promise.allSettled` (not `Promise.all`) isolates failures: one lens
+  // throwing must not discard reports already produced by its peers.
+  // Each rejection is converted into a degraded `LensReport` in the
+  // mapping step below so the verdict body still has a slot per lens.
+  //
+  // Order is preserved by filtering against the registry first and
+  // aligning `settled[i]` with `applicable[i]`. The rendered review body
+  // therefore reads the same way regardless of which lens happened to
+  // finish first, which keeps verdict diffs stable for downstream
+  // consumers (cortex dashboard, pilot loop) and matches the registry-
+  // declared reading order in src/lenses/registry.ts §canonical lens
+  // order.
+  const applicable = LENSES.filter(
+    (lens) => !lens.applies || lens.applies(ctx),
+  );
+
+  const settled = await Promise.allSettled(
+    applicable.map(async (lens) => {
+      const report = await lens.review({
+        pr,
+        diff,
+        substrate: opts.substrate,
+        ...timeout,
+      });
+      // Progress callbacks (e.g., NATS publish in daemon mode) fire as
+      // each lens completes — order is now completion-order, not
+      // registry-order. Bridge consumers already treat
+      // `dispatch.task.progress` events as a stream, so the relaxed
+      // ordering matches what they expect. Callback failures stay
+      // non-critical: a publish error must not discard a completed
+      // review.
+      try {
+        await opts.onLensComplete?.(report);
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
+      }
+      return report;
+    }),
+  );
+
+  const lensReports: LensReport[] = settled.map((result, i) => {
+    if (result.status === "fulfilled") return result.value;
+    // A lens throw is unexpected — `runLens` (base.ts) catches substrate
+    // errors and downgrades to a `nit` finding internally — but defense
+    // in depth: an unhandled throw from a future lens shouldn't sink
+    // peer reports. Synthesize a degraded report so the verdict still
+    // has a slot per lens and the operator sees what happened.
+    const lensName = applicable[i].name;
+    const msg =
+      result.reason instanceof Error
+        ? result.reason.message
+        : String(result.reason);
+    console.error(
+      `[workflow] lens "${lensName}" threw — synthesizing degraded report: ${msg}`,
+    );
+    return {
+      lens: lensName,
+      summary: `Lens "${lensName}" failed to execute; other lenses still ran.`,
+      findings: [
+        {
+          path: "(lens runtime)",
+          line: 0,
+          severity: "nit" as const,
+          title: `${lensName}: lens runtime error`,
+          rationale: msg,
+        },
+      ],
+      durationMs: 0,
+    };
+  });
 
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
