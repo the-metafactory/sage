@@ -37,28 +37,17 @@ export function dispatchSubject(
 ): string {
   return `local.${cfg.org}.dispatch.task.${phase}`;
 }
+// `post-failed` is in the phase union (not a separate function) because
+// it IS just another lifecycle phase from the subject hierarchy's
+// perspective. The earlier `postFailedSubject` wrapper added vocabulary
+// without hiding anything — bridge.ts calls `dispatchSubject({org},
+// "post-failed")` directly.
 
 export function verdictSubject(
   cfg: Pick<SubjectConfig, "org">,
   verdict: "approved" | "changes-requested" | "commented",
 ): string {
   return `local.${cfg.org}.code.pr.review.${verdict}`;
-}
-
-/**
- * Subject for the GH-post delivery failure — sibling of the four
- * dispatch lifecycle phases. The lens work itself succeeded (a verdict
- * was produced and persisted to disk) and the operational failure
- * happened in the post step. Lives under the dispatch namespace because
- * it describes what happened to the message, not the message itself.
- * See sage#16.
- *
- * Captured as a thin wrapper around `dispatchSubject({org}, "post-failed")`
- * so callers reading sage's lifecycle vocabulary don't have to know that
- * post-failed is "just another lifecycle phase".
- */
-export function postFailedSubject(cfg: Pick<SubjectConfig, "org">): string {
-  return dispatchSubject(cfg, "post-failed");
 }
 
 /**

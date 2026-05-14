@@ -133,6 +133,34 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     expect(msg).toMatch(/truncated \d+ chars/);
   });
 
+  test("postError.message strips ANSI escapes and control bytes (sage#16 round-4)", async () => {
+    // gh's stderr can contain color codes; an attacker-controlled
+    // remote could reflect arbitrary bytes through a PR body or repo
+    // name into gh's error reporting. The sanitizer strips those
+    // before the message rides the bus or hits the operator terminal.
+    postReviewBehavior = "throw";
+    postReviewErrorMessage =
+      "\x1b[31mERROR\x1b[0m gh pr review failed:\x00 \x07\x1b[2J unsafe \x1b[H";
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 42 },
+      substrate: stubSubstrate,
+      post: true,
+    });
+    const msg = result.postError?.message ?? "";
+    // No ESC, no NUL, no BEL, no CSI sequences remain.
+    expect(msg).not.toMatch(/\x1b/);
+    expect(msg).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]/);
+    // The whole CSI sequence is stripped — no `[31m` / `[2J` orphans
+    // left over because the regex alternation tries the multi-byte
+    // ANSI pattern before falling through to the single-byte control
+    // class.
+    expect(msg).not.toMatch(/\[\d+(?:;\d+)*[A-Za-z]/);
+    // Visible characters are preserved.
+    expect(msg).toContain("ERROR");
+    expect(msg).toContain("unsafe");
+  });
+
   test("posted=false + postReview NOT called when opts.post is false", async () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({

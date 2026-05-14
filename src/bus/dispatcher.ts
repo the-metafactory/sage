@@ -9,7 +9,6 @@ import {
 } from "./subjects.ts";
 import { connectNats } from "./connect.ts";
 import { parsePrRef } from "../github/gh.ts";
-import { safeRefSegment, verdictFilePath } from "../util/persistence.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "./payload.ts";
 
 /**
@@ -145,33 +144,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       // `persistVerdict` uses for its on-disk filename, which also
       // means the printed `cat` path matches what's actually on disk.
       if (env.type === "dispatch.task.post-failed") {
-        const ref = payload.ref as
-          | { owner: string; repo: string; number: number }
-          | undefined;
-        const errObj = payload.error as { message?: unknown } | string | undefined;
-        const errorMsg =
-          typeof errObj === "string"
-            ? errObj
-            : typeof errObj?.message === "string"
-              ? errObj.message
-              : "<no error message>";
-        log(`  post-failed: ${errorMsg}`);
-        if (ref) {
-          // Bus fields are untrusted at the trust boundary. Sanitize
-          // each segment (defense in depth on top of
-          // `TaskPayloadSchema`'s GitHub-charset regex) before
-          // interpolating into the operator-typeable hint.
-          const owner = (typeof ref.owner === "string" && safeRefSegment(ref.owner)) || "_";
-          const repo = (typeof ref.repo === "string" && safeRefSegment(ref.repo)) || "_";
-          const num = Number.isInteger(ref.number) && ref.number > 0 ? ref.number : 0;
-          // verdictFilePath builds the same path persistVerdict writes —
-          // single template, two consumers, no drift if the directory
-          // layout ever changes.
-          const path = verdictFilePath({ owner, repo, number: num }, "md");
-          log(
-            `  recover: cat ${path} | gh pr review ${num} --repo ${owner}/${repo} --body-file -`,
-          );
-        }
+        handlePostFailed(payload);
         // dispatch.task.completed still arrives after this — let it
         // resolve the dispatcher exit code.
         return;
@@ -238,5 +211,49 @@ const LOG_PREFIX = "[sage:dispatch]";
 function log(msg: string): void {
   // eslint-disable-next-line no-console
   console.error(`${LOG_PREFIX} ${msg}`);
+}
+
+/**
+ * Format the `dispatch.task.post-failed` envelope payload into operator-
+ * facing log lines: the error summary plus the recovery hint.
+ *
+ * Extracted from the consume callback so that callback stays a flat
+ * dispatch table. The recovery path is taken from
+ * `payload.recovery_path` (built by the bridge that knows the storage
+ * layout) — this dispatcher keeps no compile-time dependency on the
+ * persistence module's path layout.
+ *
+ * Every field is treated as untrusted: the publisher might be anyone
+ * with NATS publish rights on this org's subject space. We extract
+ * the bits we need with guarded typeofs and fall through to defensive
+ * defaults rather than crashing the consumer loop on a malformed
+ * envelope.
+ */
+function handlePostFailed(payload: Record<string, unknown>): void {
+  const errObj = payload.error as { message?: unknown } | string | undefined;
+  const errorMsg =
+    typeof errObj === "string"
+      ? errObj
+      : typeof errObj?.message === "string"
+        ? errObj.message
+        : "<no error message>";
+  log(`  post-failed: ${errorMsg}`);
+
+  const ref = payload.ref as
+    | { owner?: unknown; repo?: unknown; number?: unknown }
+    | undefined;
+  const recoveryPath = payload.recovery_path;
+
+  if (
+    ref &&
+    typeof ref.owner === "string" &&
+    typeof ref.repo === "string" &&
+    typeof ref.number === "number" &&
+    typeof recoveryPath === "string"
+  ) {
+    log(
+      `  recover: cat ${recoveryPath} | gh pr review ${ref.number} --repo ${ref.owner}/${ref.repo} --body-file -`,
+    );
+  }
 }
 

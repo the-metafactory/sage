@@ -12,13 +12,13 @@ import {
   broadcastSubject,
   directSubject,
   dispatchSubject,
-  postFailedSubject,
   verdictSubject,
   type SubjectConfig,
 } from "./subjects.ts";
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
 import type { Substrate } from "../substrate/types.ts";
+import { verdictFilePath } from "../util/persistence.ts";
 import { TaskPayloadSchema, type ReviewTaskPayload } from "./payload.ts";
 
 const td = new TextDecoder();
@@ -325,25 +325,11 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // verdict namespace) because it describes what happened to the
     // message, not the message itself — verdict outcomes and delivery
     // outcomes are different kinds of facts.
-    if (result.postError) {
-      await publish(
-        nc,
-        buildEnvelope({
-          source: cfg.source,
-          type: "dispatch.task.post-failed",
-          correlationId: env.correlation_id ?? env.id,
-          payload: {
-            ref,
-            verdict: result.verdict,
-            error: result.postError,
-          },
-          extensions: { substrate: cfg.substrate.name },
-        }),
-        postFailedSubject({ org: cfg.org }),
-      );
-    }
-
-    await publish(
+    // Build post-failed + completed envelopes in parallel when both
+    // need to publish. Neither depends on the other's result; the
+    // sequential `await` chain pre-#16 round-4 traded two NATS
+    // round-trips for no behavioral guarantee.
+    const completedPublish = publish(
       nc,
       buildEnvelope({
         source: cfg.source,
@@ -357,6 +343,35 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       }),
       dispatchSubject({ org: cfg.org }, "completed"),
     );
+
+    if (result.postError) {
+      // The recovery path is constructed HERE (in the bridge, which
+      // already owns the persist-then-post sequence) and shipped in the
+      // envelope payload as an opaque string. Dispatcher prints it
+      // without knowing or caring how the path was built — this keeps
+      // the bus layer (`src/bus/`) free of compile-time dependencies on
+      // the persistence layout in `src/util/persistence.ts`.
+      const recoveryPath = verdictFilePath(ref, "md");
+      const postFailedPublish = publish(
+        nc,
+        buildEnvelope({
+          source: cfg.source,
+          type: "dispatch.task.post-failed",
+          correlationId: env.correlation_id ?? env.id,
+          payload: {
+            ref,
+            verdict: result.verdict,
+            error: result.postError,
+            recovery_path: recoveryPath,
+          },
+          extensions: { substrate: cfg.substrate.name },
+        }),
+        dispatchSubject({ org: cfg.org }, "post-failed"),
+      );
+      await Promise.all([postFailedPublish, completedPublish]);
+    } else {
+      await completedPublish;
+    }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     await publish(

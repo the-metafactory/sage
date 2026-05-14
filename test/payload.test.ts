@@ -116,6 +116,8 @@ describe("TaskPayloadSchema (runtime)", () => {
     "`id`",
     "owner/extra-slash",
     "-leading-dash",
+    "trailing-dash-",
+    "double--dash",
     "",
   ])("rejects unsafe owner=%s", (owner) => {
     const r = TaskPayloadSchema.safeParse({ owner, repo: "y", number: 1 });

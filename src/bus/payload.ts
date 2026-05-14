@@ -21,14 +21,19 @@ import { z } from "zod";
  */
 /**
  * GitHub character set for org logins and repository names. Logins are
- * `[A-Za-z0-9]` plus single dashes (no leading/trailing dash); repo names
- * additionally allow `.` and `_`. We use a narrow safe-character regex
- * because these values cross the NATS bus trust boundary and are
- * eventually rendered into operator-facing shell hints (sage#16 review).
- * Anything that's not a valid GitHub identifier shouldn't reach the
- * daemon in the first place.
+ * `[A-Za-z0-9]` plus single (non-consecutive) dashes — no leading,
+ * trailing, or double dashes — capped at 39 chars; repo names
+ * additionally allow `.` and `_` up to 100 chars. We use a narrow
+ * safe-character regex because these values cross the NATS bus trust
+ * boundary and are eventually rendered into operator-facing shell
+ * hints (sage#16 review). Anything that's not a valid GitHub identifier
+ * shouldn't reach the daemon in the first place.
+ *
+ * Owner regex enforces GitHub's actual "no consecutive hyphens" rule
+ * via a positive lookahead — each `-` must be followed by another
+ * alphanumeric.
  */
-const GH_OWNER_RE = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+const GH_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 const GH_REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
 export const TaskPayloadSchema = z

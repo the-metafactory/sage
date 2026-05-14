@@ -81,6 +81,29 @@ export interface PostError {
  */
 export const POST_ERROR_MAX_LEN = 500;
 
+/**
+ * Strip control bytes and ANSI escape sequences from a string. `gh`'s
+ * stderr can include color codes and (theoretically) attacker-shaped
+ * content reflected from a remote repository's name or PR body; we
+ * sanitize before the message rides the NATS bus or hits an operator's
+ * terminal via `console.error`.
+ *
+ *   - `\x00-\x08` + `\x0b-\x1f` + `\x7f`: C0 control bytes except
+ *     `\t` (`\x09`) and `\n` (`\x0a`), which are useful in error
+ *     dumps.
+ *   - `\x1b\[[0-9;]*[A-Za-z]`: CSI ANSI escape sequences (the most
+ *     common terminal-injection vector).
+ */
+function sanitizeErrorMessage(raw: string): string {
+  // ORDER MATTERS: alternation is left-to-right at each position, so the
+  // CSI pattern must come BEFORE the control-byte class — otherwise the
+  // engine consumes `\x1b` as a single control byte (which it is) before
+  // the CSI pattern gets a chance to match `\x1b[31m` as a unit, leaving
+  // a visible `[31m` orphan in the output.
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/\x1b\[[0-9;]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
+
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const pr = await prView(opts.ref);
   const diff = await prDiff(opts.ref);
@@ -120,7 +143,6 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const { posted, postedEvent, downgraded, postError } = opts.post
     ? await attemptPost(opts.ref, verdict, body)
     : { posted: false };
-
   return {
     verdict,
     posted,
@@ -178,16 +200,20 @@ async function attemptPost(
     };
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : String(err);
+    // Sanitize BEFORE truncate so control bytes / ANSI escapes can't
+    // partially-survive past the slice boundary. The sanitized string
+    // is the one that rides the bus AND the one operators see in their
+    // terminal, so the same hygiene applies in both directions.
+    const sanitized = sanitizeErrorMessage(rawMessage);
     const message =
-      rawMessage.length > POST_ERROR_MAX_LEN
-        ? `${rawMessage.slice(0, POST_ERROR_MAX_LEN)} […truncated ${rawMessage.length - POST_ERROR_MAX_LEN} chars]`
-        : rawMessage;
+      sanitized.length > POST_ERROR_MAX_LEN
+        ? `${sanitized.slice(0, POST_ERROR_MAX_LEN)} […truncated ${sanitized.length - POST_ERROR_MAX_LEN} chars]`
+        : sanitized;
     // eslint-disable-next-line no-console
     console.error(`[workflow] post: failed ${target}: ${message}`);
     return { posted: false, postError: { message } };
   }
 }
-
 
 function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
   switch (decision) {
