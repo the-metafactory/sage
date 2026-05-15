@@ -1,4 +1,4 @@
-import type { PrMetadata } from "../github/gh.ts";
+import type { PrMetadata, PriorReviewFinding } from "../github/gh.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -37,6 +37,12 @@ export interface LensRunInput {
    * knob (Claude Code) ignore this.
    */
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  /**
+   * Findings already raised by Sage on earlier reviews of this PR. They
+   * are prompt context only: lenses should avoid re-raising them unless
+   * the current diff introduces a materially new instance.
+   */
+  priorFindings?: PriorReviewFinding[];
 }
 
 interface RawLensOutput {
@@ -77,6 +83,20 @@ Severity rules:
 - suggestion: optional improvement.
 - nit:        cosmetic.
 
+Calibration: across a typical PR with findings, expect at most 1 blocker and
+at most 2 important findings. Important requires concrete, demonstrable harm
+before merge. If the rationale is mainly "this might", "this could", or
+"future readers may", use suggestion or nit instead.
+
+Grounding: every finding must quote the offending text from the diff in its
+rationale. If you cannot quote the exact diff text that supports the finding,
+do not raise it.
+
+Iteration awareness: stdin may include previously raised Sage findings on this
+PR. If one still applies, do NOT re-raise it. If one has been addressed in the
+current diff, do NOT count it. Surface only new findings or findings earlier
+rounds clearly missed.
+
 Surface only real issues for THIS lens. Findings that belong to a different
 lens are out of scope — skip them. An empty findings array is a valid response.
 
@@ -112,10 +132,21 @@ function normalizeLine(raw: number | string | undefined): number {
   return parsed;
 }
 
-function buildStdinContent(pr: PrMetadata, diff: string): string {
+function buildStdinContent(
+  pr: PrMetadata,
+  diff: string,
+  priorFindings: PriorReviewFinding[] = [],
+): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)
     .join("\n");
+  const priorSection =
+    priorFindings.length === 0
+      ? "Previously raised Sage findings on this PR:\n(none)"
+      : `Previously raised Sage findings on this PR:
+${priorFindings
+  .map((f) => `  - [${f.severity}] ${f.path}:${f.line} — ${f.title}`)
+  .join("\n")}`;
 
   return `PR #${pr.number}: ${pr.title}
 Author: ${pr.author.login}
@@ -125,6 +156,8 @@ ${fileList}
 
 Description:
 ${pr.body || "(no description)"}
+
+${priorSection}
 
 ---
 Unified diff:
@@ -138,7 +171,7 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
-  const stdinContent = buildStdinContent(input.pr, input.diff);
+  const stdinContent = buildStdinContent(input.pr, input.diff, input.priorFindings);
 
   let lensResult: { result: RawLensOutput; raw: { stdout: string } } | undefined;
   let extractionError = "";

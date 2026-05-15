@@ -10,6 +10,8 @@ export interface Finding {
   rationale: string;
   /** Optional suggested patch (small inline replacement). */
   suggestion?: string;
+  /** Lenses that raised this finding before cross-lens deduplication. */
+  sourceLenses?: string[];
 }
 
 export interface LensReport {
@@ -104,7 +106,8 @@ export function buildErroredLensReport(opts: ErroredLensReportInput): LensReport
 }
 
 export function decideVerdict(lenses: LensReport[]): ReviewVerdict {
-  const all = lenses.flatMap((l) => l.findings);
+  const dedupedLenses = dedupeLensFindings(lenses);
+  const all = dedupedLenses.flatMap((l) => l.findings);
   const hasBlocker = all.some((f) => f.severity === "blocker");
   const hasImportant = all.some((f) => f.severity === "important");
   // A lens that errored before producing findings is itself a merge-
@@ -126,7 +129,105 @@ export function decideVerdict(lenses: LensReport[]): ReviewVerdict {
 
   const summary = buildVerdictSummary(all, erroredLenses);
 
-  return { decision, summary, lenses };
+  return { decision, summary, lenses: dedupedLenses };
+}
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  blocker: 4,
+  important: 3,
+  suggestion: 2,
+  nit: 1,
+};
+
+const TITLE_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "be",
+  "by",
+  "for",
+  "in",
+  "is",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+]);
+
+export function dedupeLensFindings(lenses: LensReport[]): LensReport[] {
+  const deduped = lenses.map((lens) => ({ ...lens, findings: [] as Finding[] }));
+  const firstIndexByKey = new Map<string, { lensIndex: number; findingIndex: number }>();
+
+  lenses.forEach((lens, lensIndex) => {
+    lens.findings.forEach((finding) => {
+      if (lens.errored) {
+        deduped[lensIndex]?.findings.push(finding);
+        return;
+      }
+
+      const key = findingDedupKey(finding);
+      const existingRef = firstIndexByKey.get(key);
+      if (!existingRef) {
+        firstIndexByKey.set(key, {
+          lensIndex,
+          findingIndex: deduped[lensIndex]?.findings.length ?? 0,
+        });
+        deduped[lensIndex]?.findings.push({
+          ...finding,
+          sourceLenses: mergeSourceLenses(finding.sourceLenses, lens.lens),
+        });
+        return;
+      }
+
+      const existing = deduped[existingRef.lensIndex]?.findings[existingRef.findingIndex];
+      if (!existing) return;
+      const merged = mergeFindings(existing, finding, lens.lens);
+      deduped[existingRef.lensIndex]!.findings[existingRef.findingIndex] = merged;
+    });
+  });
+
+  lenses.forEach((lens, lensIndex) => {
+    const output = deduped[lensIndex];
+    if (!output || lens.errored) return;
+    if (lens.findings.length > 0 && output.findings.length === 0) {
+      output.summary = "Findings deduplicated into earlier lens sections.";
+    }
+  });
+
+  return deduped;
+}
+
+function mergeFindings(existing: Finding, incoming: Finding, lensName: string): Finding {
+  const keepIncoming = SEVERITY_RANK[incoming.severity] > SEVERITY_RANK[existing.severity];
+  const sourceLenses = mergeSourceLenses(existing.sourceLenses, lensName);
+  if (!keepIncoming) return { ...existing, sourceLenses };
+  return {
+    ...incoming,
+    sourceLenses,
+  };
+}
+
+function mergeSourceLenses(existing: string[] | undefined, lensName: string): string[] {
+  const merged = [...(existing ?? []), lensName];
+  return [...new Set(merged)];
+}
+
+function findingDedupKey(finding: Finding): string {
+  return `${finding.path}:${finding.line}:${normalizeTitle(finding.title)}`;
+}
+
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 0 && !TITLE_STOP_WORDS.has(word))
+    .join(" ")
+    .slice(0, 40);
 }
 
 function buildVerdictSummary(all: Finding[], errored: LensReport[]): string {

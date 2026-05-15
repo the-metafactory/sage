@@ -106,4 +106,32 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
     const callouts = body.match(/Lens failed to execute/g) ?? [];
     expect(callouts.length).toBe(1);
   });
+
+  test("deduped cross-lens finding renders contributing lenses", () => {
+    const verdict: ReviewVerdict = {
+      decision: "changes-requested",
+      summary: "1 finding(s): 1 important.",
+      lenses: [
+        {
+          lens: "Architecture",
+          summary: "one issue",
+          findings: [
+            {
+              path: "src/a.ts",
+              line: 42,
+              severity: "important",
+              title: "Duplicate trigger pattern",
+              rationale: "The diff repeats `trigger()`.",
+              sourceLenses: ["Architecture", "Maintainability"],
+            },
+          ],
+          durationMs: 1,
+        },
+        cleanLens("Maintainability"),
+      ],
+    };
+
+    const body = renderReviewBody(verdict, "codex");
+    expect(body).toMatch(/Lenses: Architecture, Maintainability/);
+  });
 });

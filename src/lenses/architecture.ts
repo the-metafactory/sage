@@ -9,9 +9,14 @@ boundaries (does the new code belong where it lives?), separation of concerns
 (does this change paint future work into a corner?). You do NOT look for
 correctness, security, or performance — those belong to other lenses.
 
-Flag a finding when a structural decision is likely to cost rework later, or
-when the change violates a stated architectural principle in the repo's
-docs (CLAUDE.md, ISA.md, design docs).`;
+Flag only when one of these concrete triggers applies:
+- a documented principle in CLAUDE.md, ISA.md, or design docs is violated and
+  you can quote it;
+- the change makes a near-term feature impossible without rework; or
+- the change is irreversible, such as schema migration or public API surface.
+
+Single-consumer abstraction splits, helper density, and "could be more
+cohesive" are not findings by themselves.`;
 
 export async function reviewArchitecture(input: LensRunInput): Promise<LensReport> {
   return runLens({ name: "Architecture", focus: FOCUS }, input);
