@@ -4,7 +4,7 @@ import {
   TaskPayloadSchema,
   type ReviewTaskPayload,
   type DispatchTaskPayload,
-} from "../src/bus/payload.ts";
+} from "../src/tasks/types.ts";
 
 /**
  * Issue #10: canonical schema for the code-review task envelope's payload,

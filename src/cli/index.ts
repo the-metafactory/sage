@@ -82,6 +82,11 @@ program
   )
   .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
   .option("--queue <name>", "NATS queue-group for competing-consumer", "sage-review")
+  .option(
+    "--residency <code>",
+    "Data-residency ISO 3166 alpha-2 code stamped on outbound envelopes",
+    process.env.MYELIN_DATA_RESIDENCY ?? process.env.SAGE_DATA_RESIDENCY,
+  )
   .action(
     async (opts: {
       nats: string;
@@ -93,11 +98,17 @@ program
       creds?: string;
       queue: string;
       substrate?: string;
+      residency?: string;
     }) => {
       const selection = selectSubstrate({ flag: opts.substrate });
       console.error(
         `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source})`,
       );
+
+      const requireNatsAuth =
+        process.env.SAGE_REQUIRE_NATS_AUTH === "1" ||
+        process.env.SAGE_REQUIRE_NATS_AUTH === "true";
+
       const bridge = await startBridge({
         natsUrl: opts.nats,
         org: opts.org,
@@ -108,6 +119,8 @@ program
         maxConcurrentTasks: opts.maxConcurrent,
         ...(opts.creds ? { credsFile: opts.creds } : {}),
         queueGroup: opts.queue,
+        ...(opts.residency ? { dataResidency: opts.residency } : {}),
+        ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
       });
 
       let shuttingDown = false;
@@ -169,6 +182,11 @@ program
     (v) => parseInt(v, 10),
     process.env.SAGE_DISPATCH_TIMEOUT ? Number(process.env.SAGE_DISPATCH_TIMEOUT) : undefined,
   )
+  .option(
+    "--residency <code>",
+    "Data-residency ISO 3166 alpha-2 code stamped on the task envelope",
+    process.env.MYELIN_DATA_RESIDENCY ?? process.env.SAGE_DATA_RESIDENCY,
+  )
   .action(
     async (
       prRef: string,
@@ -180,6 +198,7 @@ program
         post: boolean;
         wait: number;
         timeout?: number;
+        residency?: string;
       },
     ) => {
       const exitCode = await dispatchReview({
@@ -191,6 +210,7 @@ program
         post: opts.post,
         waitSeconds: opts.wait,
         ...(opts.timeout ? { timeoutSeconds: opts.timeout } : {}),
+        ...(opts.residency ? { dataResidency: opts.residency } : {}),
       });
       process.exit(exitCode);
     },
