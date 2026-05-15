@@ -1,18 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { Subscription } from "nats";
-
-import { buildEnvelope, safeValidateEnvelope, type Envelope } from "./envelope.ts";
 import {
-  taskSubject,
-  dispatchLifecycleWildcard,
+  safeDecodeEnvelope,
+  deriveLifecycleWildcard,
   verdictWildcard,
-} from "./subjects.ts";
+  type MyelinEnvelope,
+} from "@the-metafactory/myelin";
+
 import { connectNats } from "./connect.ts";
+import { makeEmitter } from "./emit.ts";
+import { buildSovereignty } from "../identity.ts";
 import { parsePrRef } from "../github/gh.ts";
-import type { DispatchTaskPayload as _DispatchTaskPayload } from "./payload.ts";
+import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
+import { describeEmission } from "../tasks/emissions.ts";
 
 /**
- * @deprecated Import `DispatchTaskPayload` directly from `./payload.ts`.
+ * @deprecated Import `DispatchTaskPayload` directly from `../tasks/types.ts`.
  * This re-export is a back-compat shim — the type's canonical home is the
  * protocol module, not this transport module. Remove in the next cleanup.
  *
@@ -55,10 +58,20 @@ export interface DispatchOptions {
    * when this is absent.
    */
   timeoutSeconds?: number;
+  /**
+   * Data-residency code (ISO 3166 alpha-2) stamped on the task envelope.
+   * Falls back to `MYELIN_DATA_RESIDENCY` / `SAGE_DATA_RESIDENCY` env /
+   * `"CH"` when omitted.
+   */
+  dataResidency?: string;
+  /**
+   * Refuse to connect to NATS without usable creds. Sage PR#29 self-review
+   * (CodeQuality, important): the daemon honored `SAGE_REQUIRE_NATS_AUTH`
+   * via bridge.ts; the dispatcher silently fell back to unauthenticated.
+   * Wiring it here closes the inconsistency.
+   */
+  requireNatsAuth?: boolean;
 }
-
-const td = new TextDecoder();
-const te = new TextEncoder();
 
 export interface BuildReviewTaskPayloadInput {
   prUrl: string;
@@ -96,27 +109,32 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     natsUrl: opts.natsUrl,
     ...(opts.credsFile ? { credsFile: opts.credsFile } : {}),
     log: (m) => log(m),
+    ...(opts.requireNatsAuth ? { requireAuth: true } : {}),
   });
   log(`connected ${opts.natsUrl}`);
 
   const correlationId = randomUUID();
-  const taskEnvelope = buildEnvelope<_DispatchTaskPayload>({
+  const sovereignty = buildSovereignty(
+    opts.dataResidency ? { data_residency: opts.dataResidency } : undefined,
+  );
+  const baseEmit = makeEmitter({
+    nc,
     source: opts.source,
-    type: "tasks.code-review.typescript",
-    correlationId,
-    payload: buildReviewTaskPayload({
-      prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
-      post: opts.post,
-      ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
-    }),
+    sovereignty,
+    log: (m) => log(m),
   });
-  const taskSubj = taskSubject({ org: opts.org }, "code-review.typescript");
+  const capability = "code-review.typescript";
+  const taskPayload = buildReviewTaskPayload({
+    prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+    post: opts.post,
+    ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+  });
 
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
   // miss a fast-completing daemon's reply. Filter by correlation_id so
   // concurrent reviews don't cross-talk.
-  const lifecycleSub = nc.subscribe(dispatchLifecycleWildcard({ org: opts.org }));
-  const verdictSub = nc.subscribe(verdictWildcard({ org: opts.org }));
+  const lifecycleSub = nc.subscribe(deriveLifecycleWildcard(opts.org));
+  const verdictSub = nc.subscribe(verdictWildcard(opts.org, "review"));
 
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -131,7 +149,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
     void consume(lifecycleSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
-      const payload = (env.payload as Record<string, unknown>) ?? {};
+      const payload = env.payload ?? {};
 
       // `dispatch.task.post-failed` (sage#16) is the operational sibling
       // of `dispatch.task.failed` — lens work succeeded, GH post
@@ -162,7 +180,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
     void consume(verdictSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
-      const payload = env.payload as Record<string, unknown>;
+      const payload = env.payload;
       const decision =
         typeof payload.verdict === "object" && payload.verdict !== null
           ? (payload.verdict as Record<string, unknown>).decision
@@ -178,29 +196,46 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     }, opts.waitSeconds * 1000);
   });
 
-  log(`▶ publishing ${taskSubj} (id=${taskEnvelope.id}, correlation=${correlationId})`);
-  nc.publish(taskSubj, te.encode(JSON.stringify(taskEnvelope)));
+  log(`▶ publishing tasks.${capability} (correlation=${correlationId})`);
+  const { subject: taskSubj, type: taskType } = describeEmission(opts.org, {
+    kind: "task",
+    capability,
+    payload: taskPayload as Record<string, unknown>,
+  });
 
-  const exitCode = await done;
-  await nc.drain();
-  return exitCode;
+  // Sage PR#29 R2 [important]: cleanup must run even if `baseEmit` throws
+  // during validate or `nc.publish`. Without the try/finally, a publish
+  // failure would leave the wait timer + two subscriptions hanging until
+  // process exit.
+  try {
+    await baseEmit({
+      subject: taskSubj,
+      type: taskType,
+      payload: taskPayload as Record<string, unknown>,
+      correlationId,
+    });
+    return await done;
+  } finally {
+    if (timer) clearTimeout(timer);
+    try {
+      await nc.drain();
+    } catch (drainErr) {
+      const m = drainErr instanceof Error ? drainErr.message : String(drainErr);
+      log(`drain failed during cleanup: ${m}`);
+    }
+  }
 }
 
 async function consume(
   sub: Subscription,
   correlationId: string,
-  onMatch: (envelope: Envelope, subject: string) => void,
+  onMatch: (envelope: MyelinEnvelope, subject: string) => void,
 ): Promise<void> {
   for await (const msg of sub) {
-    let envelope: Envelope;
-    try {
-      const raw = JSON.parse(td.decode(msg.data));
-      const parsed = safeValidateEnvelope(raw);
-      if (!parsed.success) continue;
-      envelope = parsed.data;
-    } catch {
-      continue;
-    }
+    const envelope = safeDecodeEnvelope(msg.data, msg.subject, {
+      onError: (reason, subject) => log(`${reason} on ${subject ?? "?"}`),
+    });
+    if (!envelope) continue;
     if (envelope.correlation_id !== correlationId) continue;
     onMatch(envelope, msg.subject);
   }

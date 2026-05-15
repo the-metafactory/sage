@@ -1,81 +1,76 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
+
 import {
-  broadcastSubject,
-  directSubject,
-  dispatchSubject,
+  broadcastTaskSubject,
+  directTaskSubject,
+  deriveLifecycleSubject,
   verdictSubject,
   taskSubject,
-  dispatchLifecycleWildcard,
+  deriveLifecycleWildcard,
   verdictWildcard,
-} from "../src/bus/subjects.ts";
+} from "@the-metafactory/myelin";
 
-const cfg = { org: "metafactory", did: "did:mf:sage" } as const;
+/**
+ * Sage's subject grammar was previously hand-rolled in `src/bus/subjects.ts`
+ * — deleted when sage adopted `@the-metafactory/myelin` v0.2. These tests
+ * lock the sage-specific subject shapes against the upstream helpers:
+ *
+ *   - Inbound broadcast: `local.{org}.tasks.code-review.>`
+ *   - Inbound direct:    `local.{org}.tasks.@did-mf-sage.>`
+ *   - Outbound lifecycle: `local.{org}.dispatch.task.{state}`
+ *   - Outbound verdict:   `local.{org}.code.pr.review.{decision}`
+ *
+ * Drift in any of these breaks the cedar↔sage protocol.
+ */
+const ORG = "metafactory";
 
-describe("subscribe-side wildcards", () => {
-  test("broadcastSubject", () => {
-    expect(broadcastSubject(cfg)).toBe("local.metafactory.tasks.code-review.>");
-  });
-
-  test("directSubject encodes DID", () => {
-    expect(directSubject(cfg)).toBe("local.metafactory.tasks.@did-mf-sage.>");
-  });
-
-  test("directSubject with dotted DID", () => {
-    expect(directSubject({ ...cfg, did: "did:mf:hub.metafactory" })).toBe(
-      "local.metafactory.tasks.@did-mf-hub--metafactory.>",
+describe("sage subject grammar (via myelin helpers)", () => {
+  test("broadcastTaskSubject('code-review') matches the inbound broadcast pattern", () => {
+    expect(broadcastTaskSubject(ORG, "code-review")).toBe(
+      "local.metafactory.tasks.code-review.>",
     );
   });
 
-  test("dispatchLifecycleWildcard", () => {
-    expect(dispatchLifecycleWildcard({ org: "metafactory" })).toBe(
-      "local.metafactory.dispatch.task.>",
+  test("directTaskSubject('did:mf:sage') matches the inbound direct pattern", () => {
+    expect(directTaskSubject(ORG, "did:mf:sage")).toBe(
+      "local.metafactory.tasks.@did-mf-sage.>",
     );
   });
 
-  test("verdictWildcard", () => {
-    expect(verdictWildcard({ org: "metafactory" })).toBe(
-      "local.metafactory.code.pr.review.>",
-    );
-  });
-});
-
-describe("publish-side concrete subjects", () => {
-  test("taskSubject builds capability-suffixed task subject", () => {
-    expect(taskSubject({ org: "metafactory" }, "code-review.typescript")).toBe(
+  test("taskSubject('code-review.typescript') is the dispatch terminal subject", () => {
+    expect(taskSubject(ORG, "code-review.typescript")).toBe(
       "local.metafactory.tasks.code-review.typescript",
     );
   });
 
-  test("dispatchSubject for each phase", () => {
-    for (const phase of ["started", "progress", "completed", "failed"] as const) {
-      expect(dispatchSubject({ org: "metafactory" }, phase)).toBe(
+  // Table-driven so adding a phase or verdict (sage R29 #4) means one
+  // entry, not a copy-pasted assertion block.
+  const LIFECYCLE_PHASES = ["started", "progress", "completed", "failed"] as const;
+  test.each(LIFECYCLE_PHASES)(
+    "deriveLifecycleSubject('%s') yields the canonical dispatch subject",
+    (phase) => {
+      expect(deriveLifecycleSubject(ORG, phase)).toBe(
         `local.metafactory.dispatch.task.${phase}`,
       );
-    }
-  });
+    },
+  );
 
-  test("verdictSubject for each decision", () => {
-    for (const decision of ["approved", "changes-requested", "commented"] as const) {
-      expect(verdictSubject({ org: "metafactory" }, decision)).toBe(
+  const REVIEW_DECISIONS = ["approved", "changes-requested", "commented"] as const;
+  test.each(REVIEW_DECISIONS)(
+    "verdictSubject('review', '%s') yields the canonical pr-review subject",
+    (decision) => {
+      expect(verdictSubject(ORG, "review", decision)).toBe(
         `local.metafactory.code.pr.review.${decision}`,
       );
-    }
-  });
+    },
+  );
 
-  // `post-failed` sits under the DISPATCH LIFECYCLE namespace (sage#16
-  // PR #20 round 2 review): verdict outcomes describe the message, post
-  // failures describe what happened to it — different facts. The
-  // dispatchLifecycleWildcard subscriber on the dispatcher receives it
-  // without a separate subscription. Goes through `dispatchSubject`
-  // directly — the prior thin wrapper added no logic (round-4 review).
-  test("dispatchSubject('post-failed') lives under dispatch lifecycle root", () => {
-    expect(dispatchSubject({ org: "metafactory" }, "post-failed")).toBe(
-      "local.metafactory.dispatch.task.post-failed",
+  test("wildcards used by the dispatcher subscription side", () => {
+    expect(deriveLifecycleWildcard(ORG)).toBe(
+      "local.metafactory.dispatch.task.>",
     );
-    expect(
-      dispatchSubject({ org: "metafactory" }, "post-failed").startsWith(
-        dispatchLifecycleWildcard({ org: "metafactory" }).replace(".>", "."),
-      ),
-    ).toBe(true);
+    expect(verdictWildcard(ORG, "review")).toBe(
+      "local.metafactory.code.pr.review.>",
+    );
   });
 });

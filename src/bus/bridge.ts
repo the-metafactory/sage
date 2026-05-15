@@ -1,38 +1,27 @@
 import { type NatsConnection, type Subscription } from "nats";
+import {
+  safeDecodeEnvelope,
+  broadcastTaskSubject,
+  directTaskSubject,
+  type MyelinEnvelope,
+} from "@the-metafactory/myelin";
 
 import { connectNats } from "./connect.ts";
-
-import {
-  buildEnvelope,
-  deriveSubject,
-  safeValidateEnvelope,
-  type Envelope,
-} from "./envelope.ts";
-import {
-  broadcastSubject,
-  directSubject,
-  dispatchSubject,
-  verdictSubject,
-  type SubjectConfig,
-} from "./subjects.ts";
+import { makeEmitter, type Emitter } from "./emit.ts";
+import { buildSovereignty } from "../identity.ts";
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
 import type { Substrate } from "../substrate/types.ts";
-import { TaskPayloadSchema, type ReviewTaskPayload } from "./payload.ts";
-
-const td = new TextDecoder();
-const te = new TextEncoder();
+import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
+import { describeEmission, type Emission } from "../tasks/emissions.ts";
 
 /**
- * @deprecated Import `TaskPayloadSchema` directly from `./payload.ts` and
- * remove this re-export in the next cleanup pass. Two living names for the
- * same export is the kind of low-grade drift sage#10 was meant to
- * eliminate.
- *
- * Schema and inferred type now live in `./payload.ts` as the canonical
- * contract shared between sender (`dispatcher.ts`) and receiver (this
- * file). The `ReviewTaskPayloadSchema` alias preserves the prior public
- * name; the underlying schema is `TaskPayloadSchema`.
+ * @deprecated Import `TaskPayloadSchema` directly from `../tasks/types.ts`
+ * and remove this re-export in the next cleanup pass. Two living names for
+ * the same export is the kind of low-grade drift sage#10 was meant to
+ * eliminate. Module location moved from `./payload.ts` to
+ * `../tasks/types.ts` in the myelin v0.2 adoption (PR#29) for cedar-
+ * structural parity.
  *
  * Declared as `const` (rather than `export { … as … } from`) so this
  * `@deprecated` tag binds directly to the alias identifier — TS surfaces
@@ -40,7 +29,7 @@ const te = new TextEncoder();
  * which the bare re-export form does not always do across editors.
  */
 export const ReviewTaskPayloadSchema = TaskPayloadSchema;
-export type { ReviewTaskPayload } from "./payload.ts";
+export type { ReviewTaskPayload } from "../tasks/types.ts";
 
 export interface BridgeConfig {
   natsUrl: string;
@@ -76,6 +65,14 @@ export interface BridgeConfig {
    * semantics (only one delivery per message). Defaults to `sage-review`.
    */
   queueGroup?: string;
+  /** Refuse to connect without usable NATS creds (recommended in production). */
+  requireNatsAuth?: boolean;
+  /**
+   * Data-residency code (ISO 3166 alpha-2) stamped on every outbound
+   * envelope's sovereignty block. When omitted, `buildSovereignty` falls
+   * back to `MYELIN_DATA_RESIDENCY` / `SAGE_DATA_RESIDENCY` env / `"CH"`.
+   */
+  dataResidency?: string;
 }
 
 class Semaphore {
@@ -131,12 +128,14 @@ export interface RunningBridge {
 export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   // Connect via the shared helper. It handles creds-path resolution, the
   // ENOENT soft-fallback (missing sage.creds file is a legitimate dev
-  // state), and authenticator setup. Both bridge.ts and dispatcher.ts
-  // use the same helper so transport behavior can't drift between them.
+  // state), authenticator setup, and optional refuse-without-auth
+  // enforcement. Both bridge.ts and dispatcher.ts use the same helper
+  // so transport behavior can't drift between them.
   const nc = await connectNats({
     natsUrl: cfg.natsUrl,
     ...(cfg.credsFile ? { credsFile: cfg.credsFile } : {}),
     log: (m) => log(`bridge: ${m}`),
+    ...(cfg.requireNatsAuth ? { requireAuth: true } : {}),
   });
   // Register connection-level event listeners BEFORE any subscribe/publish.
   // The nats.js client emits 'error' on the connection (not via thrown
@@ -146,18 +145,19 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   // daemon.
   void watchConnectionStatus(nc);
 
-  const subjects: SubjectConfig = { org: cfg.org, did: cfg.did };
   const queue = cfg.queueGroup ?? "sage-review";
+  const broadcastSubj = broadcastTaskSubject(cfg.org, "code-review");
+  const directSubj = directTaskSubject(cfg.org, cfg.did);
 
-  const broadcast = nc.subscribe(broadcastSubject(subjects), { queue });
-  const direct = nc.subscribe(directSubject(subjects), { queue });
+  const broadcast = nc.subscribe(broadcastSubj, { queue });
+  const direct = nc.subscribe(directSubj, { queue });
 
   const concurrencyLimit = cfg.maxConcurrentTasks ?? 3;
   const sem = new Semaphore(concurrencyLimit);
 
   log(`bridge: connected ${cfg.natsUrl}`);
-  log(`bridge: subscribed ${broadcastSubject(subjects)} (queue=${queue})`);
-  log(`bridge: subscribed ${directSubject(subjects)} (queue=${queue})`);
+  log(`bridge: subscribed ${broadcastSubj} (queue=${queue})`);
+  log(`bridge: subscribed ${directSubj} (queue=${queue})`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
   const onLoopFailure = (which: string) => async (err: unknown) => {
@@ -195,20 +195,10 @@ async function consumeSubscription(
   sem: Semaphore,
 ): Promise<void> {
   for await (const msg of sub) {
-    let envelope: Envelope;
-    try {
-      const raw = JSON.parse(td.decode(msg.data));
-      const parsed = safeValidateEnvelope(raw);
-      if (!parsed.success) {
-        log(`bridge: rejected envelope on ${msg.subject}: ${parsed.error.message}`);
-        continue;
-      }
-      envelope = parsed.data;
-    } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
-      log(`bridge: bad payload on ${msg.subject}: ${m}`);
-      continue;
-    }
+    const envelope = safeDecodeEnvelope(msg.data, msg.subject, {
+      onError: (reason, subject) => log(`bridge: ${reason} on ${subject ?? "?"}`),
+    });
+    if (!envelope) continue;
 
     // Block the consumer loop until a concurrency slot is available. Back-
     // pressure here propagates to NATS via slow consumer detection rather
@@ -224,19 +214,48 @@ async function consumeSubscription(
   }
 }
 
-async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection): Promise<void> {
+async function handleTask(
+  env: MyelinEnvelope,
+  cfg: BridgeConfig,
+  nc: NatsConnection,
+): Promise<void> {
+  const corrId = env.correlation_id ?? env.id;
+  const sovereignty = buildSovereignty(
+    cfg.dataResidency ? { data_residency: cfg.dataResidency } : undefined,
+  );
+  const substrateExtensions = { substrate: cfg.substrate.name };
+
+  // Generic transport emitter (bus boundary) — domain descriptors come
+  // from `src/tasks/emissions.ts`. `publish(emission, extensions?)`
+  // resolves subject + type via `describeEmission`, then hands the result
+  // to the transport.
+  const baseEmit: Emitter = makeEmitter({
+    nc,
+    source: cfg.source,
+    sovereignty,
+    log: (m) => log(`bridge: ${m}`),
+  });
+  const emit = (
+    emission: Emission,
+    extensions?: Record<string, unknown>,
+  ): Promise<void> => {
+    const { subject, type } = describeEmission(cfg.org, emission);
+    return baseEmit({
+      subject,
+      type,
+      payload: emission.payload,
+      correlationId: corrId,
+      ...(extensions ? { extensions } : {}),
+    });
+  };
+
   const payloadResult = TaskPayloadSchema.safeParse(env.payload);
   if (!payloadResult.success) {
-    await publish(
-      nc,
-      buildEnvelope({
-        source: cfg.source,
-        type: "dispatch.task.failed",
-        correlationId: env.correlation_id ?? env.id,
-        payload: { reason: "invalid-payload", detail: payloadResult.error.message },
-      }),
-      dispatchSubject({ org: cfg.org }, "failed"),
-    );
+    await emit({
+      kind: "lifecycle",
+      state: "failed",
+      payload: { reason: "invalid-payload", detail: payloadResult.error.message },
+    });
     return;
   }
   const payload = payloadResult.data;
@@ -245,34 +264,22 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // Defensive — Zod's `.refine()` does not narrow the output type, so the
     // compiler cannot prove non-null on `owner/repo/number`. The schema
     // refinement above already guarantees at least one branch is present.
-    // If a future refactor breaks that, this catches it at the boundary
-    // instead of producing an undefined-ref TypeError downstream.
-    await publish(
-      nc,
-      buildEnvelope({
-        source: cfg.source,
-        type: "dispatch.task.failed",
-        correlationId: env.correlation_id ?? env.id,
-        payload: {
-          reason: "invalid-payload",
-          detail: "payload had neither pr_url nor complete owner/repo/number",
-        },
-      }),
-      dispatchSubject({ org: cfg.org }, "failed"),
-    );
+    await emit({
+      kind: "lifecycle",
+      state: "failed",
+      payload: {
+        reason: "invalid-payload",
+        detail: "payload had neither pr_url nor complete owner/repo/number",
+      },
+    });
     return;
   }
 
-  await publish(
-    nc,
-    buildEnvelope({
-      source: cfg.source,
-      type: "dispatch.task.started",
-      correlationId: env.correlation_id ?? env.id,
-      payload: { ref },
-    }),
-    dispatchSubject({ org: cfg.org }, "started"),
-  );
+  await emit({
+    kind: "lifecycle",
+    state: "started",
+    payload: { ref },
+  });
 
   try {
     const result = await reviewPr({
@@ -281,16 +288,11 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
       post: payload.post ?? cfg.postReviews ?? false,
       ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
       onLensComplete: async (lens) => {
-        await publish(
-          nc,
-          buildEnvelope({
-            source: cfg.source,
-            type: "dispatch.task.progress",
-            correlationId: env.correlation_id ?? env.id,
-            payload: { lens: lens.lens, findings: lens.findings.length, summary: lens.summary },
-          }),
-          dispatchSubject({ org: cfg.org }, "progress"),
-        );
+        await emit({
+          kind: "lifecycle",
+          state: "progress",
+          payload: { lens: lens.lens, findings: lens.findings.length, summary: lens.summary },
+        });
       },
     });
 
@@ -298,16 +300,13 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // issue #14 acceptance — same persona on different substrates should
     // produce envelopes that differ ONLY in `extensions.substrate`, making
     // A/B comparison trivial for the operator.
-    await publish(
-      nc,
-      buildEnvelope({
-        source: cfg.source,
-        type: `code.pr.review.${result.verdict.decision}`,
-        correlationId: env.correlation_id ?? env.id,
+    await emit(
+      {
+        kind: "prReview",
+        verdict: result.verdict.decision,
         payload: { ref, verdict: result.verdict, posted: result.posted },
-        extensions: { substrate: cfg.substrate.name },
-      }),
-      verdictSubject({ org: cfg.org }, result.verdict.decision),
+      },
+      substrateExtensions,
     );
 
     // sage#16: post-failed is a lifecycle event, not a verdict outcome.
@@ -318,48 +317,32 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // (Holly round 3, sage#27 finding #4): a task is `completed` when
     // it produced a verdict — even if every applicable lens errored.
     // `failed` is reserved for the case where no verdict could be
-    // produced at all (e.g., prView/prDiff threw, lens registry
-    // empty). The verdict envelope's `lenses[].errored` flag is the
-    // signal a 6/6-errored run carries; trustworthiness-aware
-    // consumers (cortex dashboard, pilot-loop) must inspect that
-    // field rather than relying on the dispatch.task.{completed,failed}
-    // split.
-    const completedPublish = publish(
-      nc,
-      buildEnvelope({
-        source: cfg.source,
-        type: "dispatch.task.completed",
-        correlationId: env.correlation_id ?? env.id,
-        payload: {
-          ref,
-          decision: result.verdict.decision,
-          posted: result.posted,
-        },
-      }),
-      dispatchSubject({ org: cfg.org }, "completed"),
-    );
+    // produced at all.
+    const completedPublish = emit({
+      kind: "lifecycle",
+      state: "completed",
+      payload: {
+        ref,
+        decision: result.verdict.decision,
+        posted: result.posted,
+      },
+    });
 
     const publishes: Promise<void>[] = [completedPublish];
     if (result.postError) {
       publishes.push(
-        publish(
-          nc,
-          buildEnvelope({
-            source: cfg.source,
-            type: "dispatch.task.post-failed",
-            correlationId: env.correlation_id ?? env.id,
+        emit(
+          {
+            kind: "dispatchOperational",
+            state: "post-failed",
             payload: {
-              // `ref` is the schema-validated value the bridge received
-              // at ingress via `TaskPayloadSchema`; consumers can trust
-              // it without re-validating.
               ref,
               verdict: result.verdict,
               error: result.postError,
               recovery_path: result.recoveryPath,
             },
-            extensions: { substrate: cfg.substrate.name },
-          }),
-          dispatchSubject({ org: cfg.org }, "post-failed"),
+          },
+          substrateExtensions,
         ),
       );
     }
@@ -367,9 +350,7 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     // `Promise.allSettled` so a NATS hiccup on one envelope can't
     // suppress the other — `Promise.all` would reject on first failure
     // and the dispatcher would never see `completed`, hanging until
-    // its --wait expires. `publish` already catches its own errors
-    // (the NATS client publish is fire-and-forget); this is a
-    // belt-and-braces guard for any future caller-side path.
+    // its --wait expires.
     const settled = await Promise.allSettled(publishes);
     for (const s of settled) {
       if (s.status === "rejected") {
@@ -380,36 +361,16 @@ async function handleTask(env: Envelope, cfg: BridgeConfig, nc: NatsConnection):
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    await publish(
-      nc,
-      buildEnvelope({
-        source: cfg.source,
-        type: "dispatch.task.failed",
-        correlationId: env.correlation_id ?? env.id,
+    try {
+      await emit({
+        kind: "lifecycle",
+        state: "failed",
         payload: { ref, reason: "review-error", detail },
-      }),
-      dispatchSubject({ org: cfg.org }, "failed"),
-    );
-  }
-}
-
-async function publish(
-  nc: NatsConnection,
-  envelope: Envelope,
-  subjectOverride?: string,
-): Promise<void> {
-  const subject = subjectOverride ?? deriveSubject(envelope);
-  try {
-    nc.publish(subject, te.encode(JSON.stringify(envelope)));
-    log(`bridge: published ${subject} (${envelope.id})`);
-  } catch (err) {
-    // nats.js publish is fire-and-forget; failures surface synchronously
-    // only when the client refuses (e.g., over max payload size or after
-    // close). Connection-drop failures fire as `'error'` events on the
-    // connection, not exceptions here — those need a separate listener.
-    // Phase 2: switch lifecycle envelopes to JetStream publish with ack.
-    const m = err instanceof Error ? err.message : String(err);
-    log(`bridge: publish failed for ${subject} (${envelope.id}): ${m}`);
+      });
+    } catch (emitErr) {
+      const em = emitErr instanceof Error ? emitErr.message : String(emitErr);
+      log(`bridge: failed to emit dispatch.task.failed for ${env.id}: ${em}`);
+    }
   }
 }
 
