@@ -226,8 +226,7 @@ function normalizeTitle(title: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((word) => word.length > 0 && !TITLE_STOP_WORDS.has(word))
-    .join(" ")
-    .slice(0, 40);
+    .join(" ");
 }
 
 function buildVerdictSummary(all: Finding[], errored: LensReport[]): string {
