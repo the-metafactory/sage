@@ -1,9 +1,10 @@
+import { STATE_TO_TYPE, type LifecycleState } from "@the-metafactory/myelin";
+
 import {
-  lifecycleSubjectAndType,
-  prVerdictSubjectAndType,
-  taskSubjectAndType,
-  type LifecycleState,
-} from "@the-metafactory/myelin";
+  deriveLifecycleSubject,
+  taskSubject,
+  verdictSubject,
+} from "./subjects.ts";
 
 /**
  * Sage-side emission taxonomy. Discriminated union: each `kind` derives
@@ -46,8 +47,7 @@ export type Emission =
       /**
        * Pull-request review verdict. Named `prReview` (not generic
        * `verdict`) because the derived envelope type hard-codes the
-       * `code.pr.review.` namespace — extending to non-PR verdict
-       * domains requires a new `kind`, not a new `family` value.
+       * `code.pr.review.` namespace.
        */
       kind: "prReview";
       verdict: "approved" | "changes-requested" | "commented";
@@ -62,49 +62,40 @@ export type Emission =
 
 /**
  * Resolve an `Emission` descriptor to its NATS `subject` and envelope
- * `type`. Lifecycle / task / prReview all delegate to myelin's
- * `subjectAndType` helpers (myelin#144) so cedar+sage share one source of
- * truth for the wire grammar.
+ * `type`. Subjects come from sage's local stack-aware helpers
+ * (`./subjects.ts`) until myelin#151 ships the upstream replacements;
+ * envelope types still come from myelin's canonical mapping where one
+ * exists (`STATE_TO_TYPE` for lifecycle states).
  *
- * `dispatchOperational` delegates to a local adapter (`operationalLifecycleSubjectAndType`)
- * — sage's `post-failed` phase has no myelin equivalent yet (myelin#150).
- * Both the local case AND the adapter delete when upstream lands.
+ * `stack` is the IoAW operator-stack segment (sage#30, MY-101 Phase A).
+ * Sage-default operators pass `"default"`; multi-stack operators set
+ * `SAGE_STACK` and we propagate the configured value end-to-end.
  */
 export function describeEmission(
   org: string,
+  stack: string,
   emission: Emission,
 ): { subject: string; type: string } {
   switch (emission.kind) {
     case "lifecycle":
-      return lifecycleSubjectAndType(org, emission.state);
+      return {
+        subject: deriveLifecycleSubject(org, stack, emission.state),
+        type: STATE_TO_TYPE[emission.state],
+      };
     case "dispatchOperational":
-      return operationalLifecycleSubjectAndType(org, emission.state);
+      return {
+        subject: deriveLifecycleSubject(org, stack, emission.state),
+        type: `dispatch.task.${emission.state}`,
+      };
     case "prReview":
-      return prVerdictSubjectAndType(org, "review", emission.verdict);
+      return {
+        subject: verdictSubject(org, stack, "review", emission.verdict),
+        type: `code.pr.review.${emission.verdict}`,
+      };
     case "task":
-      return taskSubjectAndType(org, emission.capability);
+      return {
+        subject: taskSubject(org, stack, emission.capability),
+        type: `tasks.${emission.capability}`,
+      };
   }
-}
-
-/**
- * Temporary protocol adapter for operational lifecycle states sage emits
- * that aren't yet in myelin's `LifecycleState` union (currently:
- * `post-failed`). Mirrors the `local.{org}.dispatch.task.{state}` /
- * `dispatch.task.{state}` shape that `lifecycleSubjectAndType` uses
- * upstream, so the wire format is consistent today.
- *
- * **Remove this function** (and the `dispatchOperational` kind) once
- * myelin#150 ships — `kind: "lifecycle"` will cover `post-failed`
- * natively via `lifecycleSubjectAndType`. The function-level isolation
- * here makes the removal a one-file change instead of an inline-case
- * hunt.
- */
-function operationalLifecycleSubjectAndType(
-  org: string,
-  state: "post-failed",
-): { subject: string; type: string } {
-  return {
-    subject: `local.${org}.dispatch.task.${state}`,
-    type: `dispatch.task.${state}`,
-  };
 }

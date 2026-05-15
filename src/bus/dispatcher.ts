@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Subscription } from "nats";
 import {
   safeDecodeEnvelope,
-  deriveLifecycleWildcard,
-  verdictWildcard,
   type MyelinEnvelope,
 } from "@the-metafactory/myelin";
 
@@ -13,6 +11,12 @@ import { buildSovereignty } from "../identity.ts";
 import { parsePrRef } from "../github/gh.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
 import { describeEmission } from "../tasks/emissions.ts";
+import {
+  DEFAULT_STACK,
+  deriveLifecycleWildcard,
+  validateStack,
+  verdictWildcard,
+} from "../tasks/subjects.ts";
 
 /**
  * @deprecated Import `DispatchTaskPayload` directly from `../tasks/types.ts`.
@@ -71,6 +75,12 @@ export interface DispatchOptions {
    * Wiring it here closes the inconsistency.
    */
   requireNatsAuth?: boolean;
+  /**
+   * IoAW operator stack segment (sage#30, MY-101 Phase A). Single-stack
+   * operators pass `"default"`; multi-stack operators set `SAGE_STACK`.
+   * Defaults to `"default"` when omitted.
+   */
+  stack?: string;
 }
 
 export interface BuildReviewTaskPayloadInput {
@@ -133,8 +143,9 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
   // miss a fast-completing daemon's reply. Filter by correlation_id so
   // concurrent reviews don't cross-talk.
-  const lifecycleSub = nc.subscribe(deriveLifecycleWildcard(opts.org));
-  const verdictSub = nc.subscribe(verdictWildcard(opts.org, "review"));
+  const stack = validateStack(opts.stack ?? DEFAULT_STACK);
+  const lifecycleSub = nc.subscribe(deriveLifecycleWildcard(opts.org, stack));
+  const verdictSub = nc.subscribe(verdictWildcard(opts.org, stack, "review"));
 
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -197,11 +208,15 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   });
 
   log(`▶ publishing tasks.${capability} (correlation=${correlationId})`);
-  const { subject: taskSubj, type: taskType } = describeEmission(opts.org, {
-    kind: "task",
-    capability,
-    payload: taskPayload as Record<string, unknown>,
-  });
+  const { subject: taskSubj, type: taskType } = describeEmission(
+    opts.org,
+    stack,
+    {
+      kind: "task",
+      capability,
+      payload: taskPayload as Record<string, unknown>,
+    },
+  );
 
   // Sage PR#29 R2 [important]: cleanup must run even if `baseEmit` throws
   // during validate or `nc.publish`. Without the try/finally, a publish
