@@ -277,6 +277,8 @@ const GhUserSchema = z.object({
   login: z.string(),
 });
 
+let ghViewerLoginPromise: Promise<string> | undefined;
+
 export function parsePriorSageReviewFindingsFromReviews(
   reviews: GhReview[],
   sageAuthorLogin: string,
@@ -298,7 +300,11 @@ export function parsePriorSageReviewFindingsFromReviews(
 async function ghViewerLogin(): Promise<string> {
   const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
   if (envLogin) return envLogin;
+  ghViewerLoginPromise ??= fetchGhViewerLogin();
+  return ghViewerLoginPromise;
+}
 
+async function fetchGhViewerLogin(): Promise<string> {
   const out = await runGh(["api", "user"]);
   let raw: unknown;
   try {

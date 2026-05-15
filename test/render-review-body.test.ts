@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseSageReviewFindings } from "../src/github/gh.ts";
 import { renderReviewBody } from "../src/lenses/workflow.ts";
 import type { ReviewVerdict, LensReport } from "../src/lenses/types.ts";
 
@@ -133,5 +134,38 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
 
     const body = renderReviewBody(verdict, "codex");
     expect(body).toMatch(/Lenses: Architecture, Maintainability/);
+  });
+
+  test("rendered finding headings round-trip through prior-review parser", () => {
+    const verdict: ReviewVerdict = {
+      decision: "changes-requested",
+      summary: "1 finding(s): 1 important.",
+      lenses: [
+        {
+          lens: "Security",
+          summary: "one issue",
+          findings: [
+            {
+              path: "src/github/gh.ts",
+              line: 292,
+              severity: "important",
+              title: "Prior findings can be spoofed",
+              rationale: "The diff trusts `body` without checking `user.login`.",
+            },
+          ],
+          durationMs: 1,
+        },
+      ],
+    };
+
+    const body = renderReviewBody(verdict, "codex");
+    expect(parseSageReviewFindings(body)).toEqual([
+      {
+        path: "src/github/gh.ts",
+        line: 292,
+        severity: "important",
+        title: "Prior findings can be spoofed",
+      },
+    ]);
   });
 });
