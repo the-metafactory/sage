@@ -12,6 +12,7 @@ import { makeEmitter } from "./emit.ts";
 import { buildSovereignty } from "../identity.ts";
 import { parsePrRef } from "../github/gh.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
+import { describeEmission } from "../tasks/emissions.ts";
 
 /**
  * @deprecated Import `DispatchTaskPayload` directly from `./payload.ts`.
@@ -63,6 +64,13 @@ export interface DispatchOptions {
    * `"CH"` when omitted.
    */
   dataResidency?: string;
+  /**
+   * Refuse to connect to NATS without usable creds. Sage PR#29 self-review
+   * (CodeQuality, important): the daemon honored `SAGE_REQUIRE_NATS_AUTH`
+   * via bridge.ts; the dispatcher silently fell back to unauthenticated.
+   * Wiring it here closes the inconsistency.
+   */
+  requireNatsAuth?: boolean;
 }
 
 export interface BuildReviewTaskPayloadInput {
@@ -101,6 +109,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     natsUrl: opts.natsUrl,
     ...(opts.credsFile ? { credsFile: opts.credsFile } : {}),
     log: (m) => log(m),
+    ...(opts.requireNatsAuth ? { requireAuth: true } : {}),
   });
   log(`connected ${opts.natsUrl}`);
 
@@ -108,9 +117,8 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   const sovereignty = buildSovereignty(
     opts.dataResidency ? { data_residency: opts.dataResidency } : undefined,
   );
-  const emit = makeEmitter({
+  const baseEmit = makeEmitter({
     nc,
-    org: opts.org,
     source: opts.source,
     sovereignty,
     log: (m) => log(m),
@@ -189,10 +197,17 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   });
 
   log(`▶ publishing tasks.${capability} (correlation=${correlationId})`);
-  await emit(
-    { kind: "task", capability, payload: taskPayload as Record<string, unknown> },
+  const { subject: taskSubj, type: taskType } = describeEmission(opts.org, {
+    kind: "task",
+    capability,
+    payload: taskPayload as Record<string, unknown>,
+  });
+  await baseEmit({
+    subject: taskSubj,
+    type: taskType,
+    payload: taskPayload as Record<string, unknown>,
     correlationId,
-  );
+  });
 
   const exitCode = await done;
   await nc.drain();

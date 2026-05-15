@@ -43,32 +43,27 @@ describe("sage subject grammar (via myelin helpers)", () => {
     );
   });
 
-  test("deriveLifecycleSubject covers the lifecycle phases sage emits", () => {
-    expect(deriveLifecycleSubject(ORG, "started")).toBe(
-      "local.metafactory.dispatch.task.started",
-    );
-    expect(deriveLifecycleSubject(ORG, "progress")).toBe(
-      "local.metafactory.dispatch.task.progress",
-    );
-    expect(deriveLifecycleSubject(ORG, "completed")).toBe(
-      "local.metafactory.dispatch.task.completed",
-    );
-    expect(deriveLifecycleSubject(ORG, "failed")).toBe(
-      "local.metafactory.dispatch.task.failed",
-    );
-  });
+  // Table-driven so adding a phase or verdict (sage R29 #4) means one
+  // entry, not a copy-pasted assertion block.
+  const LIFECYCLE_PHASES = ["started", "progress", "completed", "failed"] as const;
+  test.each(LIFECYCLE_PHASES)(
+    "deriveLifecycleSubject('%s') yields the canonical dispatch subject",
+    (phase) => {
+      expect(deriveLifecycleSubject(ORG, phase)).toBe(
+        `local.metafactory.dispatch.task.${phase}`,
+      );
+    },
+  );
 
-  test("verdictSubject('review', verdict) covers the three review decisions", () => {
-    expect(verdictSubject(ORG, "review", "approved")).toBe(
-      "local.metafactory.code.pr.review.approved",
-    );
-    expect(verdictSubject(ORG, "review", "changes-requested")).toBe(
-      "local.metafactory.code.pr.review.changes-requested",
-    );
-    expect(verdictSubject(ORG, "review", "commented")).toBe(
-      "local.metafactory.code.pr.review.commented",
-    );
-  });
+  const REVIEW_DECISIONS = ["approved", "changes-requested", "commented"] as const;
+  test.each(REVIEW_DECISIONS)(
+    "verdictSubject('review', '%s') yields the canonical pr-review subject",
+    (decision) => {
+      expect(verdictSubject(ORG, "review", decision)).toBe(
+        `local.metafactory.code.pr.review.${decision}`,
+      );
+    },
+  );
 
   test("wildcards used by the dispatcher subscription side", () => {
     expect(deriveLifecycleWildcard(ORG)).toBe(

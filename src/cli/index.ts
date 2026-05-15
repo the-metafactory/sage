@@ -201,6 +201,10 @@ program
         residency?: string;
       },
     ) => {
+      const requireNatsAuth =
+        process.env.SAGE_REQUIRE_NATS_AUTH === "1" ||
+        process.env.SAGE_REQUIRE_NATS_AUTH === "true";
+
       const exitCode = await dispatchReview({
         prRef,
         natsUrl: opts.nats,
@@ -211,6 +215,7 @@ program
         waitSeconds: opts.wait,
         ...(opts.timeout ? { timeoutSeconds: opts.timeout } : {}),
         ...(opts.residency ? { dataResidency: opts.residency } : {}),
+        ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
       });
       process.exit(exitCode);
     },

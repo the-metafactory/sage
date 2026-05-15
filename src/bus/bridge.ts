@@ -7,12 +7,13 @@ import {
 } from "@the-metafactory/myelin";
 
 import { connectNats } from "./connect.ts";
-import { makeEmitter } from "./emit.ts";
+import { makeEmitter, type Emitter } from "./emit.ts";
 import { buildSovereignty } from "../identity.ts";
 import { parsePrRef, type PrRef } from "../github/gh.ts";
 import { reviewPr } from "../lenses/workflow.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
+import { describeEmission, type Emission } from "../tasks/emissions.ts";
 
 /**
  * @deprecated Import `TaskPayloadSchema` directly from `./payload.ts` and
@@ -227,27 +228,37 @@ async function handleTask(
   );
   const substrateExtensions = { substrate: cfg.substrate.name };
 
-  // Shared descriptor-based emit across bridge + dispatcher (sage's
-  // `src/bus/emit.ts`). Each emission derives subject + envelope type
-  // together from `kind`.
-  const emit = makeEmitter({
+  // Generic transport emitter (bus boundary) — domain descriptors come
+  // from `src/tasks/emissions.ts`. `publish(emission, extensions?)`
+  // resolves subject + type via `describeEmission`, then hands the result
+  // to the transport.
+  const baseEmit: Emitter = makeEmitter({
     nc,
-    org: cfg.org,
     source: cfg.source,
     sovereignty,
     log: (m) => log(`bridge: ${m}`),
   });
+  const emit = (
+    emission: Emission,
+    extensions?: Record<string, unknown>,
+  ): Promise<void> => {
+    const { subject, type } = describeEmission(cfg.org, emission);
+    return baseEmit({
+      subject,
+      type,
+      payload: emission.payload,
+      correlationId: corrId,
+      ...(extensions ? { extensions } : {}),
+    });
+  };
 
   const payloadResult = TaskPayloadSchema.safeParse(env.payload);
   if (!payloadResult.success) {
-    await emit(
-      {
-        kind: "lifecycle",
-        state: "failed",
-        payload: { reason: "invalid-payload", detail: payloadResult.error.message },
-      },
-      corrId,
-    );
+    await emit({
+      kind: "lifecycle",
+      state: "failed",
+      payload: { reason: "invalid-payload", detail: payloadResult.error.message },
+    });
     return;
   }
   const payload = payloadResult.data;
@@ -256,28 +267,22 @@ async function handleTask(
     // Defensive — Zod's `.refine()` does not narrow the output type, so the
     // compiler cannot prove non-null on `owner/repo/number`. The schema
     // refinement above already guarantees at least one branch is present.
-    await emit(
-      {
-        kind: "lifecycle",
-        state: "failed",
-        payload: {
-          reason: "invalid-payload",
-          detail: "payload had neither pr_url nor complete owner/repo/number",
-        },
+    await emit({
+      kind: "lifecycle",
+      state: "failed",
+      payload: {
+        reason: "invalid-payload",
+        detail: "payload had neither pr_url nor complete owner/repo/number",
       },
-      corrId,
-    );
+    });
     return;
   }
 
-  await emit(
-    {
-      kind: "lifecycle",
-      state: "started",
-      payload: { ref },
-    },
-    corrId,
-  );
+  await emit({
+    kind: "lifecycle",
+    state: "started",
+    payload: { ref },
+  });
 
   try {
     const result = await reviewPr({
@@ -286,14 +291,11 @@ async function handleTask(
       post: payload.post ?? cfg.postReviews ?? false,
       ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
       onLensComplete: async (lens) => {
-        await emit(
-          {
-            kind: "lifecycle",
-            state: "progress",
-            payload: { lens: lens.lens, findings: lens.findings.length, summary: lens.summary },
-          },
-          corrId,
-        );
+        await emit({
+          kind: "lifecycle",
+          state: "progress",
+          payload: { lens: lens.lens, findings: lens.findings.length, summary: lens.summary },
+        });
       },
     });
 
@@ -307,7 +309,6 @@ async function handleTask(
         verdict: result.verdict.decision,
         payload: { ref, verdict: result.verdict, posted: result.posted },
       },
-      corrId,
       substrateExtensions,
     );
 
@@ -320,18 +321,15 @@ async function handleTask(
     // it produced a verdict — even if every applicable lens errored.
     // `failed` is reserved for the case where no verdict could be
     // produced at all.
-    const completedPublish = emit(
-      {
-        kind: "lifecycle",
-        state: "completed",
-        payload: {
-          ref,
-          decision: result.verdict.decision,
-          posted: result.posted,
-        },
+    const completedPublish = emit({
+      kind: "lifecycle",
+      state: "completed",
+      payload: {
+        ref,
+        decision: result.verdict.decision,
+        posted: result.posted,
       },
-      corrId,
-    );
+    });
 
     const publishes: Promise<void>[] = [completedPublish];
     if (result.postError) {
@@ -347,7 +345,6 @@ async function handleTask(
               recovery_path: result.recoveryPath,
             },
           },
-          corrId,
           substrateExtensions,
         ),
       );
@@ -368,14 +365,11 @@ async function handleTask(
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     try {
-      await emit(
-        {
-          kind: "lifecycle",
-          state: "failed",
-          payload: { ref, reason: "review-error", detail },
-        },
-        corrId,
-      );
+      await emit({
+        kind: "lifecycle",
+        state: "failed",
+        payload: { ref, reason: "review-error", detail },
+      });
     } catch (emitErr) {
       const em = emitErr instanceof Error ? emitErr.message : String(emitErr);
       log(`bridge: failed to emit dispatch.task.failed for ${env.id}: ${em}`);

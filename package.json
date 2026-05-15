@@ -15,7 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@the-metafactory/myelin": "github:the-metafactory/myelin#v0.2.0",
+    "@the-metafactory/myelin": "github:the-metafactory/myelin#9bad3a9",
     "commander": "^12.1.0",
     "nats": "^2.29.0",
     "zod": "^3.23.8"
