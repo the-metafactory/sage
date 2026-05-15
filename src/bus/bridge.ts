@@ -1,8 +1,6 @@
 import { type NatsConnection, type Subscription } from "nats";
 import {
   safeDecodeEnvelope,
-  broadcastTaskSubject,
-  directTaskSubject,
   type MyelinEnvelope,
 } from "@the-metafactory/myelin";
 
@@ -14,6 +12,12 @@ import { reviewPr } from "../lenses/workflow.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
 import { describeEmission, type Emission } from "../tasks/emissions.ts";
+import {
+  broadcastTaskSubject,
+  directTaskSubject,
+  DEFAULT_STACK,
+  validateStack,
+} from "../tasks/subjects.ts";
 
 /**
  * @deprecated Import `TaskPayloadSchema` directly from `../tasks/types.ts`
@@ -73,6 +77,12 @@ export interface BridgeConfig {
    * back to `MYELIN_DATA_RESIDENCY` / `SAGE_DATA_RESIDENCY` env / `"CH"`.
    */
   dataResidency?: string;
+  /**
+   * IoAW operator stack segment (sage#30, MY-101 Phase A). Single-stack
+   * operators pass `"default"`; multi-stack operators set `SAGE_STACK`.
+   * Defaults to `"default"` when omitted.
+   */
+  stack?: string;
 }
 
 class Semaphore {
@@ -146,8 +156,9 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   void watchConnectionStatus(nc);
 
   const queue = cfg.queueGroup ?? "sage-review";
-  const broadcastSubj = broadcastTaskSubject(cfg.org, "code-review");
-  const directSubj = directTaskSubject(cfg.org, cfg.did);
+  const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
+  const broadcastSubj = broadcastTaskSubject(cfg.org, stack, "code-review");
+  const directSubj = directTaskSubject(cfg.org, stack, cfg.did);
 
   const broadcast = nc.subscribe(broadcastSubj, { queue });
   const direct = nc.subscribe(directSubj, { queue });
@@ -239,7 +250,11 @@ async function handleTask(
     emission: Emission,
     extensions?: Record<string, unknown>,
   ): Promise<void> => {
-    const { subject, type } = describeEmission(cfg.org, emission);
+    const { subject, type } = describeEmission(
+      cfg.org,
+      cfg.stack ?? DEFAULT_STACK,
+      emission,
+    );
     return baseEmit({
       subject,
       type,

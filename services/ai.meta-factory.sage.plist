@@ -75,6 +75,8 @@
     <string>metafactory.sage.local</string>
     <key>SAGE_DATA_RESIDENCY</key>
     <string>CH</string>
+    <key>SAGE_STACK</key>
+    <string>default</string>
     <key>PI_PROVIDER</key>
     <string>openrouter</string>
   </dict>

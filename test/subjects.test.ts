@@ -8,69 +8,87 @@ import {
   taskSubject,
   deriveLifecycleWildcard,
   verdictWildcard,
-} from "@the-metafactory/myelin";
+  DEFAULT_STACK,
+  validateStack,
+} from "../src/tasks/subjects.ts";
 
 /**
- * Sage's subject grammar was previously hand-rolled in `src/bus/subjects.ts`
- * — deleted when sage adopted `@the-metafactory/myelin` v0.2. These tests
- * lock the sage-specific subject shapes against the upstream helpers:
+ * Sage's IoAW MY-101 Phase A subject grammar (sage#30) — 5+ segments
+ * with `{stack}` at position 3. These helpers wrap myelin's encoder
+ * locally until myelin#151 ships stack-aware upstream helpers; tests
+ * lock the canonical form so the cedar↔sage protocol stays in sync.
  *
- *   - Inbound broadcast: `local.{org}.tasks.code-review.>`
- *   - Inbound direct:    `local.{org}.tasks.@did-mf-sage.>`
- *   - Outbound lifecycle: `local.{org}.dispatch.task.{state}`
- *   - Outbound verdict:   `local.{org}.code.pr.review.{decision}`
- *
- * Drift in any of these breaks the cedar↔sage protocol.
+ *   - Inbound broadcast: `local.{org}.{stack}.tasks.code-review.>`
+ *   - Inbound direct:    `local.{org}.{stack}.tasks.@did-mf-sage.>`
+ *   - Outbound lifecycle: `local.{org}.{stack}.dispatch.task.{state}`
+ *   - Outbound verdict:   `local.{org}.{stack}.code.pr.review.{decision}`
  */
 const ORG = "metafactory";
+const STACK = DEFAULT_STACK;
 
-describe("sage subject grammar (via myelin helpers)", () => {
-  test("broadcastTaskSubject('code-review') matches the inbound broadcast pattern", () => {
-    expect(broadcastTaskSubject(ORG, "code-review")).toBe(
-      "local.metafactory.tasks.code-review.>",
+describe("sage subject grammar (stack-aware, IoAW Phase A)", () => {
+  test("broadcastTaskSubject('default', 'code-review') yields the Phase-A canonical form", () => {
+    expect(broadcastTaskSubject(ORG, STACK, "code-review")).toBe(
+      "local.metafactory.default.tasks.code-review.>",
     );
   });
 
-  test("directTaskSubject('did:mf:sage') matches the inbound direct pattern", () => {
-    expect(directTaskSubject(ORG, "did:mf:sage")).toBe(
-      "local.metafactory.tasks.@did-mf-sage.>",
+  test("directTaskSubject('default', 'did:mf:sage') yields the Phase-A direct form", () => {
+    expect(directTaskSubject(ORG, STACK, "did:mf:sage")).toBe(
+      "local.metafactory.default.tasks.@did-mf-sage.>",
     );
   });
 
-  test("taskSubject('code-review.typescript') is the dispatch terminal subject", () => {
-    expect(taskSubject(ORG, "code-review.typescript")).toBe(
-      "local.metafactory.tasks.code-review.typescript",
+  test("taskSubject('default', 'code-review.typescript') is the dispatch terminal subject", () => {
+    expect(taskSubject(ORG, STACK, "code-review.typescript")).toBe(
+      "local.metafactory.default.tasks.code-review.typescript",
     );
   });
 
-  // Table-driven so adding a phase or verdict (sage R29 #4) means one
-  // entry, not a copy-pasted assertion block.
-  const LIFECYCLE_PHASES = ["started", "progress", "completed", "failed"] as const;
-  test.each(LIFECYCLE_PHASES)(
-    "deriveLifecycleSubject('%s') yields the canonical dispatch subject",
+  const LIFECYCLE_PHASES = ["started", "progress", "completed", "failed"];
+  test.each(LIFECYCLE_PHASES.map((p) => [p]))(
+    "deriveLifecycleSubject('default', '%s') yields the canonical dispatch subject",
     (phase) => {
-      expect(deriveLifecycleSubject(ORG, phase)).toBe(
-        `local.metafactory.dispatch.task.${phase}`,
+      expect(deriveLifecycleSubject(ORG, STACK, phase)).toBe(
+        `local.metafactory.default.dispatch.task.${phase}`,
       );
     },
   );
 
-  const REVIEW_DECISIONS = ["approved", "changes-requested", "commented"] as const;
-  test.each(REVIEW_DECISIONS)(
-    "verdictSubject('review', '%s') yields the canonical pr-review subject",
+  const REVIEW_DECISIONS = ["approved", "changes-requested", "commented"];
+  test.each(REVIEW_DECISIONS.map((d) => [d]))(
+    "verdictSubject('default', 'review', '%s') yields the canonical pr-review subject",
     (decision) => {
-      expect(verdictSubject(ORG, "review", decision)).toBe(
-        `local.metafactory.code.pr.review.${decision}`,
+      expect(verdictSubject(ORG, STACK, "review", decision)).toBe(
+        `local.metafactory.default.code.pr.review.${decision}`,
       );
     },
   );
 
   test("wildcards used by the dispatcher subscription side", () => {
-    expect(deriveLifecycleWildcard(ORG)).toBe(
-      "local.metafactory.dispatch.task.>",
+    expect(deriveLifecycleWildcard(ORG, STACK)).toBe(
+      "local.metafactory.default.dispatch.task.>",
     );
-    expect(verdictWildcard(ORG, "review")).toBe(
-      "local.metafactory.code.pr.review.>",
+    expect(verdictWildcard(ORG, STACK, "review")).toBe(
+      "local.metafactory.default.code.pr.review.>",
     );
+  });
+
+  test("multi-stack: 'research' stack flows through every helper", () => {
+    expect(broadcastTaskSubject(ORG, "research", "code-review")).toBe(
+      "local.metafactory.research.tasks.code-review.>",
+    );
+    expect(verdictSubject(ORG, "research", "review", "approved")).toBe(
+      "local.metafactory.research.code.pr.review.approved",
+    );
+  });
+
+  test("validateStack rejects invalid segments (sage#30)", () => {
+    expect(() => validateStack("Default")).toThrow(/must match/);
+    expect(() => validateStack("default!")).toThrow(/must match/);
+    expect(() => validateStack("")).toThrow(/must match/);
+    expect(validateStack("default")).toBe("default");
+    expect(validateStack("research")).toBe("research");
+    expect(validateStack("multi-stack-name")).toBe("multi-stack-name");
   });
 });

@@ -97,6 +97,11 @@ program
     "Data-residency ISO 3166 alpha-2 code stamped on outbound envelopes",
     process.env.MYELIN_DATA_RESIDENCY ?? process.env.SAGE_DATA_RESIDENCY,
   )
+  .option(
+    "--stack <name>",
+    "IoAW operator stack segment (defaults to SAGE_STACK env or \"default\")",
+    process.env.SAGE_STACK,
+  )
   .action(
     async (opts: {
       nats: string;
@@ -109,6 +114,7 @@ program
       queue: string;
       substrate?: string;
       residency?: string;
+      stack?: string;
     }) => {
       const selection = selectSubstrate({ flag: opts.substrate });
       console.error(
@@ -129,6 +135,7 @@ program
         queueGroup: opts.queue,
         ...(opts.residency ? { dataResidency: opts.residency } : {}),
         ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
+        ...(opts.stack ? { stack: opts.stack } : {}),
       });
 
       let shuttingDown = false;
@@ -195,6 +202,11 @@ program
     "Data-residency ISO 3166 alpha-2 code stamped on the task envelope",
     process.env.MYELIN_DATA_RESIDENCY ?? process.env.SAGE_DATA_RESIDENCY,
   )
+  .option(
+    "--stack <name>",
+    "IoAW operator stack segment (defaults to SAGE_STACK env or \"default\")",
+    process.env.SAGE_STACK,
+  )
   .action(
     async (
       prRef: string,
@@ -207,6 +219,7 @@ program
         wait: number;
         timeout?: number;
         residency?: string;
+        stack?: string;
       },
     ) => {
       const requireNatsAuth = requiresNatsAuth();
@@ -222,6 +235,7 @@ program
         ...(opts.timeout ? { timeoutSeconds: opts.timeout } : {}),
         ...(opts.residency ? { dataResidency: opts.residency } : {}),
         ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
+        ...(opts.stack ? { stack: opts.stack } : {}),
       });
       process.exit(exitCode);
     },
