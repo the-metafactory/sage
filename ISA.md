@@ -5,7 +5,7 @@ phase: build
 progress: 0/14
 mode: native
 started: 2026-05-12
-updated: 2026-05-12
+updated: 2026-05-15
 ---
 
 # Sage — ISA
@@ -97,13 +97,19 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - 2026-05-12 — Subprocess (`pi -p`) over SDK because design doc only specifies CLI usage and the substrate boundary is cleaner this way.
 - 2026-05-12 — Body-comment-only for v0.1; inline annotations deferred. Reason: keeps `gh pr review` surface tight.
 - 2026-05-12 — One lens (CodeQuality) in v0.1. Four more pending per design doc §7. Each lens is a separate ts file under `src/lenses/`.
+- 2026-05-15 — sage#32 review-cycle noise is handled in the review pipeline rather than with per-lens taste rules only: prior Sage findings are passed into every lens, shared instructions now calibrate severity and require diff quotes, and cross-lens duplicates collapse at verdict/render time with source-lens attribution.
+- 2026-05-15 — PR #33 Sage review findings are treated as review-gate feedback on the implementation: prior-review bodies are trusted only from the configured/authenticated Sage author, GitHub review history is fetched with pagination, and the review-history lookup runs in parallel with PR metadata and diff fetches.
 
 ## Changelog
 
 - 2026-05-12 — Project scaffolded. All 14 ISCs marked passed at code-write time; ISCs 5–6, 8–9, 11–13 require runtime validation against a real PR + NATS broker + `pi` binary before they should be considered hard-verified. Treat current `[x]` as code-state pass pending integration probe.
+- 2026-05-15 — Implemented sage#32: `gh api repos/:owner/:repo/pulls/:n/reviews` prior-review extraction, iteration-aware stdin context, severity/grounding prompt anchors, architecture and maintainability prompt tightening, deterministic cross-lens deduplication, and focused tests for parsing, verdict deduplication, and rendered lens attribution.
+- 2026-05-15 — Fixed Codex-backed Sage review findings on PR #33: added author-filtered prior-review parsing with `SAGE_REVIEW_AUTHOR_LOGIN` / `gh api user`, switched review history to `gh api --paginate --slurp`, and parallelized `prView`, `prDiff`, and prior-review lookup.
 
 ## Verification
 
 | ISC | Method | Evidence |
 |-----|--------|----------|
 | 1-14 | Read / Grep | Files written this session; code review against the spec line-by-line. Live probes (`bun test`, `pi -p`, NATS round-trip) are listed under DEFERRED-VERIFY until a real PR + broker run. |
+| sage#32 | Algorithm E1 + tests | Soma run creation attempted with `bun run soma algorithm new --id sage-issue-32-review-noise`, but the local Soma CLI is blocked by an unresolved merge marker at `/Users/fischer/work/mf/soma/src/cli.ts:802`. Repo verification passed: `bun test test/verdict.test.ts test/render-review-body.test.ts test/prior-review-findings.test.ts`, `bun run typecheck`, `bun test`, and `git diff --check`. |
+| sage#32-review-fix | Algorithm E1 + tests + live GitHub probe | Fixed the three Codex-backed Sage findings from PR #33. Verification passed: `bun test test/prior-review-findings.test.ts test/workflow-parallel-lenses.test.ts test/workflow-post-outcome.test.ts`, `bun run typecheck`, `bun test`, and live `priorSageReviewFindings({ owner: "the-metafactory", repo: "sage", number: 33 })` against paginated GitHub reviews. |

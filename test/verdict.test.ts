@@ -78,6 +78,77 @@ describe("decideVerdict", () => {
     expect(v.summary).toMatch(/1 nit/);
   });
 
+  describe("cross-lens finding deduplication (sage#32)", () => {
+    test("collapses matching path, line, and normalized title across lenses", () => {
+      const v = decideVerdict([
+        lens("Architecture", [
+          {
+            path: "src/a.ts",
+            line: 42,
+            severity: "suggestion",
+            title: "Duplicate trigger pattern",
+            rationale: "Architecture rationale.",
+          },
+        ]),
+        lens("Maintainability", [
+          {
+            path: "src/a.ts",
+            line: 42,
+            severity: "important",
+            title: "Duplicate trigger pattern",
+            rationale: "Maintainability rationale.",
+          },
+        ]),
+      ]);
+
+      const findings = v.lenses.flatMap((l) => l.findings);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.severity).toBe("important");
+      expect(findings[0]?.sourceLenses).toEqual(["Architecture", "Maintainability"]);
+      expect(v.lenses[1]?.summary).toBe("Findings deduplicated into earlier lens sections.");
+      expect(v.summary).toMatch(/1 finding/);
+      expect(v.summary).toMatch(/1 important/);
+    });
+
+    test("keeps distinct lines as separate findings", () => {
+      const v = decideVerdict([
+        lens("Architecture", [
+          { path: "src/a.ts", line: 42, severity: "suggestion", title: "Duplicate trigger pattern", rationale: "r" },
+        ]),
+        lens("Maintainability", [
+          { path: "src/a.ts", line: 43, severity: "suggestion", title: "Duplicate trigger pattern", rationale: "r" },
+        ]),
+      ]);
+
+      expect(v.lenses.flatMap((l) => l.findings).length).toBe(2);
+    });
+
+    test("keeps same-line titles that only differ after 40 normalized chars", () => {
+      const v = decideVerdict([
+        lens("Architecture", [
+          {
+            path: "src/a.ts",
+            line: 42,
+            severity: "suggestion",
+            title: "Configuration parser accepts invalid empty values",
+            rationale: "r",
+          },
+        ]),
+        lens("Maintainability", [
+          {
+            path: "src/a.ts",
+            line: 42,
+            severity: "suggestion",
+            title: "Configuration parser accepts invalid nested values",
+            rationale: "r",
+          },
+        ]),
+      ]);
+
+      expect(v.lenses.flatMap((l) => l.findings).length).toBe(2);
+    });
+  });
+
   // Holly review of sage#27 (findings #1 + #2): a lens that errored
   // before producing real findings blocks merge. Its absence is the
   // signal — we don't know what the lens would have flagged.

@@ -15,6 +15,11 @@ You do NOT look for correctness bugs, security holes, module boundary
 violations, ecosystem-config issues, or hot-path performance — those belong
 to the other lenses.
 
+Code emitted by a render function or template (string-built source,
+code-generation helpers, adapter renderers) is one logical unit even when it
+appears as multiple output files. Do not flag the generated output for
+duplication of the renderer.
+
 Flag a finding when readability or future-change-cost is materially worse
 than the obvious refactor. Be concrete: name the function or the duplicated
 block; suggest the extraction or the de-duplication target. Severity is

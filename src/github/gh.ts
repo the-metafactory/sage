@@ -114,6 +114,13 @@ export async function prDiff(ref: PrRef): Promise<string> {
 
 export type ReviewEvent = "comment" | "approve" | "request-changes";
 
+export interface PriorReviewFinding {
+  path: string;
+  line: number;
+  severity: "blocker" | "important" | "suggestion" | "nit";
+  title: string;
+}
+
 export interface PostReviewInput {
   ref: PrRef;
   event: ReviewEvent;
@@ -232,6 +239,115 @@ export async function postReview(input: PostReviewInput): Promise<PostReviewResu
       // written into it (unlikely under the mkdtemp pattern, but safe).
     }
   }
+}
+
+const PRIOR_FINDING_RE =
+  /^- \*\*\[(blocker|important|suggestion|nit)\]\*\* `([^`]+):(\d+)` — \*\*([^*]+)\*\*/gm;
+
+export interface GhReview {
+  body: string;
+  user: { login: string };
+}
+
+export function parseSageReviewFindings(body: string): PriorReviewFinding[] {
+  if (!body.includes("## Sage code review")) return [];
+
+  const findings: PriorReviewFinding[] = [];
+  for (const match of body.matchAll(PRIOR_FINDING_RE)) {
+    const [, severity, path, line, title] = match;
+    if (!severity || !path || !line || !title) continue;
+    findings.push({
+      path,
+      line: Number(line),
+      severity: severity as PriorReviewFinding["severity"],
+      title: title.trim(),
+    });
+  }
+  return findings;
+}
+
+const GhReviewSchema = z.object({
+  body: z.string().nullable().transform((s) => s ?? ""),
+  user: z.object({ login: z.string() }),
+});
+
+const GhReviewPagesSchema = z.array(z.array(GhReviewSchema));
+
+const GhUserSchema = z.object({
+  login: z.string(),
+});
+
+let ghViewerLoginPromise: Promise<string> | undefined;
+
+export function parsePriorSageReviewFindingsFromReviews(
+  reviews: GhReview[],
+  sageAuthorLogin: string,
+): PriorReviewFinding[] {
+  const seen = new Set<string>();
+  const findings: PriorReviewFinding[] = [];
+  for (const review of reviews) {
+    if (review.user.login !== sageAuthorLogin) continue;
+    for (const finding of parseSageReviewFindings(review.body)) {
+      const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push(finding);
+    }
+  }
+  return findings;
+}
+
+async function ghViewerLogin(): Promise<string> {
+  const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
+  if (envLogin) return envLogin;
+  ghViewerLoginPromise ??= fetchGhViewerLogin();
+  return ghViewerLoginPromise;
+}
+
+async function fetchGhViewerLogin(): Promise<string> {
+  const out = await runGh(["api", "user"]);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(out.stdout);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    throw new Error(`gh api user returned non-JSON output: ${m}`);
+  }
+
+  const parsed = GhUserSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`gh api user payload failed schema validation: ${parsed.error.message}`);
+  }
+  return parsed.data.login;
+}
+
+export async function priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]> {
+  const [out, sageAuthorLogin] = await Promise.all([
+    runGh([
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`,
+    ]),
+    ghViewerLogin(),
+  ]);
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(out.stdout);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    throw new Error(`gh api reviews returned non-JSON output: ${m}`);
+  }
+
+  const parsed = GhReviewPagesSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `gh api reviews payload failed schema validation for ${formatRepo(ref)}#${ref.number}: ${parsed.error.message}`,
+    );
+  }
+
+  return parsePriorSageReviewFindingsFromReviews(parsed.data.flat(), sageAuthorLogin);
 }
 
 export async function ghAuthStatus(): Promise<{ ok: boolean; output: string }> {

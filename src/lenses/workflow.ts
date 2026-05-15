@@ -1,4 +1,12 @@
-import { prView, prDiff, postReview, type PrRef, type ReviewEvent } from "../github/gh.ts";
+import {
+  prView,
+  prDiff,
+  postReview,
+  priorSageReviewFindings,
+  type PrRef,
+  type ReviewEvent,
+  type PriorReviewFinding,
+} from "../github/gh.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
@@ -98,8 +106,18 @@ function sanitizeErrorMessage(raw: string): string {
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
-  const pr = await prView(opts.ref);
-  const diff = await prDiff(opts.ref);
+  const priorFindingsPromise = priorSageReviewFindings(opts.ref).catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[workflow] prior Sage review lookup failed; continuing without iteration context: ${msg}`,
+    );
+    return [] as PriorReviewFinding[];
+  });
+  const [pr, diff, priorFindings] = await Promise.all([
+    prView(opts.ref),
+    prDiff(opts.ref),
+    priorFindingsPromise,
+  ]);
 
   const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
@@ -144,6 +162,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
         report = await lens.review({
           pr,
           diff,
+          priorFindings,
           substrate: opts.substrate,
           ...timeout,
         });
@@ -309,7 +328,11 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
         ? "_No findings._"
         : lens.findings
             .map((f) => {
-              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}`;
+              const lensTag =
+                f.sourceLenses && f.sourceLenses.length > 1
+                  ? `\n  Lenses: ${f.sourceLenses.join(", ")}`
+                  : "";
+              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}`;
               if (!f.suggestion) return findingHead;
               const fence = pickFence(f.suggestion);
               return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
