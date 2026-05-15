@@ -14,9 +14,7 @@ import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
 import { describeEmission, type Emission } from "../tasks/emissions.ts";
 import {
   broadcastTaskSubject,
-  broadcastTaskSubjectLegacy,
   directTaskSubject,
-  directTaskSubjectLegacy,
   DEFAULT_STACK,
   validateStack,
 } from "../tasks/subjects.ts";
@@ -160,22 +158,14 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   const queue = cfg.queueGroup ?? "sage-review";
   const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
 
-  // Phase-A canonical (5-segment) subscriptions.
+  // Phase-A canonical (5-segment) subscriptions. All publishers in the
+  // ecosystem cut over to 5-seg at the same time (pilot#86, cedar, sage
+  // dispatcher); no dual-subscription migration adapter needed.
   const broadcastSubj = broadcastTaskSubject(cfg.org, stack, "code-review");
   const directSubj = directTaskSubject(cfg.org, stack, cfg.did);
 
-  // Pre-Phase-A (4-segment) subscriptions — kept during the migration
-  // window so sage receives messages from publishers that haven't moved
-  // to the 5-segment form yet (Holly review on PR#31, major #2). Pilot
-  // ships pilot#86 in the same window; once Andreas's host has both
-  // landed, the legacy subscriptions get removed.
-  const broadcastSubjLegacy = broadcastTaskSubjectLegacy(cfg.org, "code-review");
-  const directSubjLegacy = directTaskSubjectLegacy(cfg.org, cfg.did);
-
   const broadcast = nc.subscribe(broadcastSubj, { queue });
   const direct = nc.subscribe(directSubj, { queue });
-  const broadcastLegacy = nc.subscribe(broadcastSubjLegacy, { queue });
-  const directLegacy = nc.subscribe(directSubjLegacy, { queue });
 
   const concurrencyLimit = cfg.maxConcurrentTasks ?? 3;
   const sem = new Semaphore(concurrencyLimit);
@@ -183,8 +173,6 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   log(`bridge: connected ${cfg.natsUrl}`);
   log(`bridge: subscribed ${broadcastSubj} (queue=${queue})`);
   log(`bridge: subscribed ${directSubj} (queue=${queue})`);
-  log(`bridge: subscribed ${broadcastSubjLegacy} (queue=${queue}) [legacy, pre-Phase-A]`);
-  log(`bridge: subscribed ${directSubjLegacy} (queue=${queue}) [legacy, pre-Phase-A]`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
   const onLoopFailure = (which: string) => async (err: unknown) => {
@@ -205,12 +193,6 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   };
   void consumeSubscription(broadcast, "broadcast", cfg, nc, sem).catch(onLoopFailure("broadcast"));
   void consumeSubscription(direct, "direct", cfg, nc, sem).catch(onLoopFailure("direct"));
-  void consumeSubscription(broadcastLegacy, "broadcast-legacy", cfg, nc, sem).catch(
-    onLoopFailure("broadcast-legacy"),
-  );
-  void consumeSubscription(directLegacy, "direct-legacy", cfg, nc, sem).catch(
-    onLoopFailure("direct-legacy"),
-  );
 
   return {
     connection: nc,
@@ -222,7 +204,7 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
 
 async function consumeSubscription(
   sub: Subscription,
-  mode: "broadcast" | "direct" | "broadcast-legacy" | "direct-legacy",
+  mode: "broadcast" | "direct",
   cfg: BridgeConfig,
   nc: NatsConnection,
   sem: Semaphore,

@@ -154,28 +154,3 @@ export function deriveLifecycleWildcard(org: string, stack: string): string {
   assertSegment("stack", stack);
   return `local.${org}.${stack}.dispatch.task.>`;
 }
-
-/**
- * Legacy pre-Phase-A subject helpers — kept for the migration window
- * (Holly review on PR#31, major #2). Pilot publishes 4-segment subjects
- * today; after pilot#86 ships, pilot moves to 5-segment. Sage subscribes
- * on BOTH forms via these legacy helpers + the canonical helpers above,
- * so the daemon receives messages from either form during the rollout.
- *
- * **Removal:** drop this block once pilot#86 has shipped + redeployed on
- * Andreas's host. Tracked alongside sage#30 in the PR body's
- * "migration checklist" section.
- */
-export function broadcastTaskSubjectLegacy(
-  org: string,
-  capability: string,
-): string {
-  assertSegment("org", org);
-  assertSegmentPath("capability", capability);
-  return `local.${org}.tasks.${capability}.>`;
-}
-
-export function directTaskSubjectLegacy(org: string, did: string): string {
-  assertSegment("org", org);
-  return `local.${org}.tasks.${encodeDidSegment(did)}.>`;
-}
