@@ -16,15 +16,12 @@ import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
 import { describeEmission, type Emission } from "../tasks/emissions.ts";
 
 /**
- * @deprecated Import `TaskPayloadSchema` directly from `./payload.ts` and
- * remove this re-export in the next cleanup pass. Two living names for the
- * same export is the kind of low-grade drift sage#10 was meant to
- * eliminate.
- *
- * Schema and inferred type now live in `./payload.ts` as the canonical
- * contract shared between sender (`dispatcher.ts`) and receiver (this
- * file). The `ReviewTaskPayloadSchema` alias preserves the prior public
- * name; the underlying schema is `TaskPayloadSchema`.
+ * @deprecated Import `TaskPayloadSchema` directly from `../tasks/types.ts`
+ * and remove this re-export in the next cleanup pass. Two living names for
+ * the same export is the kind of low-grade drift sage#10 was meant to
+ * eliminate. Module location moved from `./payload.ts` to
+ * `../tasks/types.ts` in the myelin v0.2 adoption (PR#29) for cedar-
+ * structural parity.
  *
  * Declared as `const` (rather than `export { … as … } from`) so this
  * `@deprecated` tag binds directly to the alias identifier — TS surfaces

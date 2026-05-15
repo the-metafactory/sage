@@ -9,6 +9,16 @@ import { startBridge } from "../bus/bridge.ts";
 import { selectSubstrate } from "../substrate/select.ts";
 import { dispatchReview } from "./dispatch.ts";
 
+/**
+ * Boolean parse for `SAGE_REQUIRE_NATS_AUTH`. Shared between `serve` and
+ * `dispatch` actions so accepted values + env-name changes happen in one
+ * place (sage PR#29 R2 maintainability finding).
+ */
+function requiresNatsAuth(): boolean {
+  const v = process.env.SAGE_REQUIRE_NATS_AUTH;
+  return v === "1" || v === "true";
+}
+
 const program = new Command();
 
 program
@@ -105,9 +115,7 @@ program
         `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source})`,
       );
 
-      const requireNatsAuth =
-        process.env.SAGE_REQUIRE_NATS_AUTH === "1" ||
-        process.env.SAGE_REQUIRE_NATS_AUTH === "true";
+      const requireNatsAuth = requiresNatsAuth();
 
       const bridge = await startBridge({
         natsUrl: opts.nats,
@@ -201,9 +209,7 @@ program
         residency?: string;
       },
     ) => {
-      const requireNatsAuth =
-        process.env.SAGE_REQUIRE_NATS_AUTH === "1" ||
-        process.env.SAGE_REQUIRE_NATS_AUTH === "true";
+      const requireNatsAuth = requiresNatsAuth();
 
       const exitCode = await dispatchReview({
         prRef,

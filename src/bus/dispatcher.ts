@@ -15,7 +15,7 @@ import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types
 import { describeEmission } from "../tasks/emissions.ts";
 
 /**
- * @deprecated Import `DispatchTaskPayload` directly from `./payload.ts`.
+ * @deprecated Import `DispatchTaskPayload` directly from `../tasks/types.ts`.
  * This re-export is a back-compat shim — the type's canonical home is the
  * protocol module, not this transport module. Remove in the next cleanup.
  *
@@ -202,16 +202,28 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     capability,
     payload: taskPayload as Record<string, unknown>,
   });
-  await baseEmit({
-    subject: taskSubj,
-    type: taskType,
-    payload: taskPayload as Record<string, unknown>,
-    correlationId,
-  });
 
-  const exitCode = await done;
-  await nc.drain();
-  return exitCode;
+  // Sage PR#29 R2 [important]: cleanup must run even if `baseEmit` throws
+  // during validate or `nc.publish`. Without the try/finally, a publish
+  // failure would leave the wait timer + two subscriptions hanging until
+  // process exit.
+  try {
+    await baseEmit({
+      subject: taskSubj,
+      type: taskType,
+      payload: taskPayload as Record<string, unknown>,
+      correlationId,
+    });
+    return await done;
+  } finally {
+    if (timer) clearTimeout(timer);
+    try {
+      await nc.drain();
+    } catch (drainErr) {
+      const m = drainErr instanceof Error ? drainErr.message : String(drainErr);
+      log(`drain failed during cleanup: ${m}`);
+    }
+  }
 }
 
 async function consume(
