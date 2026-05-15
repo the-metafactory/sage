@@ -33,8 +33,10 @@ export type Emission =
        * describes what happened to the envelope, not the review verdict
        * itself.
        *
-       * When myelin adopts `post-failed` (or similar) into its
-       * `LifecycleState` union, fold this case back into `kind: "lifecycle"`.
+       * TODO: remove this `kind` once myelin#150 lands — fold the state
+       * back into `kind: "lifecycle"`. The local wire grammar in
+       * `describeEmission` is the temporary protocol adapter sage carries
+       * until upstream gains an operational-lifecycle helper.
        */
       kind: "dispatchOperational";
       state: "post-failed";
@@ -64,9 +66,9 @@ export type Emission =
  * `subjectAndType` helpers (myelin#144) so cedar+sage share one source of
  * truth for the wire grammar.
  *
- * `dispatchOperational` is the one local case — `post-failed` is sage's
- * extension outside myelin's canonical `LifecycleState` set. Tracked for
- * upstream adoption.
+ * `dispatchOperational` delegates to a local adapter (`operationalLifecycleSubjectAndType`)
+ * — sage's `post-failed` phase has no myelin equivalent yet (myelin#150).
+ * Both the local case AND the adapter delete when upstream lands.
  */
 export function describeEmission(
   org: string,
@@ -76,13 +78,33 @@ export function describeEmission(
     case "lifecycle":
       return lifecycleSubjectAndType(org, emission.state);
     case "dispatchOperational":
-      return {
-        subject: `local.${org}.dispatch.task.${emission.state}`,
-        type: `dispatch.task.${emission.state}`,
-      };
+      return operationalLifecycleSubjectAndType(org, emission.state);
     case "prReview":
       return prVerdictSubjectAndType(org, "review", emission.verdict);
     case "task":
       return taskSubjectAndType(org, emission.capability);
   }
+}
+
+/**
+ * Temporary protocol adapter for operational lifecycle states sage emits
+ * that aren't yet in myelin's `LifecycleState` union (currently:
+ * `post-failed`). Mirrors the `local.{org}.dispatch.task.{state}` /
+ * `dispatch.task.{state}` shape that `lifecycleSubjectAndType` uses
+ * upstream, so the wire format is consistent today.
+ *
+ * **Remove this function** (and the `dispatchOperational` kind) once
+ * myelin#150 ships — `kind: "lifecycle"` will cover `post-failed`
+ * natively via `lifecycleSubjectAndType`. The function-level isolation
+ * here makes the removal a one-file change instead of an inline-case
+ * hunt.
+ */
+function operationalLifecycleSubjectAndType(
+  org: string,
+  state: "post-failed",
+): { subject: string; type: string } {
+  return {
+    subject: `local.${org}.dispatch.task.${state}`,
+    type: `dispatch.task.${state}`,
+  };
 }
