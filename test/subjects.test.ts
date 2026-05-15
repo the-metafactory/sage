@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { subjectMatchesPattern } from "@the-metafactory/myelin";
+
 import {
   broadcastTaskSubject,
   directTaskSubject,
@@ -90,5 +92,55 @@ describe("sage subject grammar (stack-aware, IoAW Phase A)", () => {
     expect(validateStack("default")).toBe("default");
     expect(validateStack("research")).toBe("research");
     expect(validateStack("multi-stack-name")).toBe("multi-stack-name");
+  });
+
+  // Holly review on PR#31, nit #2 — the whole point of the {stack}
+  // segment is multi-stack isolation. Lock the property: a daemon
+  // subscribed to one stack's wildcard MUST NOT receive a message
+  // published on another stack's terminal subject. Uses myelin's
+  // canonical `subjectMatchesPattern` so the assertion follows NATS
+  // wildcard semantics rather than naive string compare.
+  test("cross-stack isolation: default daemon does not see research traffic (and vice versa)", () => {
+    const defaultBroadcast = broadcastTaskSubject(ORG, "default", "code-review");
+    const researchBroadcast = broadcastTaskSubject(ORG, "research", "code-review");
+    const defaultTask = taskSubject(ORG, "default", "code-review.typescript");
+    const researchTask = taskSubject(ORG, "research", "code-review.typescript");
+
+    // Each wildcard matches its own terminal subject.
+    expect(subjectMatchesPattern(defaultTask, defaultBroadcast)).toBe(true);
+    expect(subjectMatchesPattern(researchTask, researchBroadcast)).toBe(true);
+
+    // But NEVER the other stack's terminal subject.
+    expect(subjectMatchesPattern(researchTask, defaultBroadcast)).toBe(false);
+    expect(subjectMatchesPattern(defaultTask, researchBroadcast)).toBe(false);
+
+    // Same property for lifecycle wildcards.
+    const defaultLifecycleWild = deriveLifecycleWildcard(ORG, "default");
+    const researchLifecycleSubject = deriveLifecycleSubject(ORG, "research", "completed");
+    expect(subjectMatchesPattern(researchLifecycleSubject, defaultLifecycleWild)).toBe(false);
+
+    // And for verdict wildcards.
+    const defaultVerdictWild = verdictWildcard(ORG, "default", "review");
+    const researchVerdictSubject = verdictSubject(ORG, "research", "review", "approved");
+    expect(subjectMatchesPattern(researchVerdictSubject, defaultVerdictWild)).toBe(false);
+  });
+
+  test("segment validation rejects NATS-special characters in org / capability", () => {
+    // Holly review on PR#31, major #1 — operator misconfig like
+    // SAGE_ORG="foo*" used to silently produce a wildcard subject
+    // (`local.foo*.default.tasks.code-review.>`). The local helpers now
+    // mirror myelin's `assertSegment` to refuse on construction.
+    expect(() =>
+      broadcastTaskSubject("foo*", "default", "code-review"),
+    ).toThrow(/Invalid org/);
+    expect(() =>
+      broadcastTaskSubject(ORG, "default", "code-review!"),
+    ).toThrow(/Invalid capability/);
+    expect(() =>
+      directTaskSubject("foo>", "default", "did:mf:sage"),
+    ).toThrow(/Invalid org/);
+    expect(() =>
+      verdictSubject(ORG, "default", "review", "approved!"),
+    ).toThrow(/Invalid status/);
   });
 });

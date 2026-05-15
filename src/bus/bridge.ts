@@ -14,7 +14,9 @@ import { TaskPayloadSchema, type ReviewTaskPayload } from "../tasks/types.ts";
 import { describeEmission, type Emission } from "../tasks/emissions.ts";
 import {
   broadcastTaskSubject,
+  broadcastTaskSubjectLegacy,
   directTaskSubject,
+  directTaskSubjectLegacy,
   DEFAULT_STACK,
   validateStack,
 } from "../tasks/subjects.ts";
@@ -157,11 +159,23 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
 
   const queue = cfg.queueGroup ?? "sage-review";
   const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
+
+  // Phase-A canonical (5-segment) subscriptions.
   const broadcastSubj = broadcastTaskSubject(cfg.org, stack, "code-review");
   const directSubj = directTaskSubject(cfg.org, stack, cfg.did);
 
+  // Pre-Phase-A (4-segment) subscriptions — kept during the migration
+  // window so sage receives messages from publishers that haven't moved
+  // to the 5-segment form yet (Holly review on PR#31, major #2). Pilot
+  // ships pilot#86 in the same window; once Andreas's host has both
+  // landed, the legacy subscriptions get removed.
+  const broadcastSubjLegacy = broadcastTaskSubjectLegacy(cfg.org, "code-review");
+  const directSubjLegacy = directTaskSubjectLegacy(cfg.org, cfg.did);
+
   const broadcast = nc.subscribe(broadcastSubj, { queue });
   const direct = nc.subscribe(directSubj, { queue });
+  const broadcastLegacy = nc.subscribe(broadcastSubjLegacy, { queue });
+  const directLegacy = nc.subscribe(directSubjLegacy, { queue });
 
   const concurrencyLimit = cfg.maxConcurrentTasks ?? 3;
   const sem = new Semaphore(concurrencyLimit);
@@ -169,6 +183,8 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   log(`bridge: connected ${cfg.natsUrl}`);
   log(`bridge: subscribed ${broadcastSubj} (queue=${queue})`);
   log(`bridge: subscribed ${directSubj} (queue=${queue})`);
+  log(`bridge: subscribed ${broadcastSubjLegacy} (queue=${queue}) [legacy, pre-Phase-A]`);
+  log(`bridge: subscribed ${directSubjLegacy} (queue=${queue}) [legacy, pre-Phase-A]`);
   log(`bridge: maxConcurrentTasks=${concurrencyLimit}`);
 
   const onLoopFailure = (which: string) => async (err: unknown) => {
@@ -189,6 +205,12 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   };
   void consumeSubscription(broadcast, "broadcast", cfg, nc, sem).catch(onLoopFailure("broadcast"));
   void consumeSubscription(direct, "direct", cfg, nc, sem).catch(onLoopFailure("direct"));
+  void consumeSubscription(broadcastLegacy, "broadcast-legacy", cfg, nc, sem).catch(
+    onLoopFailure("broadcast-legacy"),
+  );
+  void consumeSubscription(directLegacy, "direct-legacy", cfg, nc, sem).catch(
+    onLoopFailure("direct-legacy"),
+  );
 
   return {
     connection: nc,
@@ -200,7 +222,7 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
 
 async function consumeSubscription(
   sub: Subscription,
-  mode: "broadcast" | "direct",
+  mode: "broadcast" | "direct" | "broadcast-legacy" | "direct-legacy",
   cfg: BridgeConfig,
   nc: NatsConnection,
   sem: Semaphore,
@@ -231,6 +253,12 @@ async function handleTask(
   nc: NatsConnection,
 ): Promise<void> {
   const corrId = env.correlation_id ?? env.id;
+  // `cfg.stack` was validated at startBridge time via `validateStack` —
+  // the daemon would not have reached this point if it were malformed.
+  // Capture once to keep the emit closure free of the `?? DEFAULT_STACK`
+  // fall-through that startBridge already resolved (Holly review on
+  // PR#31, nit #1).
+  const stack = cfg.stack ?? DEFAULT_STACK;
   const sovereignty = buildSovereignty(
     cfg.dataResidency ? { data_residency: cfg.dataResidency } : undefined,
   );
@@ -250,11 +278,7 @@ async function handleTask(
     emission: Emission,
     extensions?: Record<string, unknown>,
   ): Promise<void> => {
-    const { subject, type } = describeEmission(
-      cfg.org,
-      cfg.stack ?? DEFAULT_STACK,
-      emission,
-    );
+    const { subject, type } = describeEmission(cfg.org, stack, emission);
     return baseEmit({
       subject,
       type,
