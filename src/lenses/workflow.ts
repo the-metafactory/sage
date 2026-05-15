@@ -106,17 +106,18 @@ function sanitizeErrorMessage(raw: string): string {
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
-  const pr = await prView(opts.ref);
-  const diff = await prDiff(opts.ref);
-  let priorFindings: PriorReviewFinding[] = [];
-  try {
-    priorFindings = await priorSageReviewFindings(opts.ref);
-  } catch (err) {
+  const priorFindingsPromise = priorSageReviewFindings(opts.ref).catch((err) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(
       `[workflow] prior Sage review lookup failed; continuing without iteration context: ${msg}`,
     );
-  }
+    return [] as PriorReviewFinding[];
+  });
+  const [pr, diff, priorFindings] = await Promise.all([
+    prView(opts.ref),
+    prDiff(opts.ref),
+    priorFindingsPromise,
+  ]);
 
   const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
