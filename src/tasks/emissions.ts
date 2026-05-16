@@ -1,10 +1,11 @@
-import { STATE_TO_TYPE, type LifecycleState } from "@the-metafactory/myelin";
-
 import {
   deriveLifecycleSubject,
+  deriveSubject,
+  STATE_TO_TYPE,
   taskSubject,
   verdictSubject,
-} from "./subjects.ts";
+  type LifecycleState,
+} from "@the-metafactory/myelin";
 
 /**
  * Sage-side emission taxonomy. Discriminated union: each `kind` derives
@@ -62,14 +63,16 @@ export type Emission =
 
 /**
  * Resolve an `Emission` descriptor to its NATS `subject` and envelope
- * `type`. Subjects come from sage's local stack-aware helpers
- * (`./subjects.ts`) until myelin#151 ships the upstream replacements;
- * envelope types still come from myelin's canonical mapping where one
- * exists (`STATE_TO_TYPE` for lifecycle states).
+ * `type`. Subjects and envelope types both come from myelin's canonical
+ * helpers (`taskSubject`, `verdictSubject`, `deriveLifecycleSubject`,
+ * `STATE_TO_TYPE`) — sage's local stack-aware shim was deleted once
+ * myelin#157 landed the matching helpers upstream.
  *
  * `stack` is the IoAW operator-stack segment (sage#30, MY-101 Phase A).
  * Sage-default operators pass `"default"`; multi-stack operators set
- * `SAGE_STACK` and we propagate the configured value end-to-end.
+ * `SAGE_STACK` and we propagate the configured value end-to-end. The
+ * helpers accept `stack` as an optional trailing arg; sage always
+ * supplies it explicitly to keep the 6-segment grammar at the bridge.
  */
 export function describeEmission(
   org: string,
@@ -79,22 +82,29 @@ export function describeEmission(
   switch (emission.kind) {
     case "lifecycle":
       return {
-        subject: deriveLifecycleSubject(org, stack, emission.state),
+        subject: deriveLifecycleSubject(org, emission.state, stack),
         type: STATE_TO_TYPE[emission.state],
       };
     case "dispatchOperational":
+      // `post-failed` lives outside myelin's canonical `LifecycleState`
+      // set (`deriveLifecycleSubject` rejects unknown states at the type
+      // level). Build the subject via the lower-level `deriveSubject`
+      // primitive — it validates `org` and `stack`, leaves the `type`
+      // segments to the caller, and emits the canonical 6-segment shape.
+      // Drop this branch once myelin#150 lands operational lifecycle
+      // states upstream.
       return {
-        subject: deriveLifecycleSubject(org, stack, emission.state),
+        subject: deriveSubject("local", org, `dispatch.task.${emission.state}`, stack),
         type: `dispatch.task.${emission.state}`,
       };
     case "prReview":
       return {
-        subject: verdictSubject(org, stack, "review", emission.verdict),
+        subject: verdictSubject(org, "review", emission.verdict, stack),
         type: `code.pr.review.${emission.verdict}`,
       };
     case "task":
       return {
-        subject: taskSubject(org, stack, emission.capability),
+        subject: taskSubject(org, emission.capability, stack),
         type: `tasks.${emission.capability}`,
       };
   }

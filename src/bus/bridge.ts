@@ -15,9 +15,8 @@ import { describeEmission, type Emission } from "../tasks/emissions.ts";
 import {
   broadcastTaskSubject,
   directTaskSubject,
-  DEFAULT_STACK,
-  validateStack,
-} from "../tasks/subjects.ts";
+} from "@the-metafactory/myelin";
+import { DEFAULT_STACK, resolveStack } from "../util/stack.ts";
 
 /**
  * @deprecated Import `TaskPayloadSchema` directly from `../tasks/types.ts`
@@ -169,7 +168,7 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   // daemon.
   void watchConnectionStatus(nc);
 
-  const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
+  const stack = resolveStack(cfg.stack);
   // sage#35 — include `stack` in the queue group name so two sage
   // instances on different stacks (e.g. `andreas/research` and
   // `andreas/production`) subscribing the same capability don't steal
@@ -184,12 +183,15 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   // Stack-aware (6-segment) subscriptions, the canonical IoAW Phase A.5
   // shape `local.{org}.{stack}.tasks.{capability}.>`. Ecosystem publishers
   // (cortex#262 `MyelinRuntime.publish`, pilot#110 publish-review-request,
-  // myelin#152 helper migration) cut over to 6-segment at the same time;
-  // no dual-subscription migration adapter needed at the bridge layer.
-  // The cross-version backward-compat bridge for any legacy 5-segment
-  // emitter is tracked by myelin#156 (namespace.md:88 normalisation rule).
-  const broadcastSubj = broadcastTaskSubject(cfg.org, stack, "code-review");
-  const directSubj = directTaskSubject(cfg.org, stack, cfg.did);
+  // myelin#152/#157 helper migration) cut over to 6-segment at the same
+  // time; no dual-subscription migration adapter needed at the bridge
+  // layer. The cross-version backward-compat bridge for any legacy
+  // 5-segment emitter is tracked by myelin#154 (namespace.md:88
+  // normalisation rule — opt-in `dualSubscribeLegacy` flag landed in
+  // PR #159; sage's raw `nc.subscribe` call-sites here don't go through
+  // `EnvelopeTransport.subscribe` so the flag doesn't engage automatically).
+  const broadcastSubj = broadcastTaskSubject(cfg.org, "code-review", stack);
+  const directSubj = directTaskSubject(cfg.org, cfg.did, stack);
 
   const broadcast = nc.subscribe(broadcastSubj, { queue });
   const direct = nc.subscribe(directSubj, { queue });
