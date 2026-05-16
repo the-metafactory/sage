@@ -121,12 +121,14 @@ describe("buildSubstrateEnv allow-list", () => {
         SAGE_DID: "did:mf:sage",
         SAGE_ORG: "metafactory",
         SAGE_SUBSTRATE: "pi",
-        SAGE_ENV_ALLOW: "SAGE_DID,SAGE_ORG,SAGE_SUBSTRATE",
+        SAGE_LENS_CONCURRENCY: "1",
+        SAGE_ENV_ALLOW: "SAGE_DID,SAGE_ORG,SAGE_SUBSTRATE,SAGE_LENS_CONCURRENCY",
       },
     });
     expect(env.SAGE_DID).toBeUndefined();
     expect(env.SAGE_ORG).toBeUndefined();
     expect(env.SAGE_SUBSTRATE).toBeUndefined();
+    expect(env.SAGE_LENS_CONCURRENCY).toBeUndefined();
   });
 
   test("forwarding-policy keys never reach the substrate", () => {

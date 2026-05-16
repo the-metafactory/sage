@@ -4,7 +4,12 @@ import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { parsePrRef, ghAuthStatus } from "../github/gh.ts";
-import { reviewPr, renderReviewBody } from "../lenses/workflow.ts";
+import {
+  parseConcurrencyValue,
+  readConcurrencyEnv,
+  reviewPr,
+  renderReviewBody,
+} from "../lenses/workflow.ts";
 import { startBridge } from "../bus/bridge.ts";
 import { selectSubstrate } from "../substrate/select.ts";
 import { dispatchReview } from "./dispatch.ts";
@@ -17,6 +22,13 @@ import { dispatchReview } from "./dispatch.ts";
 function requiresNatsAuth(): boolean {
   const v = process.env.SAGE_REQUIRE_NATS_AUTH;
   return v === "1" || v === "true";
+}
+
+function resolveLensConcurrency(raw: string | undefined): number | undefined {
+  return (
+    parseConcurrencyValue(raw, "--lens-concurrency") ??
+    readConcurrencyEnv("SAGE_LENS_CONCURRENCY")
+  );
 }
 
 const program = new Command();
@@ -43,8 +55,17 @@ program
     (v) => parseInt(v, 10),
     Number(process.env.SAGE_REVIEW_TIMEOUT ?? 600),
   )
+  .option(
+    "--lens-concurrency <n>",
+    "Max concurrent lenses (default unbounded; env SAGE_LENS_CONCURRENCY)",
+  )
   .action(
-    async (prRef: string, opts: { post: boolean; timeout: number; substrate?: string }) => {
+    async (prRef: string, opts: {
+      post: boolean;
+      timeout: number;
+      substrate?: string;
+      lensConcurrency?: string;
+    }) => {
       const ref = parsePrRef(prRef);
       const auth = await ghAuthStatus();
       if (!auth.ok) {
@@ -54,14 +75,16 @@ program
       }
 
       const selection = selectSubstrate({ flag: opts.substrate });
+      const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
       console.error(
-        `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s)`,
+        `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
       const result = await reviewPr({
         ref,
         post: opts.post,
         substrate: selection.substrate,
         timeoutMs: opts.timeout * 1000,
+        ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
       const body = renderReviewBody(result.verdict, selection.substrate.displayName);
       console.log(body);
@@ -90,6 +113,10 @@ program
     (v) => parseInt(v, 10),
     Number(process.env.SAGE_MAX_CONCURRENT ?? 3),
   )
+  .option(
+    "--lens-concurrency <n>",
+    "Max concurrent lenses per review (default unbounded; env SAGE_LENS_CONCURRENCY)",
+  )
   .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
   .option("--queue <name>", "NATS queue-group for competing-consumer", "sage-review")
   .option(
@@ -115,10 +142,12 @@ program
       substrate?: string;
       residency?: string;
       stack?: string;
+      lensConcurrency?: string;
     }) => {
       const selection = selectSubstrate({ flag: opts.substrate });
+      const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
       console.error(
-        `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source})`,
+        `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source}, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
 
       const requireNatsAuth = requiresNatsAuth();
@@ -131,6 +160,7 @@ program
         substrate: selection.substrate,
         postReviews: opts.post,
         maxConcurrentTasks: opts.maxConcurrent,
+        ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
         ...(opts.creds ? { credsFile: opts.creds } : {}),
         queueGroup: opts.queue,
         ...(opts.residency ? { dataResidency: opts.residency } : {}),
@@ -309,6 +339,7 @@ program
       "PI_BIN=pi",
       "PI_PROVIDER=anthropic",
       "PI_MODEL=anthropic/claude-sonnet-4-6",
+      "# SAGE_LENS_CONCURRENCY=1",
       "# CLAUDE_BIN=claude",
       "# CLAUDE_MODEL=claude-sonnet-4-6",
       "# CODEX_BIN=codex",
