@@ -24,6 +24,13 @@ function requiresNatsAuth(): boolean {
   return v === "1" || v === "true";
 }
 
+function resolveLensConcurrency(raw: string | undefined): number | undefined {
+  return (
+    parseConcurrencyValue(raw, "--lens-concurrency") ??
+    readConcurrencyEnv("SAGE_LENS_CONCURRENCY")
+  );
+}
+
 const program = new Command();
 
 program
@@ -68,9 +75,7 @@ program
       }
 
       const selection = selectSubstrate({ flag: opts.substrate });
-      const lensConcurrency =
-        parseConcurrencyValue(opts.lensConcurrency, "--lens-concurrency") ??
-        readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
+      const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
       console.error(
         `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
@@ -140,9 +145,7 @@ program
       lensConcurrency?: string;
     }) => {
       const selection = selectSubstrate({ flag: opts.substrate });
-      const lensConcurrency =
-        parseConcurrencyValue(opts.lensConcurrency, "--lens-concurrency") ??
-        readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
+      const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
       console.error(
         `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source}, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
