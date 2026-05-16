@@ -81,6 +81,13 @@ const stubSubstrate = {
   },
 };
 
+function useDelayedSuccessfulLensRun(delayMs = 5): void {
+  runJsonImpl = async () => {
+    await new Promise((r) => setTimeout(r, delayMs));
+    return { summary: "ok", findings: [] };
+  };
+}
+
 beforeEach(() => {
   inFlight = 0;
   peakInFlight = 0;
@@ -157,10 +164,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
 
   test("SAGE_LENS_CONCURRENCY=1 runs applicable lenses serially", async () => {
     process.env.SAGE_LENS_CONCURRENCY = "1";
-    runJsonImpl = async () => {
-      await new Promise((r) => setTimeout(r, 5));
-      return { summary: "ok", findings: [] };
-    };
+    useDelayedSuccessfulLensRun();
 
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
@@ -175,10 +179,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
   });
 
   test("lensConcurrency=3 caps six applicable lenses at peak in-flight 3", async () => {
-    runJsonImpl = async () => {
-      await new Promise((r) => setTimeout(r, 5));
-      return { summary: "ok", findings: [] };
-    };
+    useDelayedSuccessfulLensRun();
 
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
@@ -195,10 +196,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
 
   test("explicit lensConcurrency overrides SAGE_LENS_CONCURRENCY", async () => {
     process.env.SAGE_LENS_CONCURRENCY = "1";
-    runJsonImpl = async () => {
-      await new Promise((r) => setTimeout(r, 5));
-      return { summary: "ok", findings: [] };
-    };
+    useDelayedSuccessfulLensRun();
 
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     await reviewPr({
