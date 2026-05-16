@@ -69,9 +69,18 @@ export interface BridgeConfig {
    */
   credsFile?: string;
   /**
-   * NATS queue-group name for the broadcast + direct subscriptions. Multiple
-   * Sage instances joining the same group share work via competing-consumer
-   * semantics (only one delivery per message). Defaults to `sage-review`.
+   * NATS queue-group **base** name for the broadcast + direct subscriptions.
+   * Multiple Sage instances joining the same group share work via
+   * competing-consumer semantics (only one delivery per message). Defaults
+   * to `sage-review`.
+   *
+   * **sage#35**: the bridge appends `-<stack>` to this base name before
+   * subscribing, so two sage instances on different operator stacks
+   * (`andreas/research` vs `andreas/production`) get distinct queue groups
+   * and don't steal each other's work. Operators rarely need to override
+   * this; the only legitimate use is running multiple sage instances on
+   * the SAME stack that should NOT compete (e.g. one for `code-review`,
+   * one for `code-review-priority`).
    */
   queueGroup?: string;
   /** Refuse to connect without usable NATS creds (recommended in production). */
@@ -160,8 +169,17 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   // daemon.
   void watchConnectionStatus(nc);
 
-  const queue = cfg.queueGroup ?? "sage-review";
   const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
+  // sage#35 — include `stack` in the queue group name so two sage
+  // instances on different stacks (e.g. `andreas/research` and
+  // `andreas/production`) subscribing the same capability don't steal
+  // each other's work via NATS round-robin queue-group semantics.
+  // Single-stack operators see the same name as before via the
+  // `default` stack — `sage-review-default` — which is still a stable
+  // identifier for one logical work-stream. Plan §600 lean (queue-group
+  // naming should include the stack so cross-stack contention can't
+  // happen).
+  const queue = `${cfg.queueGroup ?? "sage-review"}-${stack}`;
 
   // Stack-aware (6-segment) subscriptions, the canonical IoAW Phase A.5
   // shape `local.{org}.{stack}.tasks.{capability}.>`. Ecosystem publishers
