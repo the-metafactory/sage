@@ -12,11 +12,10 @@ import { parsePrRef } from "../github/gh.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
 import { describeEmission } from "../tasks/emissions.ts";
 import {
-  DEFAULT_STACK,
   deriveLifecycleWildcard,
-  validateStack,
   verdictWildcard,
-} from "../tasks/subjects.ts";
+} from "@the-metafactory/myelin";
+import { resolveStack } from "../util/stack.ts";
 
 /**
  * @deprecated Import `DispatchTaskPayload` directly from `../tasks/types.ts`.
@@ -143,9 +142,9 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
   // miss a fast-completing daemon's reply. Filter by correlation_id so
   // concurrent reviews don't cross-talk.
-  const stack = validateStack(opts.stack ?? DEFAULT_STACK);
+  const stack = resolveStack(opts.stack);
   const lifecycleSub = nc.subscribe(deriveLifecycleWildcard(opts.org, stack));
-  const verdictSub = nc.subscribe(verdictWildcard(opts.org, stack, "review"));
+  const verdictSub = nc.subscribe(verdictWildcard(opts.org, "review", stack));
 
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
