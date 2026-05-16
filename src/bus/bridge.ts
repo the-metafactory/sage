@@ -163,9 +163,13 @@ export async function startBridge(cfg: BridgeConfig): Promise<RunningBridge> {
   const queue = cfg.queueGroup ?? "sage-review";
   const stack = validateStack(cfg.stack ?? DEFAULT_STACK);
 
-  // Phase-A canonical (5-segment) subscriptions. All publishers in the
-  // ecosystem cut over to 5-seg at the same time (pilot#86, cedar, sage
-  // dispatcher); no dual-subscription migration adapter needed.
+  // Stack-aware (6-segment) subscriptions, the canonical IoAW Phase A.5
+  // shape `local.{org}.{stack}.tasks.{capability}.>`. Ecosystem publishers
+  // (cortex#262 `MyelinRuntime.publish`, pilot#110 publish-review-request,
+  // myelin#152 helper migration) cut over to 6-segment at the same time;
+  // no dual-subscription migration adapter needed at the bridge layer.
+  // The cross-version backward-compat bridge for any legacy 5-segment
+  // emitter is tracked by myelin#156 (namespace.md:88 normalisation rule).
   const broadcastSubj = broadcastTaskSubject(cfg.org, stack, "code-review");
   const directSubj = directTaskSubject(cfg.org, stack, cfg.did);
 

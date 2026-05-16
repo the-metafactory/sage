@@ -2,25 +2,30 @@ import { encodeDidSegment } from "@the-metafactory/myelin";
 
 /**
  * Sage-local stack-aware subject helpers — IoAW MY-101 Phase A
- * (`specs/namespace.md` §"Stack segment"). Address sage#30: pilot's
- * pending fix (pilot#86) publishes on the canonical 5-segment form, and
- * sage's pre-Phase-A 4-segment subscriptions don't match.
+ * (`specs/namespace.md` §"Stack segment"). Addresses sage#30: pilot's
+ * fix (pilot#110, merged) publishes on the canonical 6-segment
+ * stack-aware form, and sage's pre-Phase-A 4-segment subscriptions
+ * didn't match. These helpers close that gap on the subscribe side.
  *
- * **Removal:** once myelin#151 lands stack-aware task / verdict /
- * lifecycle helpers upstream, delete this file and call myelin's
- * `broadcastTaskSubject(org, capability, stack)` etc. directly. The
- * companion `dispatchOperational` adapter in `emissions.ts` follows the
- * same pattern (waiting on myelin#150). Both cleanups consolidate sage's
- * envelope/subject grammar back to a single source of truth.
+ * **Removal:** myelin#152 (merged) extended `taskSubject` and
+ * `broadcastTaskSubject` to accept `stack`; myelin#154 (in flight)
+ * extends the same to `verdictSubject`, `verdictWildcard`,
+ * `directTaskSubject`, `deriveLifecycleSubject`, and
+ * `deriveLifecycleWildcard`. Once #154 ships, delete this file and call
+ * myelin's helpers directly. The companion `dispatchOperational`
+ * adapter in `emissions.ts` follows the same pattern. Both cleanups
+ * consolidate sage's envelope/subject grammar back to a single source
+ * of truth in myelin.
  *
  * Until then, these helpers wrap myelin's pure-string segment encoder
  * (`encodeDidSegment` from `subjects.ts`) and emit the spec-compliant
- * 5-segment form:
+ * **6-segment stack-aware form** (7 segments for the verdict shape,
+ * which carries `{family}.{status}` as a two-segment tail):
  *
  *   local.{org}.{stack}.tasks.{capability}.{subcapability}      ← broadcast / task
  *   local.{org}.{stack}.tasks.@{principal}.{capability}         ← direct
  *   local.{org}.{stack}.dispatch.task.{state}                   ← lifecycle
- *   local.{org}.{stack}.code.pr.review.{decision}               ← verdict
+ *   local.{org}.{stack}.code.pr.{family}.{status}               ← verdict (7 segments)
  *
  * Sage's `default` operator runs with `stack = "default"` per IoAW Q7;
  * multi-stack operators set `SAGE_STACK` to override.
