@@ -58,6 +58,11 @@ export interface BridgeConfig {
    */
   maxConcurrentTasks?: number;
   /**
+   * Max concurrent lens executions within each review. Undefined preserves
+   * fully-parallel lens execution.
+   */
+  lensConcurrency?: number;
+  /**
    * Path to a NATS user `.creds` file (nsc-generated). When set, the bridge
    * authenticates with the broker. Falls back to `NATS_CREDS_FILE` env var.
    * Unauthenticated when neither is set (dev / local broker only).
@@ -308,6 +313,9 @@ async function handleTask(
       substrate: cfg.substrate,
       post: payload.post ?? cfg.postReviews ?? false,
       ...(payload.timeout_ms ? { timeoutMs: payload.timeout_ms } : {}),
+      ...(cfg.lensConcurrency !== undefined
+        ? { lensConcurrency: cfg.lensConcurrency }
+        : {}),
       onLensComplete: async (lens) => {
         await emit({
           kind: "lifecycle",

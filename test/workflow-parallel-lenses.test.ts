@@ -95,6 +95,7 @@ beforeEach(() => {
     },
     prView: async () => stubPr,
     prDiff: async () => stubDiff,
+    priorSageReviewFindings: async () => [],
     postReview: async () => ({ posted: "comment" as const, downgraded: false }),
   }));
 
@@ -109,6 +110,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.SAGE_LENS_CONCURRENCY;
   mock.restore();
 });
 
@@ -151,6 +153,62 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     expect(peakInFlight).toBe(EXPECTED_LENSES);
     expect(substrateCalls.length).toBe(EXPECTED_LENSES);
     expect(result.verdict.lenses.length).toBe(EXPECTED_LENSES);
+  });
+
+  test("SAGE_LENS_CONCURRENCY=1 runs applicable lenses serially", async () => {
+    process.env.SAGE_LENS_CONCURRENCY = "1";
+    runJsonImpl = async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return { summary: "ok", findings: [] };
+    };
+
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+    });
+
+    expect(peakInFlight).toBe(1);
+    expect(substrateCalls.length).toBe(6);
+    expect(result.verdict.lenses.length).toBe(6);
+  });
+
+  test("lensConcurrency=3 caps six applicable lenses at peak in-flight 3", async () => {
+    runJsonImpl = async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return { summary: "ok", findings: [] };
+    };
+
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+      lensConcurrency: 3,
+    });
+
+    expect(peakInFlight).toBe(3);
+    expect(substrateCalls.length).toBe(6);
+    expect(result.verdict.lenses.length).toBe(6);
+  });
+
+  test("explicit lensConcurrency overrides SAGE_LENS_CONCURRENCY", async () => {
+    process.env.SAGE_LENS_CONCURRENCY = "1";
+    runJsonImpl = async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return { summary: "ok", findings: [] };
+    };
+
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+      lensConcurrency: 3,
+    });
+
+    expect(peakInFlight).toBe(3);
   });
 
   test("lensReports preserve registry order even when lenses finish out of order", async () => {
@@ -374,5 +432,46 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     expect(result.verdict.summary).toMatch(/Security/);
     expect(result.verdict.summary).toMatch(/Architecture/);
     expect(result.verdict.summary).toMatch(/Performance/);
+  });
+
+  test("bounded execution preserves error isolation and registry order", async () => {
+    const realRegistry = await import("../src/lenses/registry.ts");
+    const realLenses = realRegistry.LENSES;
+
+    mock.module("../src/lenses/registry.ts", () => ({
+      ...realRegistry,
+      LENSES: realLenses.map((lens) =>
+        lens.name === "Security"
+          ? {
+              ...lens,
+              review: async () => {
+                throw new Error("bounded security crash");
+              },
+            }
+          : lens,
+      ),
+    }));
+
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 7 },
+      substrate: stubSubstrate,
+      post: false,
+      lensConcurrency: 2,
+    });
+
+    expect(result.verdict.lenses.map((l) => l.lens)).toEqual([
+      "CodeQuality",
+      "Security",
+      "Architecture",
+      "EcosystemCompliance",
+      "Performance",
+      "Maintainability",
+    ]);
+    const security = result.verdict.lenses.find((l) => l.lens === "Security");
+    expect(security?.errored).toBe(true);
+    expect(security?.findings[0]?.rationale).toMatch(/bounded security crash/);
+    const codeQuality = result.verdict.lenses.find((l) => l.lens === "CodeQuality");
+    expect(codeQuality?.errored).toBeUndefined();
   });
 });

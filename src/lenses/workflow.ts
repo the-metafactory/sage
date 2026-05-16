@@ -30,6 +30,11 @@ export interface ReviewOptions {
   post?: boolean;
   /** Per-lens substrate timeout. Falls back to substrate-specific default. */
   timeoutMs?: number;
+  /**
+   * Max concurrent lens executions. Undefined preserves the historical
+   * fully-parallel behavior; set via CLI flag or SAGE_LENS_CONCURRENCY.
+   */
+  lensConcurrency?: number;
   /** Progress callback fired after each lens completes — used for envelope emission in serve mode. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
 }
@@ -81,6 +86,26 @@ export interface PostError {
  * tests assert observable truncation behavior, not this constant.
  */
 const POST_ERROR_MAX_LEN = 500;
+
+export function readConcurrencyEnv(name: string): number | undefined {
+  return parseConcurrencyValue(process.env[name], name);
+}
+
+export function parseConcurrencyValue(
+  raw: string | undefined,
+  source: string,
+): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`${source} must be an integer >= 1 (got ${JSON.stringify(raw)})`);
+  }
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${source} must be an integer >= 1 (got ${JSON.stringify(raw)})`);
+  }
+  return value;
+}
 
 /**
  * Strip control bytes and ANSI escape sequences from a string. `gh`'s
@@ -153,54 +178,59 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const applicable = LENSES.filter(
     (lens) => !lens.applies || lens.applies(ctx),
   );
+  const lensConcurrency =
+    opts.lensConcurrency ?? readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
 
-  const lensReports: LensReport[] = await Promise.all(
-    applicable.map(async (lens) => {
-      const lensStartedAt = Date.now();
-      let report: LensReport;
-      try {
-        report = await lens.review({
-          pr,
-          diff,
-          priorFindings,
-          substrate: opts.substrate,
-          ...timeout,
-        });
-      } catch (err) {
-        // Defense in depth — `runLens` (base.ts) catches substrate
-        // errors and returns an `errored: true` report rather than
-        // throwing, so today this branch is reached only by lens
-        // implementations that bypass `runLens`. Both synthesis sites
-        // share `buildErroredLensReport` (types.ts) so the verdict
-        // gate, renderer, and bus contract see byte-stable shape
-        // regardless of which failure path triggered (Holly round 3,
-        // finding #2).
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
-        );
-        report = buildErroredLensReport({
-          lens: lens.name,
-          rationale: msg,
-          durationMs: Date.now() - lensStartedAt,
-          source: "runtime",
-        });
-      }
-      // Progress callbacks (e.g., NATS publish in daemon mode) fire as
-      // each lens completes, INCLUDING errored ones. Order is
-      // completion-order, not registry-order — bridge consumers treat
-      // `dispatch.task.progress` events as a stream. Callback failures
-      // are non-critical: a publish error must not discard a completed
-      // lens report.
-      try {
-        await opts.onLensComplete?.(report);
-      } catch (cbErr) {
-        const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
-        console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
-      }
-      return report;
-    }),
-  );
+  const runOne = async (lens: (typeof applicable)[number]): Promise<LensReport> => {
+    const lensStartedAt = Date.now();
+    let report: LensReport;
+    try {
+      report = await lens.review({
+        pr,
+        diff,
+        priorFindings,
+        substrate: opts.substrate,
+        ...timeout,
+      });
+    } catch (err) {
+      // Defense in depth — `runLens` (base.ts) catches substrate
+      // errors and returns an `errored: true` report rather than
+      // throwing, so today this branch is reached only by lens
+      // implementations that bypass `runLens`. Both synthesis sites
+      // share `buildErroredLensReport` (types.ts) so the verdict
+      // gate, renderer, and bus contract see byte-stable shape
+      // regardless of which failure path triggered (Holly round 3,
+      // finding #2).
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
+      );
+      report = buildErroredLensReport({
+        lens: lens.name,
+        rationale: msg,
+        durationMs: Date.now() - lensStartedAt,
+        source: "runtime",
+      });
+    }
+    // Progress callbacks (e.g., NATS publish in daemon mode) fire as
+    // each lens completes, INCLUDING errored ones. Order is
+    // completion-order, not registry-order — bridge consumers treat
+    // `dispatch.task.progress` events as a stream. Callback failures
+    // are non-critical: a publish error must not discard a completed
+    // lens report.
+    try {
+      await opts.onLensComplete?.(report);
+    } catch (cbErr) {
+      const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
+      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
+    }
+    return report;
+  };
+
+  const lensReports: LensReport[] =
+    lensConcurrency === undefined
+      ? await Promise.all(applicable.map(runOne))
+      : await runBounded(applicable, lensConcurrency, runOne);
 
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
@@ -231,6 +261,31 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),
   };
+}
+
+async function runBounded<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  runOne: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new Error(`lensConcurrency must be an integer >= 1 (got ${concurrency})`);
+  }
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workerCount = Math.min(concurrency, items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = next++;
+        if (index >= items.length) return;
+        results[index] = await runOne(items[index]);
+      }
+    }),
+  );
+
+  return results;
 }
 
 interface AttemptPostResult {

@@ -126,6 +126,7 @@ const SAGE_INTERNAL_KEYS = new Set<string>([
   "SAGE_SOURCE",
   "SAGE_ORG",
   "SAGE_DATA_RESIDENCY",
+  "SAGE_LENS_CONCURRENCY",
   "PI_ENV_ALLOW",
   "PI_ENV_DENY",
 ]);
