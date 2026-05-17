@@ -1,23 +1,28 @@
-# sage — code reviewer agent on pi.dev, Claude Code, or Codex CLI.
+# sage — code reviewer agent, hosted in-process by cortex.
 #
-# Shape: standalone worked example from docs/design-arc-agent-bots.md §3.2
-# (in the the-metafactory/cortex repo). Installs into cortex's HostAdapter
-# per arc#117 (identity fragment + persona + NATS creds) AND into the
-# darwin-launchd HostAdapter (binary + plist).
+# Shape: in-process agent (sage#40). Cortex's `ReviewConsumer` owns the
+# NATS subscribe loop, queue-group, ack/nak, redelivery, signature
+# verification (D1), and lifecycle envelope emission. Cortex invokes
+# sage's review pipeline as an injected `pipelineRunner` — entry point is
+# `reviewPr` in `src/lenses/workflow.ts`.
 #
-# Sage runs as its own daemon, uses a configured LLM substrate, and connects to the same
-# NATS bus cortex is on. Cortex sees Sage only via the fragment in
-# agents.d/, the NATS capability registry, and the envelopes Sage publishes.
+# Pre-sage#40 this manifest also declared a `darwin-launchd` target with a
+# plist + start/stop scripts. The launchd daemon was retired because
+# cortex's review-consumer (cortex#237 PR-6) already does everything the
+# daemon did — subscribe, ack, lifecycle envelopes, verdict emission,
+# signature verification — except invoke pi-dev, and the substrate slot
+# is pluggable via `ccSessionFactory` injection.
 
 schema: arc/v1
 name: sage
-version: 0.1.0
+version: 0.2.0
 type: agent
-targets: [cortex, darwin-launchd]
+targets: [cortex]
 description: >-
-  Code review agent on pi.dev, Claude Code, or Codex CLI. Subscribes to Myelin
-  code-review tasks, reviews PRs through composable lenses, posts via gh,
-  publishes verdict envelopes back to the bus.
+  Code review agent on pi.dev, Claude Code, or Codex CLI. Hosted
+  in-process by cortex: cortex's ReviewConsumer dispatches code-review
+  tasks pulled off the Myelin bus into sage's review pipeline, sage
+  returns a verdict, cortex emits the verdict envelope.
 license: MIT
 tier: official
 author:
@@ -25,14 +30,27 @@ author:
   github: jcfischer
 
 runtime:
-  # arc/v1 exposes a scalar substrate field, so keep the default substrate here;
-  # see bash.restricted_to and depends_on.tools comments for the full substrate list.
+  # arc/v1 exposes a scalar substrate field; substrate selection at the
+  # pipeline layer additionally honors `--substrate` / SAGE_SUBSTRATE /
+  # config (see src/substrate/select.ts).
   substrate: pi-dev
-  mode: standalone
+  # sage#40 — sage no longer runs as its own process. Cortex hosts the
+  # review-consumer subscription and invokes sage's pipelineRunner.
+  mode: in-process
+  # Per-flavor capability shape (sage#40) aligned with pilot's
+  # KNOWN_SPECIALIZATIONS so `tasks.code-review.<flavor>` envelopes route
+  # to the right `provided_by` agent in the capability catalog. Bare
+  # `code-review` (pre-#40) was ambiguous against the multi-agent
+  # catalog where fern, sage, and future reviewers each cover a subset.
   capabilities:
-    - code-review
-    - typescript
-    - github-pr-review
+    - code-review.typescript
+    - code-review.python
+    - code-review.rust
+    - code-review.go
+    - code-review.sql
+    - code-review.docs
+    - code-review.security
+    - code-review.generic
 
 identity:
   id: sage
@@ -57,17 +75,11 @@ depends_on:
 provides:
   # Cortex host (arc 0.26.0 CortexHostAdapter):
   #   - sage.md → ~/.config/cortex/agents.d/sage.md
-  # Darwin-launchd host (arc 0.26.0 P3 multi-target dispatch):
-  #   - binary: bin/sage → ~/bin/sage
-  #   - plist:  services/ai.meta-factory.sage.plist
-  #             → ~/Library/LaunchAgents/ai.meta-factory.sage.plist
-  #             tokens substituted: {{BIN}}, {{INSTALL_PATH}}, {{HOME}},
-  #             {{LOG_DIR}}, {{NATS_URL}}.
+  # sage#40: the darwin-launchd binary/plist provisioning retired with the
+  # standalone daemon; cortex now hosts sage's pipeline in-process.
   files:
     - source: sage.md
       target: ~/.config/cortex/agents.d/sage.md
-  binary: bin/sage
-  plist: services/ai.meta-factory.sage.plist
 
 scripts:
   postinstall: bun install                       # pull deps into the install copy
@@ -77,13 +89,11 @@ lifecycle:
     - scripts/check-cortex-version.sh    # cortex CLI on PATH (arc CortexHostAdapter.detect parity)
     - scripts/check-substrate-installed.sh # one supported LLM substrate on PATH
   postinstall:
-    - scripts/signal-cortex-reload.sh    # FIRST — daemon registers sage from agents.d/ BEFORE creds issue
-    - scripts/issue-nats-creds.sh        # THEN — cortex creds issue sage (scoped to declared capabilities)
-    - scripts/start-daemon.sh            # LAST — launchctl load the plist; daemon connects bus + self-registers capabilities
+    - scripts/signal-cortex-reload.sh    # cortex daemon registers sage from agents.d/ AND wires the in-process review-consumer
+    - scripts/issue-nats-creds.sh        # cortex creds issue sage (scoped to declared capabilities)
   preuninstall:
-    - scripts/stop-daemon.sh             # FIRST — launchctl unload; daemon nak's pending tasks
     - scripts/drain-tasks.sh             # publish draining signal; bounded wait on dispatch.task.completed
-    - scripts/signal-cortex-reload.sh    # LAST — cortex drops sage from registry (creds revoked in removeArtifact per D7)
+    - scripts/signal-cortex-reload.sh    # cortex drops sage from registry, tears down the in-process consumer; creds revoked in removeArtifact per D7
 
 capabilities:
   filesystem:
@@ -92,7 +102,7 @@ capabilities:
       - ~/.config/nats/
       - ~/work/
     write:
-      - ~/Library/Logs/sage/        # daemon log file
+      - ~/.config/cortex/logs/      # sage's verdicts surface through cortex's log stream now (sage#40)
   network:
     - domain: localhost
       reason: NATS bus connection (nats://127.0.0.1:4222)
@@ -113,8 +123,7 @@ capabilities:
       - gh              # GitHub CLI
       - git             # repo introspection
       - bun             # runtime
-      - launchctl       # daemon lifecycle (install/uninstall scripts only)
-  # All optional. Whichever provider key is set in the daemon env reaches
+  # All optional. Whichever provider key is set in cortex's env reaches
   # the active substrate subprocess via buildSubstrateEnv allow-list.
   secrets:
     - OPENROUTER_API_KEY

@@ -25,24 +25,23 @@ import { resolveStack } from "../util/stack.ts";
  * Declared via local type alias (rather than `export type { … } from`)
  * so this `@deprecated` JSDoc binds directly to the exported identifier
  * — TS surfaces the strikethrough reliably at the consumer's import site
- * that way. Parallel to the value-side `ReviewTaskPayloadSchema` shim in
- * `bridge.ts`; both use a local rename for the same reason. The two
- * declarations look superficially different (value `const` vs `type`)
- * because JS and TS export a value and a type respectively — the intent
- * and the deprecation mechanism are identical.
+ * that way.
  */
 export type DispatchTaskPayload = _DispatchTaskPayload;
 
 /**
  * Bus-domain dispatcher. Publishes a code-review task envelope to the
  * Myelin bus and waits for the verdict + lifecycle envelopes to come
- * back. Daemon-side counterpart lives in `bridge.ts` — both speak the
- * same protocol; this module is the publisher half, bridge.ts is the
- * subscriber half.
+ * back.
  *
- * Lives in src/bus/ alongside bridge.ts so all NATS-aware code shares a
- * single module boundary. CLI commands are thin shells that call into
- * this module.
+ * sage#40 — the receiver side previously lived in `src/bus/bridge.ts` as
+ * a standalone launchd-supervised daemon. That daemon retired when sage
+ * moved in-process inside cortex; cortex's `ReviewConsumer` (cortex#237)
+ * now owns the subscribe loop and invokes sage's review pipeline
+ * (`src/lenses/workflow.ts` → `reviewPr`) as an injected
+ * `pipelineRunner`. This module is now the only NATS-aware code in sage
+ * and exists for the operator-facing `sage dispatch` CLI command, plus
+ * any other publisher half a consumer might want to drive directly.
  */
 
 export interface DispatchOptions {
@@ -69,9 +68,10 @@ export interface DispatchOptions {
   dataResidency?: string;
   /**
    * Refuse to connect to NATS without usable creds. Sage PR#29 self-review
-   * (CodeQuality, important): the daemon honored `SAGE_REQUIRE_NATS_AUTH`
-   * via bridge.ts; the dispatcher silently fell back to unauthenticated.
-   * Wiring it here closes the inconsistency.
+   * (CodeQuality, important): the daemon-side equivalent on the legacy
+   * bridge.ts honored `SAGE_REQUIRE_NATS_AUTH`; the dispatcher silently
+   * fell back to unauthenticated. Wiring it here closes the inconsistency
+   * (and the daemon has since retired — see sage#40).
    */
   requireNatsAuth?: boolean;
   /**

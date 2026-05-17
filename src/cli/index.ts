@@ -10,14 +10,15 @@ import {
   reviewPr,
   renderReviewBody,
 } from "../lenses/workflow.ts";
-import { startBridge } from "../bus/bridge.ts";
 import { selectSubstrate } from "../substrate/select.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
- * Boolean parse for `SAGE_REQUIRE_NATS_AUTH`. Shared between `serve` and
- * `dispatch` actions so accepted values + env-name changes happen in one
- * place (sage PR#29 R2 maintainability finding).
+ * Boolean parse for `SAGE_REQUIRE_NATS_AUTH`. Used by the `dispatch` action
+ * to mirror the daemon-side enforcement that now lives in cortex (sage#40 —
+ * sage moved from standalone launchd daemon to in-process cortex agent;
+ * cortex's `ReviewConsumer` owns the subscribe loop, sage exposes
+ * `reviewPr` as a `pipelineRunner` library).
  */
 function requiresNatsAuth(): boolean {
   const v = process.env.SAGE_REQUIRE_NATS_AUTH;
@@ -95,115 +96,21 @@ program
     },
   );
 
-program
-  .command("serve")
-  .description("Run the bus listener. Subscribes to Myelin code-review tasks and processes them.")
-  .option("--nats <url>", "NATS broker URL", process.env.NATS_URL ?? "nats://localhost:4222")
-  .option("--org <org>", "Org segment", process.env.SAGE_ORG ?? "metafactory")
-  .option("--source <src>", "Envelope source", process.env.SAGE_SOURCE ?? "metafactory.sage.local")
-  .option("--did <did>", "Sage's DID", process.env.SAGE_DID ?? "did:mf:sage")
-  .option(
-    "--substrate <name>",
-    "Coding harness Sage runs through ({pi|claude|codex}). Falls back to SAGE_SUBSTRATE / config / pi.",
-  )
-  .option("--no-post", "Do not post reviews back to GitHub (dry-run)")
-  .option(
-    "--max-concurrent <n>",
-    "Max concurrent reviews (default 3)",
-    (v) => parseInt(v, 10),
-    Number(process.env.SAGE_MAX_CONCURRENT ?? 3),
-  )
-  .option(
-    "--lens-concurrency <n>",
-    "Max concurrent lenses per review (default unbounded; env SAGE_LENS_CONCURRENCY)",
-  )
-  .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
-  .option("--queue <name>", "NATS queue-group for competing-consumer", "sage-review")
-  .option(
-    "--residency <code>",
-    "Data-residency ISO 3166 alpha-2 code stamped on outbound envelopes",
-    process.env.MYELIN_DATA_RESIDENCY ?? process.env.SAGE_DATA_RESIDENCY,
-  )
-  .option(
-    "--stack <name>",
-    "IoAW operator stack segment (defaults to SAGE_STACK env or \"default\")",
-    process.env.SAGE_STACK,
-  )
-  .action(
-    async (opts: {
-      nats: string;
-      org: string;
-      source: string;
-      did: string;
-      post: boolean;
-      maxConcurrent: number;
-      creds?: string;
-      queue: string;
-      substrate?: string;
-      residency?: string;
-      stack?: string;
-      lensConcurrency?: string;
-    }) => {
-      const selection = selectSubstrate({ flag: opts.substrate });
-      const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
-      console.error(
-        `[sage] serve — connecting to ${opts.nats} as ${opts.did} on ${selection.substrate.displayName} (${selection.source}, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
-      );
-
-      const requireNatsAuth = requiresNatsAuth();
-
-      const bridge = await startBridge({
-        natsUrl: opts.nats,
-        org: opts.org,
-        source: opts.source,
-        did: opts.did,
-        substrate: selection.substrate,
-        postReviews: opts.post,
-        maxConcurrentTasks: opts.maxConcurrent,
-        ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
-        ...(opts.creds ? { credsFile: opts.creds } : {}),
-        queueGroup: opts.queue,
-        ...(opts.residency ? { dataResidency: opts.residency } : {}),
-        ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
-        ...(opts.stack ? { stack: opts.stack } : {}),
-      });
-
-      let shuttingDown = false;
-      const shutdown = async (signal: string) => {
-        if (shuttingDown) {
-          console.error(`[sage] ${signal} received while already draining — ignoring`);
-          return;
-        }
-        shuttingDown = true;
-        console.error(`[sage] received ${signal}, draining...`);
-        // Deregister handlers so a second signal can't re-enter even if the
-        // shuttingDown check is somehow bypassed. A third signal (or a
-        // truly-stuck drain) gets default kill behavior, which is what
-        // an impatient operator actually wants at that point.
-        process.removeAllListeners("SIGINT");
-        process.removeAllListeners("SIGTERM");
-        await bridge.close();
-        process.exit(0);
-      };
-      const onSignal = (signal: string) => () => {
-        shutdown(signal).catch((err: unknown) => {
-          const m = err instanceof Error ? err.stack ?? err.message : String(err);
-          console.error(`[sage] shutdown failed during ${signal}: ${m}`);
-          // Force exit so the OS supervisor can restart cleanly rather than
-          // leaving a hung process.
-          process.exit(1);
-        });
-      };
-      process.on("SIGINT", onSignal("SIGINT"));
-      process.on("SIGTERM", onSignal("SIGTERM"));
-      await bridge.connection.closed();
-    },
-  );
+// sage#40 — the `serve` command has been retired. Sage is now an
+// in-process cortex agent: cortex's `ReviewConsumer` owns the NATS
+// subscribe loop, queue-group, ack/nak, redelivery, and lifecycle envelope
+// emission (cortex#237 PR-6). Cortex invokes sage's review pipeline as an
+// injected `pipelineRunner` — `reviewPr` from `src/lenses/workflow.ts` is
+// the entry point.
+//
+// To run a one-off review without the bus, use `sage review <pr-ref>`.
+// To trigger a review through cortex's in-process sage from the CLI side,
+// use `sage dispatch <pr-ref>` (publisher half — receiver is cortex).
 
 program
   .command("dispatch")
   .description(
-    "Publish a code-review task envelope to the Myelin bus and stream the verdict back. Requires a running Sage daemon (sage serve).",
+    "Publish a code-review task envelope to the Myelin bus and stream the verdict back. Requires a running cortex with sage wired as an in-process agent (sage#40).",
   )
   .argument("<pr-ref>", "PR URL or OWNER/REPO#N")
   .option("--nats <url>", "NATS broker URL", process.env.NATS_URL ?? "nats://localhost:4222")

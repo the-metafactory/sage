@@ -10,7 +10,6 @@
   "scripts": {
     "sage": "bun run src/cli/index.ts",
     "review": "bun run src/cli/index.ts review",
-    "serve": "bun run src/cli/index.ts serve",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

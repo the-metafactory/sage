@@ -6,8 +6,9 @@ const RESIDENCY_RE = /^[A-Z]{2}$/;
  * Resolve the data-residency code for outbound envelopes.
  *
  * Precedence: explicit caller override → `MYELIN_DATA_RESIDENCY` env →
- * `SAGE_DATA_RESIDENCY` env (legacy fallback, kept for the deployed
- * launchd plist that still names it) → `"CH"` default. Validated on
+ * `SAGE_DATA_RESIDENCY` env (legacy fallback, kept for back-compat with
+ * older deployment manifests that set it directly) → `"CH"` default.
+ * Validated on
  * every call so a misconfigured value surfaces near the publish call
  * that produced it (no import-time silent capture).
  */

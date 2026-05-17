@@ -12,7 +12,7 @@
  *      to codex. Namespaces for inactive substrates are not forwarded,
  *      which keeps each substrate's config env isolated.
  *   4. Avoid blanket `process.env` passthrough — keeps secret blast radius
- *      tight when Sage runs as a daemon under systemd / launchd and inherits
+ *      tight when sage runs in-process inside cortex (sage#40) and inherits
  *      a noisy parent env.
  *
  * Override behavior:
