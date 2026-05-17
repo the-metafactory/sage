@@ -132,6 +132,13 @@ capabilities:
       # so a `gh pr review` post-failure (sage#16) is recoverable manually.
       # Capability declaration must match the runtime write site.
       - ~/.config/sage/reviews/
+      # cycle-4 finding — `scripts/cleanup-legacy-daemon.sh` does
+      # `rm -f ~/Library/LaunchAgents/ai.meta-factory.sage.plist` during
+      # preuninstall to retire the pre-#40 standalone-daemon plist on
+      # upgrade. Same scope-narrowing as the `launchctl` restricted_to
+      # entry in `bash` below: cleanup-only, retire this entry once every
+      # operator has rolled past sage#40.
+      - ~/Library/LaunchAgents/    # cleanup-only — scripts/cleanup-legacy-daemon.sh
   network:
     - domain: localhost
       reason: NATS bus connection (nats://127.0.0.1:4222)
