@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# sage launcher — operator-facing CLI shim.
+#
+# Exposes ONLY the non-daemon subcommands (`review`, `dispatch`, `init`).
+# The pre-sage#40 `serve` daemon retired when sage moved in-process inside
+# cortex's `ReviewConsumer`; this launcher exists so `arc install` still
+# produces a usable `sage` on the operator's PATH for one-off review work.
+#
+# When arc installs sage, it symlinks ~/bin/sage to this script inside
+# ~/.config/metafactory/pkg/repos/sage/bin/sage. The launcher resolves
+# its own location regardless of how it was invoked.
+
+set -euo pipefail
+
+# Resolve symlinks to find the real script directory.
+SCRIPT="$0"
+while [[ -L "$SCRIPT" ]]; do
+  DIR="$(cd -P "$(dirname "$SCRIPT")" && pwd)"
+  SCRIPT="$(readlink "$SCRIPT")"
+  [[ "$SCRIPT" != /* ]] && SCRIPT="$DIR/$SCRIPT"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT")" && pwd)"
+REPO_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "sage: 'bun' not on PATH — install from https://bun.sh" >&2
+  exit 1
+fi
+
+# Optional env file at ~/.config/sage/.env — operators can put provider
+# API keys here so `sage review` / `sage dispatch` pick them up without
+# polluting the shell init. chmod 600 recommended; warn if world/group
+# readable. (Cortex-hosted in-process sage does NOT read this file —
+# cortex inherits provider keys from its own process env.)
+SAGE_ENV_FILE="${HOME}/.config/sage/.env"
+if [[ -f "$SAGE_ENV_FILE" ]]; then
+  if [[ "$(stat -f '%Mp%Lp' "$SAGE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then
+    echo "sage: warning — $SAGE_ENV_FILE is world/group-readable (chmod 600 recommended)" >&2
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$SAGE_ENV_FILE"
+  set +a
+fi
+
+# Guard the retired `serve` subcommand explicitly so an operator with
+# muscle memory from the pre-sage#40 shape gets a clear pointer rather
+# than commander's generic "unknown command".
+if [[ "${1:-}" == "serve" ]]; then
+  cat >&2 <<'EOF'
+sage: the `serve` subcommand was retired in sage#40. Sage now runs
+in-process inside cortex's ReviewConsumer — start cortex and sage's
+subscription comes up with it. For one-off offline review use
+`sage review <pr-ref>`; to publish a task envelope use
+`sage dispatch <pr-ref>`.
+EOF
+  exit 64
+fi
+
+exec bun run "$REPO_ROOT/src/cli/index.ts" "$@"

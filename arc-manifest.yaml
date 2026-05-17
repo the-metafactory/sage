@@ -75,11 +75,19 @@ depends_on:
 provides:
   # Cortex host (arc 0.26.0 CortexHostAdapter):
   #   - sage.md → ~/.config/cortex/agents.d/sage.md
-  # sage#40: the darwin-launchd binary/plist provisioning retired with the
+  # sage#40: the darwin-launchd plist provisioning retired with the
   # standalone daemon; cortex now hosts sage's pipeline in-process.
+  #
+  # The `binary` entry is RETAINED post-sage#40 as a thin operator-facing
+  # CLI shim (review / dispatch / init only — no `serve` daemon loop).
+  # `arc install` symlinks ~/bin/sage to this script so the operator
+  # still has a runnable `sage review <pr>` for offline one-off review
+  # work. (cycle-1 finding #2: removing the binary made the documented
+  # `sage review` / `sage dispatch` commands unreachable.)
   files:
     - source: sage.md
       target: ~/.config/cortex/agents.d/sage.md
+  binary: bin/sage
 
 scripts:
   postinstall: bun install                       # pull deps into the install copy
@@ -92,6 +100,13 @@ lifecycle:
     - scripts/signal-cortex-reload.sh    # cortex daemon registers sage from agents.d/ AND wires the in-process review-consumer
     - scripts/issue-nats-creds.sh        # cortex creds issue sage (scoped to declared capabilities)
   preuninstall:
+    # cycle-1 finding #1 — on upgrade from the pre-sage#40 standalone shape,
+    # ~/Library/LaunchAgents/ai.meta-factory.sage.plist is still loaded and
+    # the legacy daemon (which predates cortex's D1 signature verifier
+    # wiring) would race the new in-process consumer for the same broadcast
+    # pull. Run this FIRST so the legacy daemon stops claiming work before
+    # we drain in-flight tasks. Idempotent — no-op on fresh installs.
+    - scripts/cleanup-legacy-daemon.sh
     - scripts/drain-tasks.sh             # publish draining signal; bounded wait on dispatch.task.completed
     - scripts/signal-cortex-reload.sh    # cortex drops sage from registry, tears down the in-process consumer; creds revoked in removeArtifact per D7
 
@@ -103,6 +118,11 @@ capabilities:
       - ~/work/
     write:
       - ~/.config/cortex/logs/      # sage's verdicts surface through cortex's log stream now (sage#40)
+      # cycle-1 finding #3 — `persistVerdict` (src/util/persistence.ts)
+      # writes verdict artifacts to ~/.config/sage/reviews/<owner>-<repo>-<n>.{json,md}
+      # so a `gh pr review` post-failure (sage#16) is recoverable manually.
+      # Capability declaration must match the runtime write site.
+      - ~/.config/sage/reviews/
   network:
     - domain: localhost
       reason: NATS bus connection (nats://127.0.0.1:4222)
