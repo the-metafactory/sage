@@ -100,15 +100,24 @@ lifecycle:
     - scripts/signal-cortex-reload.sh    # cortex daemon registers sage from agents.d/ AND wires the in-process review-consumer
     - scripts/issue-nats-creds.sh        # cortex creds issue sage (scoped to declared capabilities)
   preuninstall:
-    # cycle-1 finding #1 — on upgrade from the pre-sage#40 standalone shape,
-    # ~/Library/LaunchAgents/ai.meta-factory.sage.plist is still loaded and
-    # the legacy daemon (which predates cortex's D1 signature verifier
-    # wiring) would race the new in-process consumer for the same broadcast
-    # pull. Run this FIRST so the legacy daemon stops claiming work before
-    # we drain in-flight tasks. Idempotent — no-op on fresh installs.
-    - scripts/cleanup-legacy-daemon.sh
-    - scripts/drain-tasks.sh             # publish draining signal; bounded wait on dispatch.task.completed
-    - scripts/signal-cortex-reload.sh    # cortex drops sage from registry, tears down the in-process consumer; creds revoked in removeArtifact per D7
+    # Ordering rationale (cycle-3 finding #2):
+    #   The drain step must run LAST. If `drain-tasks.sh` runs while
+    #   cortex's in-process sage consumer is still subscribed, the queue
+    #   keeps refilling with newly-claimed tasks and the bounded wait
+    #   either takes forever or times out before the actual in-flight
+    #   work completes. Tear down the consumer FIRST (via the
+    #   cortex-reload signal), THEN drain.
+    #
+    # cycle-1 finding #1 — on upgrade from the pre-sage#40 standalone
+    # shape, ~/Library/LaunchAgents/ai.meta-factory.sage.plist is still
+    # loaded and the legacy daemon (which predates cortex's D1 signature
+    # verifier wiring) would race the new in-process consumer for the
+    # same broadcast pull. Run cleanup FIRST so the legacy daemon stops
+    # claiming work before anything else. Idempotent — no-op on fresh
+    # installs.
+    - scripts/cleanup-legacy-daemon.sh   # FIRST — retire legacy plist + detach loaded job (idempotent)
+    - scripts/signal-cortex-reload.sh    # THEN — cortex drops sage from registry, tears down the in-process consumer so no new tasks are claimed; creds revoked in removeArtifact per D7
+    - scripts/drain-tasks.sh             # LAST — bounded wait on in-flight dispatch.task.completed; queue isn't refilling because the consumer is gone
 
 capabilities:
   filesystem:
