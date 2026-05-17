@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# sage launcher — resolves the install root and dispatches to the CLI.
+# sage launcher — operator-facing CLI shim.
+#
+# Exposes ONLY the non-daemon subcommands (`review`, `dispatch`, `init`).
+# The pre-sage#40 `serve` daemon retired when sage moved in-process inside
+# cortex's `ReviewConsumer`; this launcher exists so `arc install` still
+# produces a usable `sage` on the operator's PATH for one-off review work.
 #
 # When arc installs sage, it symlinks ~/bin/sage to this script inside
-# ~/.config/metafactory/pkg/repos/sage/bin/sage. The launcher must find
-# the repo root regardless of how it was invoked.
+# ~/.config/metafactory/pkg/repos/sage/bin/sage. The launcher resolves
+# its own location regardless of how it was invoked.
 
 set -euo pipefail
 
@@ -22,11 +27,11 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
-# Load env from ~/.config/sage/.env if present. This is where operators
-# put provider API keys (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, etc.) for
-# the launchd-managed daemon — launchd does NOT read shell init files, so
-# without this load step the daemon's env is empty of secrets even when
-# the operator's terminal session has them set. chmod 600 recommended.
+# Optional env file at ~/.config/sage/.env — operators can put provider
+# API keys here so `sage review` / `sage dispatch` pick them up without
+# polluting the shell init. chmod 600 recommended; warn if world/group
+# readable. (Cortex-hosted in-process sage does NOT read this file —
+# cortex inherits provider keys from its own process env.)
 SAGE_ENV_FILE="${HOME}/.config/sage/.env"
 if [[ -f "$SAGE_ENV_FILE" ]]; then
   if [[ "$(stat -f '%Mp%Lp' "$SAGE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then
@@ -36,6 +41,20 @@ if [[ -f "$SAGE_ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$SAGE_ENV_FILE"
   set +a
+fi
+
+# Guard the retired `serve` subcommand explicitly so an operator with
+# muscle memory from the pre-sage#40 shape gets a clear pointer rather
+# than commander's generic "unknown command".
+if [[ "${1:-}" == "serve" ]]; then
+  cat >&2 <<'EOF'
+sage: the `serve` subcommand was retired in sage#40. Sage now runs
+in-process inside cortex's ReviewConsumer — start cortex and sage's
+subscription comes up with it. For one-off offline review use
+`sage review <pr-ref>`; to publish a task envelope use
+`sage dispatch <pr-ref>`.
+EOF
+  exit 64
 fi
 
 exec bun run "$REPO_ROOT/src/cli/index.ts" "$@"

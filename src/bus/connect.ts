@@ -3,14 +3,19 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 /**
- * Shared NATS connect helper used by the daemon (`bridge.ts`) AND the
- * dispatcher (`dispatcher.ts`). Handles creds-path resolution, ENOENT
- * soft-fallback (cortex-creds-not-yet-minted is a legitimate dev state),
- * authenticator setup, and optional refuse-without-auth enforcement.
+ * Shared NATS connect helper for the dispatcher (`dispatcher.ts`).
+ * Handles creds-path resolution, ENOENT soft-fallback
+ * (cortex-creds-not-yet-minted is a legitimate dev state), authenticator
+ * setup, and optional refuse-without-auth enforcement.
  *
  * Wire-layer module — uses the `nats` package directly. Envelope + subject
  * concerns live in `@the-metafactory/myelin`. Migration to myelin's
  * `NATSTransport` is a follow-up.
+ *
+ * sage#40: previously also used by `src/bus/bridge.ts` (the standalone
+ * daemon's NATS subscribe loop). The daemon retired when sage moved
+ * in-process inside cortex; the receiver path now lives in cortex's
+ * `ReviewConsumer`.
  */
 
 export interface ConnectOptions {

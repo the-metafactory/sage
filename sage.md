@@ -8,11 +8,17 @@ runtime:
   # pi-dev default; also supports claude and codex at runtime.
   # Cortex fragment schema exposes only this scalar substrate field.
   substrate: pi-dev
-  mode: standalone
+  # sage#40 — sage is hosted in-process by cortex's ReviewConsumer.
+  mode: in-process
   capabilities:
-    - code-review
-    - typescript
-    - github-pr-review
+    - code-review.typescript
+    - code-review.python
+    - code-review.rust
+    - code-review.go
+    - code-review.sql
+    - code-review.docs
+    - code-review.security
+    - code-review.generic
 ---
 
 # Sage — Persona

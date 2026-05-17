@@ -4,20 +4,19 @@ import { z } from "zod";
  * Canonical Zod schema for the `code-review` task envelope's `payload` field.
  *
  * One source of truth shared between both wire directions:
- * - `bridge.ts` (receiver) — calls `TaskPayloadSchema.safeParse` on incoming
- *   envelopes; the inferred `ReviewTaskPayload` type drives the daemon's
- *   `resolvePrRef` etc.
+ * - Receiver — cortex's `ReviewConsumer` (post sage#40, sage runs in-process
+ *   inside cortex) calls `TaskPayloadSchema.safeParse` on incoming envelopes;
+ *   the inferred `ReviewTaskPayload` type drives `resolvePrRef` etc. before
+ *   the injected `pipelineRunner` (sage's `reviewPr`) is invoked.
  * - `dispatcher.ts` (sender) — derives `DispatchTaskPayload` by narrowing
  *   `post` to `true` (per sage#8: the sender NEVER sends `post: false`;
- *   absence means "let the daemon-default decide").
+ *   absence means "let the receiver-default decide").
  *
  * When the protocol gains a field (priority, labels, target_lens, etc.),
- * add it here once. Both sites pick it up automatically — pre-#10, both
- * sites had hand-maintained parallel definitions that would silently
- * drift.
+ * add it here once. Both sites pick it up automatically.
  *
  * Refinement: an envelope must carry EITHER a `pr_url` or the
- * `owner+repo+number` triple. The daemon's `resolvePrRef` handles both.
+ * `owner+repo+number` triple. The receiver's `resolvePrRef` handles both.
  */
 /**
  * GitHub character set for org logins and repository names. Logins are
@@ -27,7 +26,7 @@ import { z } from "zod";
  * safe-character regex because these values cross the NATS bus trust
  * boundary and are eventually rendered into operator-facing shell
  * hints (sage#16 review). Anything that's not a valid GitHub identifier
- * shouldn't reach the daemon in the first place.
+ * shouldn't reach the receiver in the first place.
  *
  * Owner regex enforces GitHub's actual "no consecutive hyphens" rule
  * via a positive lookahead — each `-` must be followed by another
@@ -48,7 +47,7 @@ export const TaskPayloadSchema = z
     repo: z.string().regex(GH_REPO_RE).max(100).optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
-    /** Per-lens pi timeout. Falls back to daemon PI_TIMEOUT_MS / default. */
+    /** Per-lens pi timeout. Falls back to receiver PI_TIMEOUT_MS / default. */
     timeout_ms: z.number().int().positive().optional(),
   })
   .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
