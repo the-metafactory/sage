@@ -25,14 +25,34 @@ const REPO_ROOT = (() => {
   return join(here, "..");
 })();
 
-function readManifestCapabilities(): string[] {
-  const raw = readFileSync(join(REPO_ROOT, "arc-manifest.yaml"), "utf8");
-  const doc = yaml.parse(raw) as { runtime?: { capabilities?: unknown } };
-  const caps = doc.runtime?.capabilities;
+/**
+ * Shared validation + extraction step. Both source files (the arc manifest
+ * and the persona frontmatter) carry the same `runtime.capabilities` shape;
+ * the only thing that differs between them is the surrounding YAML envelope
+ * (full document vs. fenced frontmatter block) and the operator-facing label
+ * we want in the error message. cycle-2 finding #2: pulling this out keeps
+ * future schema tweaks (e.g. the day capabilities becomes an object with
+ * `mode` + `flavors`) landing in one place rather than two parallel inline
+ * blocks that have to be kept in lockstep.
+ */
+function extractRuntimeCapabilities(label: string, parsed: unknown): string[] {
+  const runtime =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as { runtime?: unknown }).runtime
+      : undefined;
+  const caps =
+    typeof runtime === "object" && runtime !== null
+      ? (runtime as { capabilities?: unknown }).capabilities
+      : undefined;
   if (!Array.isArray(caps)) {
-    throw new Error("arc-manifest.yaml has no runtime.capabilities array");
+    throw new Error(`${label} has no runtime.capabilities array`);
   }
   return caps.map((c) => String(c));
+}
+
+function readManifestCapabilities(): string[] {
+  const raw = readFileSync(join(REPO_ROOT, "arc-manifest.yaml"), "utf8");
+  return extractRuntimeCapabilities("arc-manifest.yaml", yaml.parse(raw));
 }
 
 function readPersonaCapabilities(): string[] {
@@ -45,12 +65,7 @@ function readPersonaCapabilities(): string[] {
   if (!match) {
     throw new Error("sage.md has no YAML frontmatter block");
   }
-  const fm = yaml.parse(match[1] ?? "") as { runtime?: { capabilities?: unknown } };
-  const caps = fm.runtime?.capabilities;
-  if (!Array.isArray(caps)) {
-    throw new Error("sage.md frontmatter has no runtime.capabilities array");
-  }
-  return caps.map((c) => String(c));
+  return extractRuntimeCapabilities("sage.md frontmatter", yaml.parse(match[1] ?? ""));
 }
 
 describe("runtime.capabilities parity", () => {

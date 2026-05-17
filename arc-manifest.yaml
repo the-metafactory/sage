@@ -143,6 +143,13 @@ capabilities:
       - gh              # GitHub CLI
       - git             # repo introspection
       - bun             # runtime
+      # cycle-2 finding #1 — launchctl is NOT used for sage's own lifecycle
+      # anymore (the standalone daemon retired in sage#40). It is retained
+      # in this allow-list solely so the `scripts/cleanup-legacy-daemon.sh`
+      # preuninstall hook can bootout the pre-#40
+      # ~/Library/LaunchAgents/ai.meta-factory.sage.plist on upgrade. Once
+      # every operator has rolled past sage#40 this entry can retire too.
+      - launchctl       # cleanup-only — scripts/cleanup-legacy-daemon.sh
   # All optional. Whichever provider key is set in cortex's env reaches
   # the active substrate subprocess via buildSubstrateEnv allow-list.
   secrets:
