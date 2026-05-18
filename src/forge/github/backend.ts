@@ -7,6 +7,15 @@ import { z } from "zod";
 import { buildGhEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
 import { PrMetadataSchema } from "../types.ts";
+
+/**
+ * Re-export of the canonical `PrMetadataSchema` (now owned by
+ * `../types.ts`) so the historical `import { PrMetadataSchema } from
+ * "src/github/gh.ts"` surface still resolves through the relocated
+ * module. Folds in once all callers migrate to importing from
+ * `forge/types.ts` directly.
+ */
+export { PrMetadataSchema };
 import type {
   AuthStatusResult,
   ForgeBackend,
