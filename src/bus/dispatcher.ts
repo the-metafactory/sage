@@ -179,18 +179,40 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  // sage#49 — `dispatch.task.received` is the first lifecycle envelope
+  // cortex's consumer emits after claiming a task. If no `received`
+  // arrives within `SILENCE_WARN_MS`, the dispatch is almost certainly
+  // hitting a subject the consumer side isn't subscribed to (org-segment
+  // mismatch with cortex.yaml `operator.id`, stack-segment mismatch, or
+  // a fully-dormant runtime per cortex#335 / G-1111). Surface an
+  // actionable warning to stderr without terminating — the primary wait
+  // continues, the operator just gets a hint to check.
+  let receivedSeen = false;
 
   const done = new Promise<number>((resolve) => {
     const finish = (code: number) => {
       if (terminated) return;
       terminated = true;
       if (timer) clearTimeout(timer);
+      if (silenceTimer) clearTimeout(silenceTimer);
       resolve(code);
     };
 
     void consume(lifecycleSub, correlationId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
       const payload = env.payload ?? {};
+
+      // Any lifecycle envelope for this correlation_id is sufficient
+      // signal that SOME consumer claimed the task — `received` is the
+      // first one but `started` / `completed` / `failed` count too.
+      // Cancel the silence timer; the warning would mislead if it fired
+      // after the fact.
+      receivedSeen = true;
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = undefined;
+      }
 
       // `dispatch.task.post-failed` (sage#16) is the operational sibling
       // of `dispatch.task.failed` — lens work succeeded, GH post
@@ -235,6 +257,17 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       log(`timed out after ${opts.waitSeconds}s — no completed/failed envelope received`);
       finish(2);
     }, opts.waitSeconds * 1000);
+
+    // sage#49 — silence-warning timer. Fires once at SILENCE_WARN_MS
+    // if no lifecycle envelope has arrived for this correlation_id,
+    // pointing the operator at the three most likely root causes:
+    // org / stack mismatch and the cortex#335 / G-1111 dormant
+    // runtime gap. Does NOT terminate — `finish` is reserved for the
+    // primary wait timer or a real lifecycle terminal envelope.
+    silenceTimer = setTimeout(() => {
+      if (!shouldEmitSilenceWarning({ terminated, receivedSeen })) return;
+      log(buildSilenceWarning({ org: opts.org, stack }));
+    }, SILENCE_WARN_MS);
   });
 
   log(`▶ publishing tasks.${capability} (correlation=${correlationId})`);
@@ -287,6 +320,52 @@ async function consume(
 }
 
 const LOG_PREFIX = "[sage:dispatch]";
+
+/**
+ * sage#49 — silence threshold before the dispatcher emits a stderr
+ * warning suggesting org/stack/dormant-runtime diagnosis. 5s is the
+ * smallest interval that comfortably absorbs normal lifecycle
+ * round-trip latency on a healthy local NATS while still firing
+ * quickly enough to help an operator catch a mistyped `--org` before
+ * they walk away assuming the dispatch is just slow.
+ *
+ * Exported so tests can pin the contract without standing up a NATS
+ * broker.
+ */
+export const SILENCE_WARN_MS = 5_000;
+
+/**
+ * Pure-function policy for the silence-warning timer (sage#49). Returns
+ * true iff the warning should be emitted — false when the dispatcher
+ * already terminated OR a lifecycle envelope arrived between the timer
+ * being scheduled and firing. Extracted so the policy is unit-testable
+ * without timer mocks.
+ */
+export function shouldEmitSilenceWarning(state: {
+  terminated: boolean;
+  receivedSeen: boolean;
+}): boolean {
+  return !state.terminated && !state.receivedSeen;
+}
+
+/**
+ * Build the operator-facing silence-warning string (sage#49). Centralised
+ * so the wording stays consistent between the dispatcher and its tests;
+ * also makes it cheap to grep for the warning shape from a log shipper.
+ */
+export function buildSilenceWarning(opts: {
+  org: string;
+  stack: string;
+  silenceMs?: number;
+}): string {
+  const seconds = (opts.silenceMs ?? SILENCE_WARN_MS) / 1000;
+  return (
+    `⚠ no consumer claim after ${seconds}s — verify cortex.yaml operator.id ` +
+    `matches --org "${opts.org}" and stack matches "${opts.stack}" ` +
+    `(see sage#49). If both align, cortex's review consumer may be DORMANT ` +
+    `(see cortex#335 / G-1111).`
+  );
+}
 
 function log(msg: string): void {
   // eslint-disable-next-line no-console
