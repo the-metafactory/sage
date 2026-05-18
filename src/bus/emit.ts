@@ -32,7 +32,14 @@ export interface EmitterOptions {
 }
 
 export interface Emitter {
-  (input: PublishInput): Promise<void>;
+  /**
+   * Publish an envelope. Returns the published envelope's `id` so
+   * callers can correlate later inbound envelopes against this
+   * specific publish (sage#53 — cortex#237 spec uses the inbound
+   * envelope's `id` as the `correlation_id` on every emitted
+   * lifecycle / verdict envelope).
+   */
+  (input: PublishInput): Promise<string>;
 }
 
 /**
@@ -45,7 +52,7 @@ export interface Emitter {
  */
 export function makeEmitter(opts: EmitterOptions): Emitter {
   // eslint-disable-next-line @typescript-eslint/require-await
-  return async function emit(input): Promise<void> {
+  return async function emit(input): Promise<string> {
     const { subject, type, payload, correlationId, extensions } = input;
 
     const envelope = createEnvelope({
@@ -72,6 +79,7 @@ export function makeEmitter(opts: EmitterOptions): Emitter {
     try {
       opts.nc.publish(subject, te.encode(JSON.stringify(envelope)));
       opts.log?.(`published ${subject} (${envelope.id})`);
+      return envelope.id;
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
       opts.log?.(`publish failed for ${subject} (${envelope.id}): ${m}`);
