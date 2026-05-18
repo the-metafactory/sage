@@ -3,7 +3,8 @@ import { Command } from "commander";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { parsePrRef, ghAuthStatus } from "../forge/github/backend.ts";
+import { parsePrRef } from "../forge/parse.ts";
+import { selectForge } from "../forge/select.ts";
 import {
   parseConcurrencyValue,
   readConcurrencyEnv,
@@ -43,12 +44,22 @@ program
 
 program
   .command("review")
-  .description("Review a single PR offline (no bus). Prints rendered review to stdout.")
-  .argument("<pr-ref>", "PR URL or OWNER/REPO#N")
-  .option("--post", "Post the review back to the PR via gh", false)
+  .description(
+    "Review a single PR/MR offline (no bus). Prints rendered review to stdout. Accepts GitHub or GitLab refs.",
+  )
+  .argument("<pr-ref>", "PR/MR URL or OWNER/REPO#N (GitHub) or GROUP/PROJ!N (GitLab)")
+  .option("--post", "Post the review back to the PR/MR via the forge CLI", false)
   .option(
     "--substrate <name>",
     "Coding harness Sage runs through ({pi|claude|codex}). Falls back to SAGE_SUBSTRATE / config / pi.",
+  )
+  .option(
+    "--forge <kind>",
+    "Forge backend ({github|gitlab}). Falls back to SAGE_FORGE env / URL detection / github.",
+  )
+  .option(
+    "--gitlab-host <host>",
+    "GitLab host for the gitlab backend (default gitlab.com; falls back to SAGE_GITLAB_HOST).",
   )
   .option(
     "--timeout <seconds>",
@@ -65,23 +76,36 @@ program
       post: boolean;
       timeout: number;
       substrate?: string;
+      forge?: string;
+      gitlabHost?: string;
       lensConcurrency?: string;
     }) => {
-      const ref = parsePrRef(prRef);
-      const auth = await ghAuthStatus();
+      const forgeSelection = selectForge({
+        ...(opts.forge !== undefined ? { flag: opts.forge } : {}),
+        fromRef: prRef,
+        ...(opts.gitlabHost !== undefined ? { gitlabHost: opts.gitlabHost } : {}),
+      });
+      const ref = parsePrRef(prRef, forgeSelection.kind);
+      const auth = await forgeSelection.backend.authStatus();
       if (!auth.ok) {
-        console.error("gh auth is not configured. Run `gh auth login` first.");
+        const cliName = forgeSelection.kind === "gitlab" ? "glab" : "gh";
+        console.error(`${cliName} auth is not configured. Run \`${cliName} auth login\` first.`);
         console.error(auth.output);
         process.exit(2);
       }
 
       const selection = selectSubstrate({ flag: opts.substrate });
       const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
+      const refLabel =
+        forgeSelection.kind === "gitlab"
+          ? `${ref.owner}/${ref.repo}!${ref.number}`
+          : `${ref.owner}/${ref.repo}#${ref.number}`;
       console.error(
-        `[sage] reviewing ${ref.owner}/${ref.repo}#${ref.number} on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
+        `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
       const result = await reviewPr({
         ref,
+        forge: forgeSelection.backend,
         post: opts.post,
         substrate: selection.substrate,
         timeoutMs: opts.timeout * 1000,

@@ -1,10 +1,5 @@
-import {
-  prView,
-  prDiff,
-  postReview,
-  priorSageReviewFindings,
-} from "../forge/github/backend.ts";
 import type {
+  ForgeBackend,
   PrRef,
   ReviewEvent,
   PriorReviewFinding,
@@ -22,13 +17,21 @@ import {
 export interface ReviewOptions {
   ref: PrRef;
   /**
+   * Forge backend (GitHub, GitLab, etc.) that performs all
+   * platform-specific I/O for this review. Resolved once per CLI
+   * invocation or bus task by `selectForge` — the workflow itself
+   * stays forge-agnostic so adding a third forge is a single new
+   * backend file, not a workflow rewrite (sage#43 Phase 5).
+   */
+  forge: ForgeBackend;
+  /**
    * Substrate that backs every lens for this review. Resolved once per
    * process at startup by the CLI / daemon (`selectSubstrate`) — Sage
    * deliberately does NOT support per-task substrate selection so verdicts
    * stay reproducible across operators. See issue #14 "Out of scope".
    */
   substrate: Substrate;
-  /** Post the review back to GitHub via gh CLI. Default: false (dry-run). */
+  /** Post the review back to the forge. Default: false (dry-run). */
   post?: boolean;
   /** Per-lens substrate timeout. Falls back to substrate-specific default. */
   timeoutMs?: number;
@@ -133,16 +136,18 @@ function sanitizeErrorMessage(raw: string): string {
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
-  const priorFindingsPromise = priorSageReviewFindings(opts.ref).catch((err) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(
-      `[workflow] prior Sage review lookup failed; continuing without iteration context: ${msg}`,
-    );
-    return [] as PriorReviewFinding[];
-  });
+  const priorFindingsPromise = opts.forge
+    .priorSageReviewFindings(opts.ref)
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[workflow] prior Sage review lookup failed; continuing without iteration context: ${msg}`,
+      );
+      return [] as PriorReviewFinding[];
+    });
   const [pr, diff, priorFindings] = await Promise.all([
-    prView(opts.ref),
-    prDiff(opts.ref),
+    opts.forge.prView(opts.ref),
+    opts.forge.prDiff(opts.ref),
     priorFindingsPromise,
   ]);
 
@@ -253,7 +258,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const recoveryPath = persisted ? verdictFilePath(opts.ref, "md") : undefined;
 
   const { posted, postedEvent, downgraded, postError } = opts.post
-    ? await attemptPost(opts.ref, verdict, body)
+    ? await attemptPost(opts.forge, opts.ref, verdict, body)
     : { posted: false };
   return {
     verdict,
@@ -313,6 +318,7 @@ interface AttemptPostResult {
  * partial outcome without the lens work being lost.
  */
 async function attemptPost(
+  forge: ForgeBackend,
   ref: PrRef,
   verdict: ReviewVerdict,
   body: string,
@@ -322,7 +328,7 @@ async function attemptPost(
   console.error(`[workflow] post: attempting ${target} (decision=${verdict.decision})`);
 
   try {
-    const result = await postReview({
+    const result = await forge.postReview({
       ref,
       event: verdictToEvent(verdict.decision),
       body,

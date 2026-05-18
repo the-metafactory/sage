@@ -49,6 +49,16 @@ export const TaskPayloadSchema = z
     post: z.boolean().optional(),
     /** Per-lens pi timeout. Falls back to receiver PI_TIMEOUT_MS / default. */
     timeout_ms: z.number().int().positive().optional(),
+    /**
+     * Forge platform discriminator (sage#43, Phase 5). Additive
+     * optional field — receivers that don't yet route on this default
+     * to `"github"` (back-compat). When the dispatcher publishes a
+     * GitLab MR review task, this MUST be set so cortex routes through
+     * the GitLab backend; the per-segment validators above stay
+     * GitHub-shaped because `owner`/`repo` are not used on the GitLab
+     * path (the `pr_url` carries the full project path).
+     */
+    forge: z.enum(["github", "gitlab"]).optional(),
   })
   .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
     message: "payload must contain either pr_url or (owner, repo, number)",
@@ -89,7 +99,7 @@ export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
  *      if you do step 2 without step 1, but it will NOT fail if you skip
  *      step 2 — that direction is intentional.
  */
-export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms"> & {
+export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms" | "forge"> & {
   pr_url: string;
   post?: true;
 };
