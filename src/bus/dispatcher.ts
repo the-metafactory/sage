@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Subscription } from "nats";
 import {
   safeDecodeEnvelope,
@@ -180,7 +179,6 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   });
   log(`connected ${opts.natsUrl}`);
 
-  const correlationId = randomUUID();
   const sovereignty = buildSovereignty(
     opts.dataResidency ? { data_residency: opts.dataResidency } : undefined,
   );
@@ -209,12 +207,23 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   });
 
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
-  // miss a fast-completing daemon's reply. Filter by correlation_id so
-  // concurrent reviews don't cross-talk.
+  // miss a fast-completing daemon's reply. Filter by the PUBLISHED
+  // envelope's `id` — cortex#237 spec stamps the inbound envelope's
+  // `id` as the `correlation_id` on every emitted lifecycle / verdict
+  // envelope. Pre-#53 the dispatcher filtered against its own self-
+  // generated correlation_id, which never matched what cortex echoed,
+  // and every dispatch timed out at `--wait` even when cortex
+  // completed the work within milliseconds.
+  //
+  // `publishedEnvelopeId` is set once `baseEmit(...)` resolves below
+  // (the emitter returns the envelope id from sage#53). The lifecycle
+  // + verdict subscribers run from this same async scope so reading
+  // the let binding is race-free.
   const stack = resolveStack(opts.stack);
   const lifecycleSub = nc.subscribe(deriveLifecycleWildcard(opts.org, stack));
   const verdictSub = nc.subscribe(verdictWildcard(opts.org, "review", stack));
 
+  let publishedEnvelopeId: string | undefined;
   let terminated = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let silenceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -237,7 +246,16 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       resolve(code);
     };
 
-    void consume(lifecycleSub, correlationId, (env, subject) => {
+    // Both subscribers defer their filter to a thunk that reads
+    // `publishedEnvelopeId` (set by the awaited `baseEmit(...)` below).
+    // The `for await` loop in `consume` only yields per-message; the
+    // first message can't arrive before `baseEmit` resolves because
+    // baseEmit awaits a publish-validate-then-publish chain inside the
+    // same scope. The thunk is therefore guaranteed to see the id by
+    // the time it runs.
+    const filterByPublishedId = () => publishedEnvelopeId;
+
+    void consume(lifecycleSub, filterByPublishedId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
       const payload = env.payload ?? {};
 
@@ -279,7 +297,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
       }
     });
 
-    void consume(verdictSub, correlationId, (env, subject) => {
+    void consume(verdictSub, filterByPublishedId, (env, subject) => {
       log(`◀ ${subject} ${env.type}`);
       const payload = env.payload;
       const decision =
@@ -308,7 +326,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     }, SILENCE_WARN_MS);
   });
 
-  log(`▶ publishing tasks.${capability} (correlation=${correlationId})`);
+  log(`▶ publishing tasks.${capability}`);
   const { subject: taskSubj, type: taskType } = describeEmission(
     opts.org,
     stack,
@@ -324,12 +342,16 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   // failure would leave the wait timer + two subscriptions hanging until
   // process exit.
   try {
-    await baseEmit({
+    // sage#53 — capture the published envelope's `id`. Cortex#237 spec
+    // uses THIS value as the `correlation_id` on every emitted
+    // lifecycle / verdict envelope; the dispatcher's lifecycle +
+    // verdict subscribers below filter against it.
+    publishedEnvelopeId = await baseEmit({
       subject: taskSubj,
       type: taskType,
       payload: taskPayload as Record<string, unknown>,
-      correlationId,
     });
+    log(`▶ published envelope ${publishedEnvelopeId}`);
     return await done;
   } finally {
     if (timer) clearTimeout(timer);
@@ -344,7 +366,14 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
 async function consume(
   sub: Subscription,
-  correlationId: string,
+  /**
+   * Resolver for the canonical correlation key — typically a thunk
+   * returning the published envelope's `id` once the publish step has
+   * resolved. Thunk shape (rather than a plain string) lets the
+   * dispatcher subscribe BEFORE publish without a race window
+   * (sage#53).
+   */
+  getPublishedEnvelopeId: () => string | undefined,
   onMatch: (envelope: MyelinEnvelope, subject: string) => void,
 ): Promise<void> {
   for await (const msg of sub) {
@@ -352,9 +381,30 @@ async function consume(
       onError: (reason, subject) => log(`${reason} on ${subject ?? "?"}`),
     });
     if (!envelope) continue;
-    if (envelope.correlation_id !== correlationId) continue;
+    const publishedId = getPublishedEnvelopeId();
+    if (publishedId === undefined) continue;
+    if (!matchesPublishedEnvelope(envelope, publishedId)) continue;
     onMatch(envelope, msg.subject);
   }
+}
+
+/**
+ * Match an inbound envelope against the dispatch's published envelope
+ * id (sage#53). Per cortex#237 §5.x, cortex stamps the inbound
+ * envelope's `id` as the `correlation_id` on every emitted lifecycle
+ * + verdict envelope. The dispatcher subscribes to those subjects and
+ * uses THIS function as the per-message filter.
+ *
+ * Exported for unit testing — the pre-#53 implementation matched
+ * against the dispatcher's self-generated `correlationId`, which
+ * never matched cortex's echo. Test pins the canonical rule so the
+ * regression can't recur.
+ */
+export function matchesPublishedEnvelope(
+  inbound: { correlation_id?: string },
+  publishedEnvelopeId: string,
+): boolean {
+  return inbound.correlation_id === publishedEnvelopeId;
 }
 
 const LOG_PREFIX = "[sage:dispatch]";
