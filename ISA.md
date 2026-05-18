@@ -76,7 +76,7 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - [x] ISC-26: `TaskPayloadSchema` accepts optional `forge: "github"|"gitlab"`. _Probe: Read schema._
 - [x] ISC-27: `Anti:` GitLab self-review regex MUST NOT match unrelated permission errors (`access denied` is too broad). _Probe: Grep `SELF_REVIEW_BLOCK_RE_GITLAB` for the deliberately-narrow wording._
 - [x] ISC-28: `Anti:` `GITLAB_HOST` MUST NOT be forwarded to the `glab` subprocess env (would override `--hostname` and redirect reviews). _Probe: `test/glab-env.test.ts`._
-- [x] ISC-29: `Anti:` markdown prior-findings parser MUST be reused verbatim across forges (GitLab `priorSageReviewFindings` imports `parseSageReviewFindings` from github backend). _Probe: Grep `src/forge/gitlab/backend.ts` for `parseSageReviewFindings`._
+- [x] ISC-29: `Anti:` markdown prior-findings parser MUST be reused verbatim across forges via the shared `src/forge/prior-findings.ts` module — NO per-forge backend may own the parser, and NO sibling backend may import from another sibling. _Probe: Grep both `src/forge/github/backend.ts` and `src/forge/gitlab/backend.ts` for `parseSageReviewFindings` — both must import from `../prior-findings.ts`._
 
 ## Test Strategy
 

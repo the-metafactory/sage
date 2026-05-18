@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { GitLabBackend } from "../src/forge/gitlab/backend.ts";
 
@@ -22,11 +22,25 @@ import { GitLabBackend } from "../src/forge/gitlab/backend.ts";
 
 const MOCK_PATH = resolve(import.meta.dir, "fixtures/glab-mock.sh");
 
+let previousGlabBin: string | undefined;
+
 beforeAll(() => {
+  // Capture so we can restore later — Bun runs every test file in the
+  // same process, and a future suite may legitimately want its own
+  // GLAB_BIN setting (sage review on #48, CodeQuality suggestion).
+  previousGlabBin = process.env.GLAB_BIN;
   process.env.GLAB_BIN = MOCK_PATH;
   // The viewer-login cache keys on host; force a fresh state so we
   // don't accidentally read a value cached by a prior suite.
   delete process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+});
+
+afterAll(() => {
+  if (previousGlabBin === undefined) {
+    delete process.env.GLAB_BIN;
+  } else {
+    process.env.GLAB_BIN = previousGlabBin;
+  }
 });
 
 describe("GitLabBackend (integration with mock glab)", () => {

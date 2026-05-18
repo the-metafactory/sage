@@ -14,6 +14,10 @@ if [[ "$MOCK_GLAB_FAIL" == "1" ]]; then
   exit 1
 fi
 
+# Fixture project + MR — exported as one constant so changing the test
+# fixture only needs editing one line (sage review on #48, Maintainability).
+MR_PATH="/projects/group%2Fproj/merge_requests/7"
+
 case "$1" in
   auth)
     # `glab auth status --hostname H` — used by GitLabBackend.authStatus().
@@ -39,7 +43,7 @@ case "$1" in
       esac
     done
 
-    if [[ "$method" == "GET" && "$path" == "/projects/group%2Fproj/merge_requests/7" ]]; then
+    if [[ "$method" == "GET" && "$path" == "$MR_PATH" ]]; then
       cat <<'JSON'
 {
   "iid": 7,
@@ -59,7 +63,7 @@ JSON
       exit 0
     fi
 
-    if [[ "$method" == "GET" && "$path" == "/projects/group%2Fproj/merge_requests/7/changes" ]]; then
+    if [[ "$method" == "GET" && "$path" == "$MR_PATH/changes" ]]; then
       cat <<'JSON'
 {
   "changes": [
@@ -70,12 +74,12 @@ JSON
       exit 0
     fi
 
-    if [[ "$method" == "POST" && "$path" == "/projects/group%2Fproj/merge_requests/7/notes" ]]; then
+    if [[ "$method" == "POST" && "$path" == "$MR_PATH/notes" ]]; then
       echo '{"id": 999, "body": "posted"}'
       exit 0
     fi
 
-    if [[ "$method" == "POST" && "$path" == "/projects/group%2Fproj/merge_requests/7/approve" ]]; then
+    if [[ "$method" == "POST" && "$path" == "$MR_PATH/approve" ]]; then
       echo '{"approved": true}'
       exit 0
     fi

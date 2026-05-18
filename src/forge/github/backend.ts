@@ -7,6 +7,7 @@ import { z } from "zod";
 import { buildGhEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
 import { PrMetadataSchema } from "../types.ts";
+import { parseSageReviewFindings } from "../prior-findings.ts";
 
 /**
  * Re-export of the canonical `PrMetadataSchema` (now owned by
@@ -209,30 +210,18 @@ export async function postReview(input: PostReviewInput): Promise<PostReviewResu
   }
 }
 
-const PRIOR_FINDING_RE =
-  /^- \*\*\[(blocker|important|suggestion|nit)\]\*\* `([^`]+):(\d+)` — \*\*([^*]+)\*\*/gm;
-
 export interface GhReview {
   body: string;
   user: { login: string };
 }
 
-export function parseSageReviewFindings(body: string): PriorReviewFinding[] {
-  if (!body.includes("## Sage code review")) return [];
-
-  const findings: PriorReviewFinding[] = [];
-  for (const match of body.matchAll(PRIOR_FINDING_RE)) {
-    const [, severity, path, line, title] = match;
-    if (!severity || !path || !line || !title) continue;
-    findings.push({
-      path,
-      line: Number(line),
-      severity: severity as PriorReviewFinding["severity"],
-      title: title.trim(),
-    });
-  }
-  return findings;
-}
+/**
+ * Re-export of the canonical `parseSageReviewFindings` (now owned by
+ * `../prior-findings.ts`) so historical
+ * `import { parseSageReviewFindings } from "src/forge/github/backend.ts"`
+ * call sites keep resolving. Folds in once all callers migrate.
+ */
+export { parseSageReviewFindings };
 
 const GhReviewSchema = z.object({
   body: z.string().nullable().transform((s) => s ?? ""),
