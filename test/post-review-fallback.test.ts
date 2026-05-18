@@ -2,8 +2,8 @@ import { describe, test, expect } from "bun:test";
 import {
   postReviewWithFallback,
   SELF_REVIEW_BLOCK_RE,
-  type ReviewEvent,
-} from "../src/github/gh.ts";
+} from "../src/forge/github/backend.ts";
+import type { ReviewEvent } from "../src/forge/types.ts";
 
 /**
  * Tests cover the fallback POLICY (postReviewWithFallback), not the gh

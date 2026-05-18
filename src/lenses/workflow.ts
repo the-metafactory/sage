@@ -3,10 +3,12 @@ import {
   prDiff,
   postReview,
   priorSageReviewFindings,
-  type PrRef,
-  type ReviewEvent,
-  type PriorReviewFinding,
-} from "../github/gh.ts";
+} from "../forge/github/backend.ts";
+import type {
+  PrRef,
+  ReviewEvent,
+  PriorReviewFinding,
+} from "../forge/types.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";

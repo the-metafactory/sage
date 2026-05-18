@@ -1,4 +1,4 @@
-import type { PrMetadata } from "../github/gh.ts";
+import type { PrMetadata } from "../forge/types.ts";
 
 /**
  * Trigger heuristics for the conditional lenses (Security, Architecture,

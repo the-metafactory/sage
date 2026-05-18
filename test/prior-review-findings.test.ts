@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   parsePriorSageReviewFindingsFromReviews,
   parseSageReviewFindings,
-} from "../src/github/gh.ts";
+} from "../src/forge/github/backend.ts";
 
 describe("parseSageReviewFindings (sage#32)", () => {
   test("extracts Sage-rendered findings from prior review bodies", () => {

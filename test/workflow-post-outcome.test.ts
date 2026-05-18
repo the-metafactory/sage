@@ -51,7 +51,7 @@ beforeEach(() => {
   postReviewBehavior = "success";
   postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 
-  mock.module("../src/github/gh.ts", () => ({
+  mock.module("../src/forge/github/backend.ts", () => ({
     parsePrRef: (ref: string) => {
       const m = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
       if (!m) throw new Error(`bad ref ${ref}`);
@@ -123,7 +123,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
 
   test("postError.message is truncated when gh stderr is large", async () => {
     // The previous postReview rejection message embeds gh's stderr
-    // verbatim (see runGh in src/github/gh.ts). Truncation caps the
+    // verbatim (see runGh in src/forge/github/backend.ts). Truncation caps the
     // blast radius if gh ever echoes unexpected content during a crash.
     // Reuses the beforeEach mock by toggling behavior + injecting the
     // large message; no need to re-define the full mock module.

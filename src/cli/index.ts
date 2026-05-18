@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { parsePrRef, ghAuthStatus } from "../github/gh.ts";
+import { parsePrRef, ghAuthStatus } from "../forge/github/backend.ts";
 import {
   parseConcurrencyValue,
   readConcurrencyEnv,

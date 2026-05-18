@@ -8,7 +8,7 @@ import {
 import { connectNats } from "./connect.ts";
 import { makeEmitter } from "./emit.ts";
 import { buildSovereignty } from "../identity.ts";
-import { parsePrRef } from "../github/gh.ts";
+import { parsePrRef } from "../forge/github/backend.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
 import { describeEmission } from "../tasks/emissions.ts";
 import {

@@ -1,4 +1,4 @@
-import type { PrMetadata, PriorReviewFinding } from "../github/gh.ts";
+import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 

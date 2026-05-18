@@ -5,18 +5,33 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
-import { retryTransient } from "../util/retry.ts";
+import { retryTransient } from "../../util/retry.ts";
+import type {
+  AuthStatusResult,
+  ForgeBackend,
+  PostReviewInput,
+  PostReviewResult,
+  PrMetadata,
+  PrRef,
+  PriorReviewFinding,
+  ReviewEvent,
+} from "../types.ts";
 
 /**
- * gh CLI wrapper. Piggybacks on the user's existing `gh auth` login — no token
- * juggling, no Octokit. Read-only by default; the `review` op posts comments
- * via `gh pr review`, scoped to comment events only.
+ * GitHub adapter — wraps the `gh` CLI. Piggybacks on the user's existing
+ * `gh auth` login so sage doesn't juggle PATs or speak Octokit; review
+ * ops are scoped to `gh pr review --comment` events by default.
+ *
+ * Implements `ForgeBackend` for the `"github"` kind. The class is a
+ * thin facade over the module-level functions below — those functions
+ * stay exported so existing call sites compile during the sage#43
+ * Phase 5 wire-up window. New code should consume the class via
+ * `selectForge()`; the module exports will fold into the class once all
+ * callers route through the abstraction.
  */
 
-export interface PrRef {
-  owner: string;
-  repo: string;
-  number: number;
+export interface PrRefGitHubExtras {
+  /** Re-exported for back-compat; identical to `PrRef`. */
 }
 
 const PR_URL_RE = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)\b/;
@@ -70,8 +85,6 @@ export const PrMetadataSchema = z.object({
   url: z.string().url(),
 });
 
-export type PrMetadata = z.infer<typeof PrMetadataSchema>;
-
 const PR_VIEW_FIELDS =
   "number,title,body,state,isDraft,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url";
 
@@ -110,28 +123,6 @@ export async function prView(ref: PrRef): Promise<PrMetadata> {
 export async function prDiff(ref: PrRef): Promise<string> {
   const out = await runGh(["pr", "diff", String(ref.number), "--repo", formatRepo(ref)]);
   return out.stdout;
-}
-
-export type ReviewEvent = "comment" | "approve" | "request-changes";
-
-export interface PriorReviewFinding {
-  path: string;
-  line: number;
-  severity: "blocker" | "important" | "suggestion" | "nit";
-  title: string;
-}
-
-export interface PostReviewInput {
-  ref: PrRef;
-  event: ReviewEvent;
-  body: string;
-}
-
-export interface PostReviewResult {
-  /** Event actually accepted by GitHub. May be downgraded from input.event. */
-  posted: ReviewEvent;
-  /** True when GH blocked self-{approve,request-changes} and we fell back. */
-  downgraded: boolean;
 }
 
 /**
@@ -350,7 +341,7 @@ export async function priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFi
   return parsePriorSageReviewFindingsFromReviews(parsed.data.flat(), sageAuthorLogin);
 }
 
-export async function ghAuthStatus(): Promise<{ ok: boolean; output: string }> {
+export async function ghAuthStatus(): Promise<AuthStatusResult> {
   try {
     const out = await runGh(["auth", "status"], { allowNonZero: true });
     return { ok: out.exitCode === 0, output: out.stdout + out.stderr };
@@ -416,3 +407,41 @@ async function runGh(
     });
   });
 }
+
+/**
+ * `ForgeBackend` adapter for GitHub. Thin facade over the module-level
+ * functions above; instances are stateless beyond the process-level
+ * `ghViewerLogin` cache. `selectForge()` (sage#43 Phase 4) constructs
+ * one per CLI invocation or per bus task and threads it through
+ * `ReviewOptions`.
+ */
+export class GitHubBackend implements ForgeBackend {
+  readonly kind = "github" as const;
+
+  parseRef(input: string): PrRef {
+    return parsePrRef(input);
+  }
+
+  prView(ref: PrRef): Promise<PrMetadata> {
+    return prView(ref);
+  }
+
+  prDiff(ref: PrRef): Promise<string> {
+    return prDiff(ref);
+  }
+
+  postReview(input: PostReviewInput): Promise<PostReviewResult> {
+    return postReview(input);
+  }
+
+  priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]> {
+    return priorSageReviewFindings(ref);
+  }
+
+  authStatus(): Promise<AuthStatusResult> {
+    return ghAuthStatus();
+  }
+}
+
+/** Type re-exports for callers that haven't migrated to `../types.ts` yet. */
+export type { PrRef, PrMetadata, ReviewEvent, PriorReviewFinding, PostReviewInput, PostReviewResult };
