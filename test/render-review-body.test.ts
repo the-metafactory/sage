@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseSageReviewFindings } from "../src/github/gh.ts";
+import { parseSageReviewFindings } from "../src/forge/github/backend.ts";
 import { renderReviewBody } from "../src/lenses/workflow.ts";
 import type { ReviewVerdict, LensReport } from "../src/lenses/types.ts";
 
@@ -146,7 +146,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
           summary: "one issue",
           findings: [
             {
-              path: "src/github/gh.ts",
+              path: "src/forge/github/backend.ts",
               line: 292,
               severity: "important",
               title: "Prior findings can be spoofed",
@@ -161,7 +161,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
     const body = renderReviewBody(verdict, "codex");
     expect(parseSageReviewFindings(body)).toEqual([
       {
-        path: "src/github/gh.ts",
+        path: "src/forge/github/backend.ts",
         line: 292,
         severity: "important",
         title: "Prior findings can be spoofed",

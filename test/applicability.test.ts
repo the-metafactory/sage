@@ -7,7 +7,7 @@ import {
   maintainabilityApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
-import type { PrMetadata } from "../src/github/gh.ts";
+import type { PrMetadata } from "../src/forge/types.ts";
 
 type FileSpec = { path: string; additions?: number; deletions?: number };
 

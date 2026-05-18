@@ -94,7 +94,7 @@ beforeEach(() => {
   substrateCalls = [];
   runJsonImpl = async () => ({ summary: "ok", findings: [] });
 
-  mock.module("../src/github/gh.ts", () => ({
+  mock.module("../src/forge/github/backend.ts", () => ({
     parsePrRef: (ref: string) => {
       const m = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
       if (!m) throw new Error(`bad ref ${ref}`);

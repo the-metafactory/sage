@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parsePrRef, formatRepo } from "../src/github/gh.ts";
+import { parsePrRef, formatRepo } from "../src/forge/github/backend.ts";
 
 describe("parsePrRef", () => {
   test("parses GitHub URL", () => {

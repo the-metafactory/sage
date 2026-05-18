@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { PrRef } from "../github/gh.ts";
+import type { PrRef } from "../forge/types.ts";
 import type { ReviewVerdict } from "../lenses/types.ts";
 
 /**
