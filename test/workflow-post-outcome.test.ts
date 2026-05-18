@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeStubForge } from "./forge-stub.ts";
 
 /**
  * sage#16: `ReviewResult.posted` reflects ACTUAL post outcome (whether
@@ -27,6 +28,18 @@ const stubPr = {
 
 const stubDiff = "diff --git a/src/x.ts b/src/x.ts\n+console.log('x');\n";
 
+const stubForge = makeStubForge({
+  pr: stubPr,
+  diff: stubDiff,
+  postReview: async () => {
+    postReviewCalls++;
+    if (postReviewBehavior === "throw") {
+      throw new Error(postReviewErrorMessage);
+    }
+    return { posted: "comment" as const, downgraded: false };
+  },
+});
+
 const stubSubstrate = {
   name: "pi" as const,
   displayName: "pi.dev",
@@ -51,23 +64,6 @@ beforeEach(() => {
   postReviewBehavior = "success";
   postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 
-  mock.module("../src/forge/github/backend.ts", () => ({
-    parsePrRef: (ref: string) => {
-      const m = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-      if (!m) throw new Error(`bad ref ${ref}`);
-      return { owner: m[1], repo: m[2], number: Number(m[3]) };
-    },
-    prView: async () => stubPr,
-    prDiff: async () => stubDiff,
-    postReview: async () => {
-      postReviewCalls++;
-      if (postReviewBehavior === "throw") {
-        throw new Error(postReviewErrorMessage);
-      }
-      return { posted: "comment" as const, downgraded: false };
-    },
-  }));
-
   mock.module("../src/util/persistence.ts", () => ({
     persistVerdict: () => {
       persistedCount++;
@@ -88,6 +84,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: true,
     });
@@ -106,6 +103,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: true,
     });
@@ -132,6 +130,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: true,
     });
@@ -156,6 +155,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: true,
     });
@@ -181,6 +181,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -192,6 +193,7 @@ describe("reviewPr post-outcome contract (sage#16)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 42 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });

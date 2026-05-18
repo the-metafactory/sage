@@ -8,7 +8,7 @@ import {
 import { connectNats } from "./connect.ts";
 import { makeEmitter } from "./emit.ts";
 import { buildSovereignty } from "../identity.ts";
-import { parsePrRef } from "../forge/github/backend.ts";
+import { parsePrRef } from "../forge/parse.ts";
 import type { DispatchTaskPayload as _DispatchTaskPayload } from "../tasks/types.ts";
 import { describeEmission } from "../tasks/emissions.ts";
 import {
@@ -88,6 +88,29 @@ export interface BuildReviewTaskPayloadInput {
   post: boolean;
   /** Optional per-lens pi timeout to forward to the daemon (seconds). */
   timeoutSeconds?: number;
+  /**
+   * Forge kind. Omitted on the wire when value is `"github"` so legacy
+   * receivers see byte-stable payload shape; non-github value (today
+   * `"gitlab"`) is included as an additive optional field
+   * (sage#43 Q3 — additive, no schema break).
+   */
+  forge?: "github" | "gitlab";
+}
+
+/**
+ * Build the operator-facing PR/MR URL for a `PrRef`. Used by the
+ * dispatcher to fill `payload.pr_url`. GitLab branch picks the host
+ * from `ref.host` when set, falling back to the GitLab default —
+ * consistent with how the GitLab backend resolves a host on
+ * outbound API calls.
+ */
+export function buildRefUrl(ref: import("../forge/types.ts").PrRef): string {
+  const kind = ref.kind ?? "github";
+  if (kind === "gitlab") {
+    const host = ref.host ?? "gitlab.com";
+    return `https://${host}/${ref.owner}/${ref.repo}/-/merge_requests/${ref.number}`;
+  }
+  return `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`;
 }
 
 /**
@@ -108,6 +131,7 @@ export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): _Dis
     pr_url: input.prUrl,
     ...(input.post ? { post: true as const } : {}),
     ...(input.timeoutSeconds ? { timeout_ms: input.timeoutSeconds * 1000 } : {}),
+    ...(input.forge && input.forge !== "github" ? { forge: input.forge } : {}),
   };
 }
 
@@ -133,10 +157,17 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     log: (m) => log(m),
   });
   const capability = "code-review.typescript";
+  const forgeKind: "github" | "gitlab" = ref.kind ?? "github";
+  const prUrl = buildRefUrl(ref);
   const taskPayload = buildReviewTaskPayload({
-    prUrl: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+    prUrl,
     post: opts.post,
     ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
+    // Additive `forge` field on the payload — preserves byte-stable
+    // shape for existing receivers that omit the field (sage#43 Q3,
+    // additive optional field). Omitted entirely when forge is github,
+    // so legacy consumers see the payload they always saw.
+    forge: forgeKind,
   });
 
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot

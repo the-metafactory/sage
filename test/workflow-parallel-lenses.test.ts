@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeStubForge } from "./forge-stub.ts";
 
 /**
  * sage#26: lens execution is parallel, not sequential.
@@ -48,6 +49,14 @@ const stubDiff = `diff --git a/src/auth.ts b/src/auth.ts
 +const token = 'xyz';
 `;
 
+/**
+ * Stub `ForgeBackend` used by every reviewPr call in this suite.
+ * Lens-pipeline tests don't care about forge specifics — they just
+ * need read-only `pr`/`diff` inputs and a no-op post path. Shared
+ * helper keeps the shape in lockstep with `workflow-post-outcome`.
+ */
+const stubForge = makeStubForge({ pr: stubPr, diff: stubDiff });
+
 interface SubstrateCall {
   systemPrompt?: string;
   prompt: string;
@@ -93,18 +102,6 @@ beforeEach(() => {
   peakInFlight = 0;
   substrateCalls = [];
   runJsonImpl = async () => ({ summary: "ok", findings: [] });
-
-  mock.module("../src/forge/github/backend.ts", () => ({
-    parsePrRef: (ref: string) => {
-      const m = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-      if (!m) throw new Error(`bad ref ${ref}`);
-      return { owner: m[1], repo: m[2], number: Number(m[3]) };
-    },
-    prView: async () => stubPr,
-    prDiff: async () => stubDiff,
-    priorSageReviewFindings: async () => [],
-    postReview: async () => ({ posted: "comment" as const, downgraded: false }),
-  }));
 
   mock.module("../src/util/persistence.ts", () => ({
     persistVerdict: () => true,
@@ -153,6 +150,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -169,6 +167,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -184,6 +183,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
       lensConcurrency: 3,
@@ -201,6 +201,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
       lensConcurrency: 3,
@@ -239,6 +240,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -251,6 +253,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
       onLensComplete: (report) => {
@@ -297,6 +300,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
       onLensComplete: (report) => {
@@ -349,6 +353,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -406,6 +411,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
     });
@@ -453,6 +459,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     const result = await reviewPr({
       ref: { owner: "x", repo: "y", number: 7 },
+      forge: stubForge,
       substrate: stubSubstrate,
       post: false,
       lensConcurrency: 2,
