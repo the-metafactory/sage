@@ -63,6 +63,16 @@ describe("stitchUnifiedDiff", () => {
     });
     expect(result.startsWith("diff --git a/new.ts b/new.ts\n")).toBe(true);
   });
+
+  test("adds trailing newline so adjacent file headers start at col 0", () => {
+    const result = stitchUnifiedDiff({
+      changes: [
+        { old_path: "a.ts", new_path: "a.ts", diff: "@@ +1 @@\n+x" }, // no trailing \n
+        { old_path: "b.ts", new_path: "b.ts", diff: "@@ +1 @@\n+y\n" },
+      ],
+    });
+    expect(result).toContain("+x\ndiff --git a/b.ts b/b.ts");
+  });
 });
 
 describe("mapGlMrToPrMetadata", () => {

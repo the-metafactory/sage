@@ -225,7 +225,11 @@ export function stitchUnifiedDiff(changes: GlMrChanges): string {
       const oldPath = c.old_path || c.new_path;
       const newPath = c.new_path || c.old_path;
       const header = `diff --git a/${oldPath} b/${newPath}\n`;
-      return header + c.diff;
+      // Ensure each per-file chunk ends with a newline so the next
+      // `diff --git` header starts at column 0 even when glab returns a
+      // trimmed final hunk (sage review on #46, CodeQuality suggestion).
+      const body = c.diff.endsWith("\n") ? c.diff : `${c.diff}\n`;
+      return header + body;
     })
     .join("");
 }
