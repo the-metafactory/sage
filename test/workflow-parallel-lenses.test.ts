@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { makeStubForge } from "./forge-stub.ts";
 
 /**
  * sage#26: lens execution is parallel, not sequential.
@@ -51,23 +52,10 @@ const stubDiff = `diff --git a/src/auth.ts b/src/auth.ts
 /**
  * Stub `ForgeBackend` used by every reviewPr call in this suite.
  * Lens-pipeline tests don't care about forge specifics — they just
- * need read-only `pr`/`diff` inputs and a no-op post path. The
- * platform-specific behavior is covered by the dedicated forge
- * backend tests.
+ * need read-only `pr`/`diff` inputs and a no-op post path. Shared
+ * helper keeps the shape in lockstep with `workflow-post-outcome`.
  */
-const stubForge = {
-  kind: "github" as const,
-  parseRef: (ref: string) => {
-    const m = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
-    if (!m) throw new Error(`bad ref ${ref}`);
-    return { owner: m[1]!, repo: m[2]!, number: Number(m[3]) };
-  },
-  prView: async () => stubPr as never,
-  prDiff: async () => stubDiff,
-  priorSageReviewFindings: async () => [],
-  postReview: async () => ({ posted: "comment" as const, downgraded: false }),
-  authStatus: async () => ({ ok: true, output: "" }),
-};
+const stubForge = makeStubForge({ pr: stubPr, diff: stubDiff });
 
 interface SubstrateCall {
   systemPrompt?: string;

@@ -35,38 +35,34 @@ export interface SelectForgeOptions {
 
 export function selectForge(opts: SelectForgeOptions = {}): ForgeSelection {
   const env = opts.env ?? process.env;
-  const kind = resolveKind(opts, env);
-  const source = resolveSource(opts, env);
-  const backend = buildBackend(kind.kind, opts, env);
-  return { backend, kind: kind.kind, source };
+  const { kind, source } = resolveKindAndSource(opts, env);
+  const backend = buildBackend(kind, opts, env);
+  return { backend, kind, source };
 }
 
-function resolveKind(
+/**
+ * Walk the precedence ladder ONCE and return both the resolved
+ * `kind` and the `source` that won. Sage review on #47
+ * (Maintainability nit): the previous split into `resolveKind` +
+ * `resolveSource` duplicated the ladder, so adding a new signal
+ * would have required two synchronized edits.
+ */
+function resolveKindAndSource(
   opts: SelectForgeOptions,
   env: NodeJS.ProcessEnv,
-): { kind: ForgeKind } {
+): { kind: ForgeKind; source: ForgeSelectionSource } {
   if (opts.flag !== undefined && opts.flag !== "") {
-    return { kind: assertForgeKind(opts.flag, "--forge") };
+    return { kind: assertForgeKind(opts.flag, "--forge"), source: "flag" };
   }
   const fromEnv = env.SAGE_FORGE?.trim();
   if (fromEnv) {
-    return { kind: assertForgeKind(fromEnv, "SAGE_FORGE") };
+    return { kind: assertForgeKind(fromEnv, "SAGE_FORGE"), source: "env" };
   }
   if (opts.fromRef) {
     const detected = detectForgeKindFromRef(opts.fromRef);
-    if (detected) return { kind: detected };
+    if (detected) return { kind: detected, source: "ref" };
   }
-  return { kind: "github" };
-}
-
-function resolveSource(
-  opts: SelectForgeOptions,
-  env: NodeJS.ProcessEnv,
-): ForgeSelectionSource {
-  if (opts.flag !== undefined && opts.flag !== "") return "flag";
-  if (env.SAGE_FORGE?.trim()) return "env";
-  if (opts.fromRef && detectForgeKindFromRef(opts.fromRef)) return "ref";
-  return "default";
+  return { kind: "github", source: "default" };
 }
 
 function buildBackend(
