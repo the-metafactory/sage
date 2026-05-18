@@ -47,6 +47,20 @@ export const TaskPayloadSchema = z
     repo: z.string().regex(GH_REPO_RE).max(100).optional(),
     number: z.number().int().positive().optional(),
     post: z.boolean().optional(),
+    /**
+     * cortex#237 §4.1 — `pr` field, integer PR/MR number. Pairs with
+     * the cortex-spec `repo` field (slash-joined owner/repo). Sage
+     * dispatch emits this alongside the legacy `pr_url` + GitHub-shape
+     * `owner`/`number` triple so receivers built against either
+     * grammar work (sage#52).
+     */
+    pr: z.number().int().positive().optional(),
+    /**
+     * cortex#237 §4.1 — informational reviewer name. Cortex routes by
+     * capability, not by this field. Sage dispatch defaults to
+     * `"capability-dispatch"` to make the routing semantic visible.
+     */
+    reviewer: z.string().min(1).optional(),
     /** Per-lens pi timeout. Falls back to receiver PI_TIMEOUT_MS / default. */
     timeout_ms: z.number().int().positive().optional(),
     /**
@@ -99,7 +113,12 @@ export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
  *      if you do step 2 without step 1, but it will NOT fail if you skip
  *      step 2 — that direction is intentional.
  */
-export type DispatchTaskPayload = Pick<ReviewTaskPayload, "timeout_ms" | "forge"> & {
+export type DispatchTaskPayload = Pick<
+  ReviewTaskPayload,
+  "timeout_ms" | "forge" | "pr" | "reviewer"
+> & {
   pr_url: string;
+  /** Slash-joined owner/repo per cortex#237 §4.1 (sage#52). */
+  repo: string;
   post?: true;
 };
