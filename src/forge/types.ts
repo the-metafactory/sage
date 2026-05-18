@@ -14,7 +14,7 @@
  * change has to keep stable for cortex/pilot consumers downstream.
  */
 
-import type { z } from "zod";
+import { z } from "zod";
 
 /**
  * Identifier of the forge platform. Discriminator for routing in
@@ -26,39 +26,63 @@ export type ForgeKind = "github" | "gitlab";
 /**
  * Reference to a single PR/MR on a forge.
  *
- * The current shape is GitHub-flavoured (`owner` + `repo` segments).
- * sage#43 Phase 2 keeps this shape byte-stable so the refactor is a
- * pure relocation; Phase 3 (GitLab backend) decides whether to add a
- * `kind` discriminator + `host` field or fold GitLab's nested group
- * paths into `owner/repo`.
+ * `owner/repo` is the GitHub-flavoured segment pair; GitLab adapters
+ * map their `group(/subgroup)/project` path into the same fields
+ * (last segment → `repo`, the rest → `owner`) so the bus payload
+ * shape stays stable across forges. `kind` defaults to `"github"`
+ * when omitted to preserve back-compat on existing dispatch payloads
+ * (sage#43 §Phase 5 — additive field). `host` is set by GitLab
+ * adapters pointing at self-hosted instances; GitHub omits it.
  */
 export interface PrRef {
   owner: string;
   repo: string;
   number: number;
+  /** Forge kind. Omitted ⇒ `"github"` (back-compat default). */
+  kind?: ForgeKind;
+  /** Forge host for self-hosted instances. GitHub omits it. */
+  host?: string;
 }
 
 /**
- * Metadata returned by `ForgeBackend.prView`. Mirrors the subset of
- * `gh pr view --json` sage's lenses + renderer rely on. Fields are
- * named after their GitHub-API origins; GitLab adapter is responsible
- * for mapping `MergeRequest` payloads into this shape (sage#43 §Phase 3).
+ * Zod schema for `PrMetadata`. Canonical shape lives here so the
+ * platform-neutral interface and per-backend validators share a
+ * single source of truth — a metadata field change happens in one
+ * place, not two (sage review on #45, Maintainability lens).
+ *
+ * Each per-forge backend (`prView`) maps its raw API JSON into this
+ * shape and runs it through `PrMetadataSchema.parse` to catch drift
+ * before the lens pipeline sees a malformed payload.
  */
-export interface PrMetadata {
-  number: number;
-  title: string;
-  body: string;
-  state: string;
-  isDraft: boolean;
-  baseRefName: string;
-  headRefName: string;
-  author: { login: string };
-  changedFiles: number;
-  additions: number;
-  deletions: number;
-  files: Array<{ path: string; additions: number; deletions: number }>;
-  url: string;
-}
+export const PrMetadataSchema = z.object({
+  number: z.number().int(),
+  title: z.string(),
+  body: z.string().nullable().transform((s) => s ?? ""),
+  state: z.string(),
+  isDraft: z.boolean(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  author: z.object({ login: z.string() }),
+  changedFiles: z.number().int(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        additions: z.number().int(),
+        deletions: z.number().int(),
+      }),
+    )
+    .default([]),
+  url: z.string().url(),
+});
+
+/**
+ * Metadata returned by `ForgeBackend.prView`. Inferred from
+ * `PrMetadataSchema` to keep the type and the validator in lockstep.
+ */
+export type PrMetadata = z.infer<typeof PrMetadataSchema>;
 
 export type ReviewEvent = "comment" | "approve" | "request-changes";
 
@@ -141,14 +165,3 @@ export interface ForgeBackend {
   authStatus(): Promise<AuthStatusResult>;
 }
 
-/**
- * Zod schema for `PrMetadata`. Re-exported here so per-forge backends
- * that need to validate raw forge-API JSON can reuse the same shape,
- * but the canonical type stays platform-neutral.
- *
- * The schema definition itself is owned by each backend (GitHub
- * shapes it from `gh pr view --json`; GitLab shapes it from
- * `glab api`). This type alias lets the schemas declare their parsed
- * output shape using the shared `PrMetadata` interface.
- */
-export type PrMetadataSchemaType = z.ZodType<PrMetadata>;

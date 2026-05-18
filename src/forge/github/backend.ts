@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
+import { PrMetadataSchema } from "../types.ts";
 import type {
   AuthStatusResult,
   ForgeBackend,
@@ -51,35 +52,6 @@ export function parsePrRef(input: string): PrRef {
 export function formatRepo(ref: PrRef): string {
   return `${ref.owner}/${ref.repo}`;
 }
-
-/**
- * Runtime shape validation for `gh pr view --json` output. Localizes a
- * schema-drift failure to this wrapper rather than letting a TypeError
- * surface deep in the lens pipeline.
- */
-export const PrMetadataSchema = z.object({
-  number: z.number().int(),
-  title: z.string(),
-  body: z.string().nullable().transform((s) => s ?? ""),
-  state: z.string(),
-  isDraft: z.boolean(),
-  baseRefName: z.string(),
-  headRefName: z.string(),
-  author: z.object({ login: z.string() }),
-  changedFiles: z.number().int(),
-  additions: z.number().int(),
-  deletions: z.number().int(),
-  files: z
-    .array(
-      z.object({
-        path: z.string(),
-        additions: z.number().int(),
-        deletions: z.number().int(),
-      }),
-    )
-    .default([]),
-  url: z.string().url(),
-});
 
 const PR_VIEW_FIELDS =
   "number,title,body,state,isDraft,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url";
