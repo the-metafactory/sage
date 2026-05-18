@@ -30,10 +30,6 @@ import type {
  * callers route through the abstraction.
  */
 
-export interface PrRefGitHubExtras {
-  /** Re-exported for back-compat; identical to `PrRef`. */
-}
-
 const PR_URL_RE = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)\b/;
 const OWNER_REPO_HASH_RE = /^([^/\s]+)\/([^#\s]+)#(\d+)$/;
 
