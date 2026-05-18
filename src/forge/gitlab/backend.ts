@@ -7,7 +7,7 @@ import { z } from "zod";
 import { buildGlabEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
 import { PrMetadataSchema } from "../types.ts";
-import { parseSageReviewFindings } from "../github/backend.ts";
+import { parseSageReviewFindings } from "../prior-findings.ts";
 import type {
   AuthStatusResult,
   ForgeBackend,

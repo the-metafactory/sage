@@ -62,6 +62,21 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - [x] ISC-12: `startBridge()` connects to NATS, subscribes to broadcast + direct subjects, and publishes lifecycle envelopes. _Probe: Read function body._
 - [x] ISC-13: `sage review <ref>` exits with code 1 on `changes-requested` verdict, 0 otherwise. _Probe: Read CLI action._
 - [x] ISC-14: `Anti:` Sage MUST NOT post review comments without an explicit `--post` flag or `payload.post: true` envelope field. _Probe: Grep workflow.ts for guarding logic on the `post` flag._
+- [x] ISC-15: `src/forge/types.ts` exports the platform-neutral `ForgeBackend` interface with `parseRef`, `prView`, `prDiff`, `postReview`, `priorSageReviewFindings`, `authStatus`. _Probe: Read `src/forge/types.ts`._
+- [x] ISC-16: `src/forge/github/backend.ts` exports `GitHubBackend implements ForgeBackend`. _Probe: Grep for `class GitHubBackend implements ForgeBackend`._
+- [x] ISC-17: `src/forge/gitlab/backend.ts` exports `GitLabBackend implements ForgeBackend` and wraps `glab api` calls. _Probe: Grep for `class GitLabBackend implements ForgeBackend` and `glab` in args._
+- [x] ISC-18: `mapGlMrToPrMetadata()` converts GitLab `/merge_requests/:iid` + `/changes` JSON into a platform-neutral `PrMetadata` shape, normalizing `state: "opened" → "open"`. _Probe: `test/gitlab-mapping.test.ts`._
+- [x] ISC-19: GitLab `postReview` maps `ReviewEvent` to API calls: `comment` → POST notes; `approve` → POST `/approve` + notes; `request-changes` → POST `/unapprove` + notes. _Probe: `test/gitlab-mapping.test.ts` `postReviewWithFallback` matrix._
+- [x] ISC-20: GitLab self-review block falls back to comment-only with `downgraded: true` (mirror of GitHub fallback). _Probe: `test/gitlab-mapping.test.ts` `falls back to comment when GitLab blocks self-approval`._
+- [x] ISC-21: `selectForge()` precedence is `--forge` → `SAGE_FORGE` env → URL detection → default github. _Probe: `test/forge-select.test.ts`._
+- [x] ISC-22: `selectForge({flag: "gitlab", gitlabHost})` produces a `GitLabBackend` whose `defaultHost` matches the flag value (or `SAGE_GITLAB_HOST` env when flag absent). _Probe: `test/forge-select.test.ts` `gitlab backend uses gitlabHost flag`._
+- [x] ISC-23: Top-level `parsePrRef()` routes by URL shape (`github.com`, `/-/merge_requests/`) and shorthand separator (`#`/`!`). _Probe: `test/forge-parse.test.ts`._
+- [x] ISC-24: `reviewPr` calls every forge op through `opts.forge.*` (no direct imports from `forge/github/backend.ts`). _Probe: Grep `src/lenses/workflow.ts` for `forge/github`._
+- [x] ISC-25: Dispatch envelope `payload.forge` is omitted when github (back-compat) and present when gitlab (additive). _Probe: Read `buildReviewTaskPayload` body._
+- [x] ISC-26: `TaskPayloadSchema` accepts optional `forge: "github"|"gitlab"`. _Probe: Read schema._
+- [x] ISC-27: `Anti:` GitLab self-review regex MUST NOT match unrelated permission errors (`access denied` is too broad). _Probe: Grep `SELF_REVIEW_BLOCK_RE_GITLAB` for the deliberately-narrow wording._
+- [x] ISC-28: `Anti:` `GITLAB_HOST` MUST NOT be forwarded to the `glab` subprocess env (would override `--hostname` and redirect reviews). _Probe: `test/glab-env.test.ts`._
+- [x] ISC-29: `Anti:` markdown prior-findings parser MUST be reused verbatim across forges via the shared `src/forge/prior-findings.ts` module — NO per-forge backend may own the parser, and NO sibling backend may import from another sibling. _Probe: Grep both `src/forge/github/backend.ts` and `src/forge/gitlab/backend.ts` for `parseSageReviewFindings` — both must import from `../prior-findings.ts`._
 
 ## Test Strategy
 
@@ -77,6 +92,15 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 | 12 | integration | local NATS broker, publish a task envelope, observe verdict envelope | task → verdict round-trip < 60s | `nats-server` + `nats sub` |
 | 13 | integration | CLI exit code | exit code 1 on simulated blocker | Bun test |
 | 14 | static | guard logic exists | grep for `opts.post` and `payload.post` | Grep |
+| 15-17 | static | interface + classes present | named exports match expectation | Read + Grep |
+| 18 | unit | mapping correctness | exact `PrMetadata` shape match per fixture row | Bun test |
+| 19-20 | unit | post-review fallback policy matrix | every `ReviewEvent` path verified including self-review fallback | Bun test (dependency injection on `approve`/`unapprove`/`postNote`) |
+| 21-23 | unit | precedence + parsing dispatch | full matrix of flag/env/ref/default + URL/shorthand | Bun test |
+| 24 | static | no leaked github import | grep returns no matches | Grep |
+| 25-26 | static | dispatch payload + schema | additive field omitted on github | Read + Grep |
+| 27 | static | regex pattern shape | grep for `cannot approve` / `self.?approval` and absence of bare `access denied` | Grep |
+| 28 | unit | env allow-list omits `GITLAB_HOST` | direct assertion + GLAB_AUTH_KEYS check | Bun test |
+| 29 | static | shared parser | grep for cross-backend import | Grep |
 
 ## Features
 
