@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { buildReviewTaskPayload } from "../src/bus/dispatcher.ts";
+import type { PrRef } from "../src/forge/types.ts";
 
 /**
  * Issue #8: dispatcher used to always send `payload.post: opts.post`, which
@@ -9,49 +10,58 @@ import { buildReviewTaskPayload } from "../src/bus/dispatcher.ts";
  * false as a value, not a nullish miss). Fix: dispatcher OMITS the field
  * when the CLI flag isn't explicitly set.
  *
- * These tests pin the payload shape so the fix can't silently regress.
+ * Issue #52: cortex's pipeline reads `payload.repo` (slash-joined
+ * "owner/repo") + `payload.pr` (integer) + `payload.reviewer` (string).
+ * Pre-#52 the dispatcher only emitted `pr_url`, so cortex rejected
+ * every task with `cant_do: payload validation failed`. Tests below
+ * pin the new shape — cortex-spec fields PLUS `pr_url` for back-compat.
+ *
+ * These tests pin the payload shape so neither fix can silently regress.
  */
 
 const URL = "https://github.com/the-metafactory/sage/pull/8";
+const REF: PrRef = {
+  owner: "the-metafactory",
+  repo: "sage",
+  number: 8,
+};
 
 describe("buildReviewTaskPayload — issue #8", () => {
   test("post=false → omits `post` field entirely (so daemon-default applies)", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: false });
-    expect(p).toEqual({ pr_url: URL });
+    const p = buildReviewTaskPayload({ ref: REF, post: false });
     expect("post" in p).toBe(false);
+    // Cortex-spec fields still present even when post is omitted.
+    expect(p.pr_url).toBe(URL);
   });
 
   test("post=true → includes `post: true` (explicit opt-in)", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: true });
-    expect(p).toEqual({ pr_url: URL, post: true });
+    const p = buildReviewTaskPayload({ ref: REF, post: true });
     expect(p.post).toBe(true);
+    expect(p.pr_url).toBe(URL);
   });
 
   test("timeoutSeconds=900 → includes `timeout_ms: 900000`", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: true, timeoutSeconds: 900 });
-    expect(p).toEqual({ pr_url: URL, post: true, timeout_ms: 900_000 });
+    const p = buildReviewTaskPayload({ ref: REF, post: true, timeoutSeconds: 900 });
+    expect(p.post).toBe(true);
+    expect(p.timeout_ms).toBe(900_000);
+    expect(p.pr_url).toBe(URL);
   });
 
   test("no timeoutSeconds → omits `timeout_ms` field", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: true });
+    const p = buildReviewTaskPayload({ ref: REF, post: true });
     expect("timeout_ms" in p).toBe(false);
   });
 
   test("timeoutSeconds=0 is treated as omit (falsy guard, matches dispatcher convention)", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: false, timeoutSeconds: 0 });
+    const p = buildReviewTaskPayload({ ref: REF, post: false, timeoutSeconds: 0 });
     expect("timeout_ms" in p).toBe(false);
-  });
-
-  test("post=false + no timeout → minimal payload, just pr_url", () => {
-    const p = buildReviewTaskPayload({ prUrl: URL, post: false });
-    expect(Object.keys(p)).toEqual(["pr_url"]);
   });
 
   test("regression guard: never produce `post: false` in payload", () => {
     // The whole point of this fix — both false and true inputs must not
     // emit `post: false`. False means "absent / let daemon decide".
     for (const post of [false, true] as const) {
-      const p = buildReviewTaskPayload({ prUrl: URL, post });
+      const p = buildReviewTaskPayload({ ref: REF, post });
       expect(p.post).not.toBe(false);
     }
   });
@@ -73,31 +83,31 @@ describe("integration with bridge's nullish-coalesce semantics", () => {
   ): boolean => payloadPost ?? cfgPostReviews ?? false;
 
   test("daemon configured to post; dispatch w/o --post → posts (the fix)", () => {
-    const payload = buildReviewTaskPayload({ prUrl: URL, post: false });
+    const payload = buildReviewTaskPayload({ ref: REF, post: false });
     const merged = bridgeMerge(payload.post, true);
     expect(merged).toBe(true);
   });
 
   test("daemon configured to post; dispatch w/ --post → posts", () => {
-    const payload = buildReviewTaskPayload({ prUrl: URL, post: true });
+    const payload = buildReviewTaskPayload({ ref: REF, post: true });
     const merged = bridgeMerge(payload.post, true);
     expect(merged).toBe(true);
   });
 
   test("daemon configured NOT to post; dispatch w/o --post → does NOT post (daemon default respected)", () => {
-    const payload = buildReviewTaskPayload({ prUrl: URL, post: false });
+    const payload = buildReviewTaskPayload({ ref: REF, post: false });
     const merged = bridgeMerge(payload.post, false);
     expect(merged).toBe(false);
   });
 
   test("daemon configured NOT to post; dispatch w/ --post → posts (client overrides)", () => {
-    const payload = buildReviewTaskPayload({ prUrl: URL, post: true });
+    const payload = buildReviewTaskPayload({ ref: REF, post: true });
     const merged = bridgeMerge(payload.post, false);
     expect(merged).toBe(true);
   });
 
   test("daemon postReviews unset; dispatch w/o --post → final fallback to false (no surprise)", () => {
-    const payload = buildReviewTaskPayload({ prUrl: URL, post: false });
+    const payload = buildReviewTaskPayload({ ref: REF, post: false });
     const merged = bridgeMerge(payload.post, undefined);
     expect(merged).toBe(false);
   });

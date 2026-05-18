@@ -80,10 +80,25 @@ export interface DispatchOptions {
    * Defaults to `"default"` when omitted.
    */
   stack?: string;
+  /**
+   * Informational reviewer name per cortex#237 §4.1. Sage dispatch
+   * defaults to `"capability-dispatch"` to make the routing semantic
+   * visible — cortex routes by capability, NOT by this field
+   * (sage#52). Operators override when the dashboard / renderer
+   * surface should display a specific reviewer name.
+   */
+  reviewer?: string;
 }
 
 export interface BuildReviewTaskPayloadInput {
-  prUrl: string;
+  /**
+   * Parsed PR/MR reference. Drives `payload.repo` (slash-joined
+   * "owner/repo"), `payload.pr` (the integer number), and the legacy
+   * `payload.pr_url` field via `buildRefUrl(ref)`. Cortex#237's
+   * `parseReviewRequestPayload` reads `repo` + `pr`; `pr_url` is kept
+   * for back-compat with any pre-cortex#237 receivers (sage#52).
+   */
+  ref: import("../forge/types.ts").PrRef;
   /** Boolean from CLI; only `true` → opt-in. `false` → omit field. */
   post: boolean;
   /** Optional per-lens pi timeout to forward to the daemon (seconds). */
@@ -95,6 +110,15 @@ export interface BuildReviewTaskPayloadInput {
    * (sage#43 Q3 — additive, no schema break).
    */
   forge?: "github" | "gitlab";
+  /**
+   * Informational reviewer name per cortex#237 §4.1
+   * `ReviewRequestPayload.reviewer`. Cortex routes by capability
+   * (the `<flavor>` subject suffix), NOT by this field — it surfaces
+   * in the dashboard / renderer as "review requested from {reviewer}".
+   * Default `"capability-dispatch"` documents that intent verbatim;
+   * operators can override via the dispatcher's `reviewer` opt.
+   */
+  reviewer?: string;
 }
 
 /**
@@ -128,7 +152,17 @@ export function buildRefUrl(ref: import("../forge/types.ts").PrRef): string {
  */
 export function buildReviewTaskPayload(input: BuildReviewTaskPayloadInput): _DispatchTaskPayload {
   return {
-    pr_url: input.prUrl,
+    // cortex#237 §4.1 contract fields — what cortex's
+    // `parseReviewRequestPayload` actually validates against. Pre-#52
+    // sage dispatch only sent `pr_url`, so every task hit
+    // `cant_do: payload validation failed (missing/invalid repo or pr)`.
+    repo: `${input.ref.owner}/${input.ref.repo}`,
+    pr: input.ref.number,
+    reviewer: input.reviewer ?? "capability-dispatch",
+    // Back-compat: legacy receivers that still read `pr_url` (sage's
+    // own bridge pre-cortex#237) keep working. Cortex's pipeline reads
+    // `repo`/`pr` and ignores `pr_url`.
+    pr_url: buildRefUrl(input.ref),
     ...(input.post ? { post: true as const } : {}),
     ...(input.timeoutSeconds ? { timeout_ms: input.timeoutSeconds * 1000 } : {}),
     ...(input.forge && input.forge !== "github" ? { forge: input.forge } : {}),
@@ -158,9 +192,8 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
   });
   const capability = "code-review.typescript";
   const forgeKind: "github" | "gitlab" = ref.kind ?? "github";
-  const prUrl = buildRefUrl(ref);
   const taskPayload = buildReviewTaskPayload({
-    prUrl,
+    ref,
     post: opts.post,
     ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
     // Additive `forge` field on the payload — preserves byte-stable
@@ -168,6 +201,11 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     // additive optional field). Omitted entirely when forge is github,
     // so legacy consumers see the payload they always saw.
     forge: forgeKind,
+    // `reviewer` defaults to "capability-dispatch" inside the helper
+    // (sage#52 / cortex#237). Operator can override here via opts.reviewer
+    // once the CLI flag for it lands; today the default value documents
+    // that cortex routes by capability, not reviewer name.
+    ...(opts.reviewer !== undefined ? { reviewer: opts.reviewer } : {}),
   });
 
   // Subscribe to lifecycle + verdict subjects BEFORE publishing so we cannot
