@@ -9,8 +9,15 @@
  *
  * Auth keys reflect `glab` 1.40+ behavior:
  *   - `GITLAB_TOKEN` / `GLAB_TOKEN`: personal access token / OAuth token
- *   - `GITLAB_HOST`: explicit host override; trumps `--hostname`
  *   - `GLAB_CONFIG_DIR`: per-user config dir (used by `glab auth login`)
+ *
+ * `GITLAB_HOST` is deliberately NOT forwarded (sage review on #46,
+ * Security lens): glab's documented precedence puts `GITLAB_HOST`
+ * above the `--hostname` flag, so a parent-env `GITLAB_HOST` could
+ * silently redirect a self-hosted MR review to a different
+ * GitLab instance — token, body, and verdict ride along. The
+ * `GitLabBackend` constructor's `defaultHost` plus per-call
+ * `PrRef.host` are the only host-selection paths.
  */
 
 export const GLAB_SHELL_ESSENTIALS = [
@@ -30,7 +37,6 @@ export const GLAB_SHELL_ESSENTIALS = [
 export const GLAB_AUTH_KEYS = [
   "GITLAB_TOKEN",
   "GLAB_TOKEN",
-  "GITLAB_HOST",
   "GLAB_CONFIG_DIR",
   "XDG_CONFIG_HOME",
   "XDG_DATA_HOME",

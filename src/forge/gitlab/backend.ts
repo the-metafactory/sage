@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync } from "node:fs";
+import { mkdtemp, writeFile, unlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -288,8 +288,17 @@ export async function prDiff(ref: PrRef, fallbackHost: string = DEFAULT_GITLAB_H
  * approve your own MR" 4xx, we fall back to `comment` (same policy
  * shape as `postReviewWithFallback` for GitHub).
  */
+/**
+ * GitLab error wording for the "user cannot approve / unapprove their
+ * own MR" rejection. Narrowed in PR #46 review: an earlier draft
+ * accepted bare `access denied`, but that pattern matches unrelated
+ * permission failures (revoked token, project visibility, etc.) and
+ * could downgrade a real failure to a comment-only fallback. Match
+ * only wording that explicitly mentions self-approval or that the
+ * action is approval-related.
+ */
 export const SELF_REVIEW_BLOCK_RE_GITLAB =
-  /cannot approve|cannot unapprove|user cannot approve own|self.?approval|access denied/i;
+  /cannot approve|cannot unapprove|user cannot approve (?:own|their own)|self.?approval/i;
 
 export interface GitLabPostReviewDeps {
   approve: () => Promise<void>;
@@ -343,11 +352,14 @@ export async function postReview(
   const host = resolveHost(input.ref, fallbackHost);
   const project = encodeProject(input.ref);
 
-  // Body via temp file mirrors the github backend's ARG_MAX guard —
-  // a full review body easily exceeds macOS argv limits.
-  const tmpDir = mkdtempSync(join(tmpdir(), "sage-glab-"));
+  // Body via temp file: a full review body (many findings + fenced
+  // suggestions) easily exceeds macOS ARG_MAX (~256 KB), so we never
+  // pass it on the argv. Async fs API so daemon-mode posting doesn't
+  // block the event loop on large bodies (sage review on #46,
+  // Performance lens).
+  const tmpDir = await mkdtemp(join(tmpdir(), "sage-glab-"));
   const bodyPath = join(tmpDir, "body.md");
-  writeFileSync(bodyPath, input.body);
+  await writeFile(bodyPath, input.body);
 
   const wrap = <T>(fn: () => Promise<T>) =>
     retryTransient(fn, {
@@ -363,63 +375,41 @@ export async function postReview(
       },
     });
 
+  // Shared command builder so timeout/retry/API-shape changes happen
+  // in one place across the three post-review actions (sage review on
+  // #46, Maintainability lens).
+  const postMr = (pathSuffix: string, extra: string[] = []) =>
+    wrap(() =>
+      runGlab(
+        [
+          "api",
+          "--hostname",
+          host,
+          "-X",
+          "POST",
+          `/projects/${project}/merge_requests/${input.ref.number}${pathSuffix}`,
+          ...extra,
+        ],
+        { timeoutMs: 60_000 },
+      ),
+    ).then(() => undefined);
+
   const deps: GitLabPostReviewDeps = {
-    approve: () =>
-      wrap(() =>
-        runGlab(
-          [
-            "api",
-            "--hostname",
-            host,
-            "-X",
-            "POST",
-            `/projects/${project}/merge_requests/${input.ref.number}/approve`,
-          ],
-          { timeoutMs: 60_000 },
-        ),
-      ).then(() => undefined),
-    unapprove: () =>
-      wrap(() =>
-        runGlab(
-          [
-            "api",
-            "--hostname",
-            host,
-            "-X",
-            "POST",
-            `/projects/${project}/merge_requests/${input.ref.number}/unapprove`,
-          ],
-          { timeoutMs: 60_000 },
-        ),
-      ).then(() => undefined),
-    postNote: () =>
-      wrap(() =>
-        runGlab(
-          [
-            "api",
-            "--hostname",
-            host,
-            "-X",
-            "POST",
-            `/projects/${project}/merge_requests/${input.ref.number}/notes`,
-            "-F",
-            `body=@${bodyPath}`,
-          ],
-          { timeoutMs: 60_000 },
-        ),
-      ).then(() => undefined),
+    approve: () => postMr("/approve"),
+    unapprove: () => postMr("/unapprove"),
+    postNote: () => postMr("/notes", ["-F", `body=@${bodyPath}`]),
   };
 
   try {
     return await postReviewWithFallback(input.event, deps);
   } finally {
     try {
-      unlinkSync(bodyPath);
+      await unlink(bodyPath);
     } catch {
       // Best-effort cleanup.
     }
     try {
-      rmdirSync(tmpDir);
+      await rm(tmpDir, { recursive: false, force: false });
     } catch {
       // Best-effort cleanup.
     }
