@@ -439,7 +439,15 @@ export async function gitlabViewerLogin(
   const cached = glabViewerLoginCache.get(host);
   if (cached) return cached;
 
-  const promise = fetchGitlabViewerLogin(host);
+  // Wrap with a .catch that evicts the rejected promise — otherwise a
+  // single transient `glab api /user` failure would poison the cache
+  // for the rest of the process lifetime, breaking every subsequent
+  // prior-findings lookup against this host (sage review on #46,
+  // CodeQuality lens).
+  const promise = fetchGitlabViewerLogin(host).catch((err) => {
+    glabViewerLoginCache.delete(host);
+    throw err;
+  });
   glabViewerLoginCache.set(host, promise);
   return promise;
 }
@@ -451,6 +459,57 @@ async function fetchGitlabViewerLogin(host: string): Promise<string> {
     throw new Error(`glab api /user payload failed schema validation: ${parsed.error.message}`);
   }
   return parsed.data.username;
+}
+
+/**
+ * Coerce `glab api --paginate` output into a flat note array.
+ *
+ * `glab` returns either a single JSON array (one page of results) or
+ * an array-of-arrays (multiple pages slurped). Each per-forge backend
+ * has to handle both shapes; isolating the normalization here keeps
+ * `priorSageReviewFindings` focused on Sage-finding extraction (sage
+ * review on #46, Maintainability lens — split mixed-responsibility
+ * block).
+ */
+export function normalizeGlNotes(
+  raw: unknown,
+  refLabel: string,
+): Array<z.infer<typeof GlNoteSchema>> {
+  const paged = GlNotesPagesSchema.safeParse(raw);
+  if (paged.success) return paged.data.flat();
+  const flat = z.array(GlNoteSchema).safeParse(raw);
+  if (!flat.success) {
+    throw new Error(
+      `glab api notes payload failed schema validation for ${refLabel}: ${flat.error.message}`,
+    );
+  }
+  return flat.data;
+}
+
+/**
+ * Pull Sage's prior findings out of a flat note list. Filters to
+ * non-system, non-DiffNote, sage-authored notes, then runs the
+ * forge-agnostic markdown parser. De-dupes by
+ * `path:line:severity:title`.
+ */
+export function extractSageFindingsFromNotes(
+  notes: Array<z.infer<typeof GlNoteSchema>>,
+  sageAuthorLogin: string,
+): PriorReviewFinding[] {
+  const seen = new Set<string>();
+  const findings: PriorReviewFinding[] = [];
+  for (const note of notes) {
+    if (note.system) continue;
+    if (note.type === "DiffNote") continue;
+    if (note.author.username !== sageAuthorLogin) continue;
+    for (const finding of parseSageReviewFindings(note.body)) {
+      const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push(finding);
+    }
+  }
+  return findings;
 }
 
 export async function priorSageReviewFindings(
@@ -470,37 +529,8 @@ export async function priorSageReviewFindings(
     gitlabViewerLogin(host),
   ]);
 
-  const parsed = GlNotesPagesSchema.safeParse(raw);
-  // `glab api --paginate` slurps into a single array when the response
-  // is one page; coerce to the expected shape so the parser works on
-  // both pagination shapes.
-  let notes: Array<z.infer<typeof GlNoteSchema>>;
-  if (parsed.success) {
-    notes = parsed.data.flat();
-  } else {
-    const flatParsed = z.array(GlNoteSchema).safeParse(raw);
-    if (!flatParsed.success) {
-      throw new Error(
-        `glab api notes payload failed schema validation for ${formatProjectPath(ref)}!${ref.number}: ${flatParsed.error.message}`,
-      );
-    }
-    notes = flatParsed.data;
-  }
-
-  const seen = new Set<string>();
-  const findings: PriorReviewFinding[] = [];
-  for (const note of notes) {
-    if (note.system) continue;
-    if (note.type === "DiffNote") continue;
-    if (note.author.username !== sageAuthorLogin) continue;
-    for (const finding of parseSageReviewFindings(note.body)) {
-      const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      findings.push(finding);
-    }
-  }
-  return findings;
+  const notes = normalizeGlNotes(raw, `${formatProjectPath(ref)}!${ref.number}`);
+  return extractSageFindingsFromNotes(notes, sageAuthorLogin);
 }
 
 export async function glabAuthStatus(
