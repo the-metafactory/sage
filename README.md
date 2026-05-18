@@ -1,8 +1,8 @@
 # Sage
 
-> Botanical-named code review agent. Runs on pi.dev (default), Claude Code, or Codex CLI via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh`.
+> Botanical-named code review agent. Runs on pi.dev (default), Claude Code, or Codex CLI via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh` (GitHub) or `glab` (GitLab).
 
-Sage reviews GitHub pull requests through composable lenses (CodeQuality first; Security, Architecture, EcosystemCompliance, Performance to follow) and publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render.
+Sage reviews GitHub pull requests and GitLab merge requests through composable lenses (CodeQuality first; Security, Architecture, EcosystemCompliance, Performance to follow) and publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render. The forge backend is selected per-review via `--forge`, `SAGE_FORGE` env, or URL shape (sage#43).
 
 **In-process inside cortex** (sage#40). Cortex's `ReviewConsumer` owns the NATS subscribe loop, queue-group, ack/nak, redelivery, signature verification (D1), and lifecycle envelope emission. Sage exposes its review pipeline (`reviewPr` in `src/lenses/workflow.ts`) as the `pipelineRunner` cortex injects into the consumer. One cortex process owns every reviewer agent (sage, fern, future); one PID, one log stream, one restart semantics.
 
@@ -43,7 +43,8 @@ cp .env.example .env
 Prerequisites:
 
 - [`bun`](https://bun.sh/) >= 1.1
-- [`gh`](https://cli.github.com/) authenticated (`gh auth status` green)
+- For GitHub reviews: [`gh`](https://cli.github.com/) authenticated (`gh auth status` green)
+- For GitLab reviews: [`glab`](https://gitlab.com/gitlab-org/cli) authenticated (`glab auth status` green)
 - One of the supported substrates on `$PATH`:
   - [`pi`](https://pi.dev/docs/latest/usage) (default) — `npm i -g @earendil-works/pi-coding-agent`
   - [`claude`](https://docs.claude.com/en/docs/agents-and-tools/claude-code/overview) — for `--substrate claude`
@@ -55,12 +56,30 @@ Prerequisites:
 ### Offline review — no bus required
 
 ```bash
+# GitHub PR — autodetected from URL/shorthand
 bun run src/cli/index.ts review the-metafactory/cortex#58
-# or
 bun run src/cli/index.ts review https://github.com/the-metafactory/cortex/pull/58 --post
+
+# GitLab MR — autodetected from URL/!N shorthand
+bun run src/cli/index.ts review the-metafactory/sage!12
+bun run src/cli/index.ts review https://gitlab.com/group/project/-/merge_requests/3 --post
+
+# Self-hosted GitLab
+bun run src/cli/index.ts review group/proj!7 --forge gitlab --gitlab-host gitlab.example.com
 ```
 
-Without `--post` Sage renders the review to stdout. With `--post`, Sage submits via `gh pr review`.
+Without `--post` Sage renders the review to stdout. With `--post`, Sage submits via `gh pr review` (GitHub) or `glab api .../notes` plus `/approve` or `/unapprove` (GitLab).
+
+### Forge selection
+
+The forge backend is resolved once per invocation. Precedence:
+
+1. `--forge github|gitlab` flag
+2. `SAGE_FORGE` environment variable
+3. URL detection (`github.com` / `/pull/N` / `OWNER/REPO#N` → github; `/-/merge_requests/N` / `GROUP/PROJ!N` → gitlab)
+4. Default `github`
+
+For self-hosted GitLab, set the host via `--gitlab-host` or `SAGE_GITLAB_HOST` env. The `host` is also persisted into the parsed `PrRef` when the URL contains it, so `--gitlab-host` is only needed for shorthand `!N` refs pointing at a non-`gitlab.com` instance.
 
 ### Bus listener
 
@@ -113,7 +132,7 @@ And publishes:
 }
 ```
 
-Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.postReviews`.
+Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.postReviews`. `forge` is an optional additive field (sage#43); receivers default to `"github"` when absent for back-compat with pre-#43 envelopes.
 
 ## Architecture
 
@@ -170,7 +189,11 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/substrate/claude.ts` | `ClaudeSubstrate` — wraps `claude -p` with native `--output-format json` |
 | `src/substrate/codex.ts` | `CodexSubstrate` — wraps `codex exec` |
 | `src/substrate/select.ts` | `selectSubstrate()` — flag > env > config > pi resolution |
-| `src/github/gh.ts` | `gh pr view/diff/review` wrapper, PR-ref parser |
+| `src/forge/types.ts` | `ForgeBackend` interface — platform-neutral PR/MR ops |
+| `src/forge/parse.ts` | Top-level PR/MR ref parser (routes github/gitlab) |
+| `src/forge/select.ts` | `selectForge({flag, env, fromRef, gitlabHost?})` — backend resolver |
+| `src/forge/github/backend.ts` | `gh pr view/diff/review` wrapper, GitHub backend |
+| `src/forge/gitlab/backend.ts` | `glab api` wrapper, GitLab backend (incl. approve/unapprove) |
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
 | `src/lenses/base.ts` | Shared lens scaffolding (`runLens`, prompt template) |
 | `src/lenses/applicability.ts` | Trigger heuristics for conditional lenses |
