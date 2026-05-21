@@ -21,12 +21,9 @@
  * built from the `ExtractionFailure`.
  */
 
+import { runTextStrategies } from "./run-strategies.ts";
 import type { SubstrateRunResult } from "../types.ts";
-import type {
-  ExtractionAttempt,
-  ExtractionFailure,
-  JsonPipeline,
-} from "./types.ts";
+import type { ExtractionFailure, JsonPipeline } from "./types.ts";
 
 const ERROR_TEXT_TAIL_LEN = 4000;
 
@@ -70,43 +67,14 @@ export function extractFromRun<T>(
     };
   }
 
-  const attempts: ExtractionAttempt[] = [];
-  // Memoize extractor outputs from Pass 1 so Pass 2 can replay them
-  // without re-running expensive scans (balanced-object walks, fenced
-  // regex, trailing-walk) twice. Mirrors the prior `extractJson`
-  // shape which built candidates once and iterated twice (sage#57 →
-  // sage#63 Sage review Performance suggestion).
-  const memoized: Array<{ name: string; value: unknown | undefined }> = [];
-
-  // Pass 1: prefer Pipeline's preferredShape.
-  for (const ex of pipeline.extractors) {
-    const candidate = ex.extract(text);
-    memoized.push({ name: ex.name, value: candidate });
-    if (candidate === undefined) {
-      attempts.push({ extractor: ex.name, reason: "undefined" });
-      continue;
-    }
-    if (pipeline.preferredShape(candidate)) {
-      return {
-        ok: true,
-        result: candidate as T,
-        extractor: ex.name,
-        matchedPreferredShape: true,
-      };
-    }
-    attempts.push({ extractor: ex.name, reason: "shape-rejected" });
-  }
-
-  // Pass 2: any-parseable fallback, replayed from Pass 1 memo.
-  for (const slot of memoized) {
-    if (slot.value !== undefined) {
-      return {
-        ok: true,
-        result: slot.value as T,
-        extractor: slot.name,
-        matchedPreferredShape: false,
-      };
-    }
+  const outcome = runTextStrategies(text, pipeline.extractors, pipeline.preferredShape);
+  if (outcome.value !== undefined && outcome.extractor !== undefined) {
+    return {
+      ok: true,
+      result: outcome.value as T,
+      extractor: outcome.extractor,
+      matchedPreferredShape: outcome.matchedPreferredShape,
+    };
   }
 
   return {
@@ -114,7 +82,7 @@ export function extractFromRun<T>(
     failure: {
       substrate: substrateLabel,
       kind: "no-extractor-matched",
-      attempts,
+      attempts: outcome.attempts,
       text: truncateTail(text),
     },
   };

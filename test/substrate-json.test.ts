@@ -1,15 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import {
-  BALANCED_LARGEST,
   CLAUDE_PIPELINE,
-  FENCED_LAST_FIRST,
-  RAW,
   TEXT_PIPELINE,
-  TRAILING,
   extractFromRun,
   extractFromRunOrThrow,
   isLensShaped,
 } from "../src/substrate/json/index.ts";
+// Extractor primitives are Module internals — deep-imported here so
+// the public barrel stays tight (sage#63 round-4 Maintainability).
+import {
+  BALANCED_LARGEST,
+  FENCED_LAST_FIRST,
+  RAW,
+  TRAILING,
+} from "../src/substrate/json/extractors.ts";
 import type { SubstrateRunResult } from "../src/substrate/types.ts";
 
 /**

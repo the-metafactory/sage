@@ -1,14 +1,16 @@
 /**
- * Substrate JSON extraction Module — barrel.
+ * Substrate JSON extraction Module — public barrel.
+ *
+ * Surface kept minimal: entry points + Pipeline constants + the
+ * lens-shape predicate + types. Extractor primitives
+ * (RAW/FENCED_LAST_FIRST/BALANCED_LARGEST/TRAILING/CLAUDE_ENVELOPE)
+ * are NOT re-exported — they are Module internals composed into
+ * Pipelines. Tests that need to assert against individual extractors
+ * deep-import from `./extractors.ts` (sage#63 round-4 Maintainability
+ * suggestion: keep the public surface tight so extractor changes
+ * aren't breaking).
  */
 
-export {
-  BALANCED_LARGEST,
-  CLAUDE_ENVELOPE,
-  FENCED_LAST_FIRST,
-  RAW,
-  TRAILING,
-} from "./extractors.ts";
 export {
   extractFromRun,
   extractFromRunOrThrow,

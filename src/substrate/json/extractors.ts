@@ -26,7 +26,7 @@
  *                            itself if it's bare lens-shaped JSON).
  */
 
-import { isLensShaped } from "./shape.ts";
+import { runTextStrategies } from "./run-strategies.ts";
 import type { NamedExtractor } from "./types.ts";
 
 export const RAW: NamedExtractor = {
@@ -97,63 +97,22 @@ export const CLAUDE_ENVELOPE: NamedExtractor = {
     if (envelope === undefined) return undefined;
     const inner = pickClaudeResultText(envelope);
     if (inner !== undefined) {
-      // 1. Inner as JSON directly.
-      const innerParsed = tryJsonParse(inner.trim());
-      if (innerParsed !== undefined) return innerParsed;
-      // 2. Run the four text strategies against the inner string. The
-      //    same two-pass shape preference logic the top-level Pipeline
-      //    uses applies here, scoped to the inner content. Lens-shaped
-      //    candidate wins over any-parseable.
-      const innerOut = extractLensShapedFromText(inner);
-      if (innerOut !== undefined) return innerOut;
-      return undefined;
+      // Delegate the inner-string recovery to the shared two-pass
+      // walker over the four text strategies. Same algorithm the
+      // outer Pipeline uses — one source of truth (sage#63 round-4
+      // Maintainability finding: collapses duplication).
+      return runTextStrategies(inner, [
+        RAW,
+        FENCED_LAST_FIRST,
+        BALANCED_LARGEST,
+        TRAILING,
+      ]).value;
     }
     // No .result / .response — envelope itself may be the lens body.
     return envelope;
   },
 };
 
-/**
- * Run the four text-extraction strategies against a string and return
- * the first lens-shaped hit, falling back to the first any-parseable
- * hit. Used by `CLAUDE_ENVELOPE` to dig into the envelope's inner
- * `.result` string when bare parse fails (sage#57 acceptance
- * criterion: 4-tier text extraction preserved byte-for-byte). Kept
- * private to this module — the outer Pipeline machinery is one layer
- * up and can't be invoked from here without a `pipelines.ts` import
- * cycle. `isLensShaped` is shared via the leaf `shape.ts`.
- *
- * Memoizes `JSON.parse(candidate)` so Pass 2 doesn't re-parse the
- * same strings Pass 1 already parsed (sage#63 Sage review Pass-2
- * recompute suggestion applied here too).
- */
-function extractLensShapedFromText(text: string): unknown | undefined {
-  // Build candidate set once — mirrors the prior `extractJson` shape.
-  const candidates: string[] = [];
-  candidates.push(text);
-  for (const block of allFencedBlocks(text).reverse()) candidates.push(block);
-  for (const balanced of findAllBalancedObjects(text).sort(
-    (a, b) => b.length - a.length,
-  )) {
-    candidates.push(balanced);
-  }
-  const trailing = findTrailingBalancedObject(text);
-  if (trailing) candidates.push(trailing);
-
-  // Pass 1: prefer lens shape. Memoize parsed results so Pass 2
-  // doesn't re-invoke JSON.parse on the same strings.
-  const parsedSlots: Array<unknown | undefined> = candidates.map(() => undefined);
-  for (let i = 0; i < candidates.length; i++) {
-    const parsed = tryJsonParse(candidates[i]!.trim());
-    parsedSlots[i] = parsed;
-    if (parsed !== undefined && isLensShaped(parsed)) return parsed;
-  }
-  // Pass 2: any-parseable replayed from memo.
-  for (const parsed of parsedSlots) {
-    if (parsed !== undefined) return parsed;
-  }
-  return undefined;
-}
 
 function pickClaudeResultText(envelope: unknown): string | undefined {
   if (!envelope || typeof envelope !== "object") return undefined;
