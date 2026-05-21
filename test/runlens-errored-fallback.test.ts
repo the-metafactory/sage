@@ -38,6 +38,7 @@ function makeFailingSubstrate(message: string): Substrate {
     displayName: "pi.dev",
     bin: "pi",
     jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
     run: async () => {
       throw new Error(message);
     },
@@ -82,6 +83,7 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
       displayName: "pi.dev",
       bin: "pi",
       jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
       run: async () => ({
         stdout: JSON.stringify({ summary: "ok", findings: [] }),
         stderr: "",
@@ -103,6 +105,7 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
       displayName: "Claude Code",
       bin: "claude",
       jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
       run: async () => ({
         stdout: JSON.stringify({ type: "error", is_error: true }),
         stderr: "",

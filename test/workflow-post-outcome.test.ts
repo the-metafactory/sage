@@ -46,6 +46,7 @@ const stubSubstrate = {
   displayName: "pi.dev",
   bin: "pi",
   jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
   run: async () => ({
     stdout: JSON.stringify({ summary: "ok", findings: [] }),
     stderr: "",

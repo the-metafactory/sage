@@ -36,6 +36,40 @@ import type { SubstrateName } from "./registry.ts";
 export type { SubstrateName };
 
 /**
+ * Env-var contract a Substrate Adapter declares as data. Used by
+ * `buildSubstrateEnv` to compose the subprocess env block from the
+ * Module-level shared base (shell essentials + Provider keys) plus
+ * the Substrate-specific additions.
+ *
+ * sage#60 — extracts the prior `SUBSTRATE_NAMESPACES` closed-class
+ * map into per-Adapter data so adding a 4th Substrate is a single
+ * file change.
+ *
+ * Adapters do NOT list:
+ *   - SHELL_ESSENTIALS — Module owns the universal base.
+ *   - PROVIDER_KEYS    — Provider is a sage-level concept, not
+ *                         per-Substrate (CONTEXT.md). Module owns
+ *                         the canonical list.
+ *   - SENSITIVE_OPT_IN_KEYS — opt-in is operator policy.
+ *   - sage-internal kill-list — Module owns it.
+ */
+export interface EnvRequirements {
+  /**
+   * Env-var prefixes forwarded only to this Substrate's subprocess
+   * (prefix match: `"PI_"` matches `PI_PROVIDER`, `PI_MODEL`, etc.).
+   * Empty array is legal — Adapter has no Substrate-specific
+   * namespace.
+   */
+  readonly namespaces: readonly string[];
+
+  /**
+   * Exact-match env-var name additions on top of Module-level
+   * shared SHELL_ESSENTIALS + PROVIDER_KEYS. Rarely populated.
+   */
+  readonly keys: readonly string[];
+}
+
+/**
  * Thinking-level passthrough. Sage's lens calls default to `off` because the
  * chain-of-thought trace empirically broke the JSON contract on weaker models
  * (Gemma, Gemini Flash, DeepSeek). Substrates that don't expose a thinking
@@ -112,6 +146,14 @@ export interface Substrate {
    * `CLAUDE_PIPELINE` (envelope-first then text fallback) — sage#57.
    */
   readonly jsonPipeline: JsonPipeline;
+
+  /**
+   * Per-Adapter env contract declared as data. sage#60 — each
+   * Substrate Adapter owns its own namespace prefix list next to
+   * its `run()` code; `buildSubstrateEnv` reads this to compose
+   * the subprocess env block.
+   */
+  readonly envRequirements: EnvRequirements;
 
   /**
    * Run the coding task. Implementations spawn the substrate binary as a

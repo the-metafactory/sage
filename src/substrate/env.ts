@@ -84,23 +84,25 @@ const SHELL_ESSENTIALS = [
 const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
 
 /**
- * Substrate namespaces. Each substrate's own config env (PI_PROVIDER,
- * CLAUDE_MODEL, CODEX_MODEL, …) is forwarded only to that substrate.
- * Provider keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) are forwarded
- * unconditionally via PROVIDER_KEYS — listing ANTHROPIC_ here only ensures
- * any *other* ANTHROPIC_* config var also makes it through for Claude.
+ * Substrate namespace contract — moved into the Adapter Interface
+ * (`Substrate.envRequirements`) per sage#60. Each Substrate Adapter
+ * declares its own namespace prefixes as data; `buildSubstrateEnv`
+ * reads `substrate.envRequirements` instead of a hardcoded map.
+ * Adding a 4th Substrate is now a single Adapter file change with
+ * zero edits to env.ts.
  */
-const SUBSTRATE_NAMESPACES = {
-  pi: ["PI_"],
-  claude: ["CLAUDE_", "ANTHROPIC_"],
-  codex: ["CODEX_"],
-} as const;
 
-export type SubstrateNamespaceKey = keyof typeof SUBSTRATE_NAMESPACES;
+/**
+ * Lightweight subset of `Substrate` that `buildSubstrateEnv` actually
+ * needs. Accepting `Pick<Substrate, "name" | "envRequirements">`
+ * keeps the env helper independent of `run()` / `jsonPipeline` /
+ * `displayName` — tests can pass a synthetic stub with just the two
+ * required fields.
+ */
+import type { Substrate } from "./types.ts";
+export type SubstrateEnvContract = Pick<Substrate, "name" | "envRequirements">;
 
 export interface BuildSubstrateEnvOptions {
-  /** Which substrate this env is for — controls namespace forwarding. */
-  substrate: SubstrateNamespaceKey;
   /** Caller-supplied extra env vars; merged last and win on conflict. */
   extra?: Record<string, string | undefined>;
   /** Additional keys to forward on top of the default allow-list. */
@@ -131,7 +133,10 @@ const SAGE_INTERNAL_KEYS = new Set<string>([
   "PI_ENV_DENY",
 ]);
 
-export function buildSubstrateEnv(opts: BuildSubstrateEnvOptions): Record<string, string> {
+export function buildSubstrateEnv(
+  substrate: SubstrateEnvContract,
+  opts: BuildSubstrateEnvOptions = {},
+): Record<string, string> {
   const parent = opts.parent ?? process.env;
 
   // SAGE_ENV_ALLOW/DENY are the modern controls; PI_ENV_ALLOW/DENY remain
@@ -176,13 +181,23 @@ export function buildSubstrateEnv(opts: BuildSubstrateEnvOptions): Record<string
     if (value !== undefined) out[key] = value;
   }
 
-  // Forward keys in the active substrate's namespaces only. The `denySet`
-  // already includes `SAGE_INTERNAL_KEYS`, so a single membership check
-  // covers both operator-supplied denies and sage-internal keys.
-  const namespaces = SUBSTRATE_NAMESPACES[opts.substrate];
+  // Forward keys in the active Substrate Adapter's namespaces only.
+  // Per sage#60, namespaces come from the Adapter Interface's
+  // `envRequirements` data field — no hardcoded map. The `denySet`
+  // already includes `SAGE_INTERNAL_KEYS`.
+  const namespaces = substrate.envRequirements.namespaces;
   for (const [key, value] of Object.entries(parent)) {
-    if (!namespaces.some((ns) => key.startsWith(ns))) continue;
+    if (!namespaces.some((ns: string) => key.startsWith(ns))) continue;
     if (denySet.has(key)) continue;
+    if (value !== undefined) out[key] = value;
+  }
+
+  // Additional exact-match keys declared by the Adapter — rarely
+  // populated, but the Interface permits per-Adapter additions on
+  // top of the shared base.
+  for (const key of substrate.envRequirements.keys) {
+    if (denySet.has(key)) continue;
+    const value = parent[key];
     if (value !== undefined) out[key] = value;
   }
 

@@ -79,6 +79,7 @@ const stubSubstrate = {
   displayName: "pi.dev",
   bin: "pi",
   jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
   run: async (opts: SubstrateCall) => {
     substrateCalls.push({ systemPrompt: opts.systemPrompt, prompt: opts.prompt });
     inFlight++;

@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
 
-import { buildSubstrateEnv } from "./env.ts";
+import { buildSubstrateEnv, type SubstrateEnvContract } from "./env.ts";
 import type {
-  SubstrateName,
   SubstrateRunOptions,
   SubstrateRunResult,
 } from "./types.ts";
@@ -40,24 +39,30 @@ interface SpawnSubstrateInput {
 const DEFAULT_SUBSTRATE_TIMEOUT_MS = 10 * 60 * 1000;
 
 interface SpawnSubstrateForInput {
-  name: SubstrateName;
+  /**
+   * Substrate Adapter that owns this spawn. Carries the env
+   * contract (`envRequirements`) the env builder reads — sage#60.
+   */
+  substrate: SubstrateEnvContract;
   bin: string;
   args: string[];
   opts: SubstrateRunOptions;
 }
 
 export function spawnSubstrateFor(input: SpawnSubstrateForInput): Promise<SubstrateRunResult> {
-  const timeoutKey = `${input.name.toUpperCase()}_TIMEOUT_MS`;
+  const timeoutKey = `${input.substrate.name.toUpperCase()}_TIMEOUT_MS`;
   const opts = input.opts;
   return spawnSubstrate({
     bin: input.bin,
     args: input.args,
-    env: buildSubstrateEnv({ substrate: input.name, extra: opts.env }),
+    env: buildSubstrateEnv(input.substrate, {
+      ...(opts.env !== undefined ? { extra: opts.env } : {}),
+    }),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
     ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}),
     timeoutMs:
       opts.timeoutMs ?? readTimeoutFromEnv(timeoutKey) ?? DEFAULT_SUBSTRATE_TIMEOUT_MS,
-    label: input.name,
+    label: input.substrate.name,
   });
 }
 
