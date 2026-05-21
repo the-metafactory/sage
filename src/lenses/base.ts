@@ -1,4 +1,5 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
+import { extractFromRunOrThrow } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -177,11 +178,13 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   const started = Date.now();
   const stdinContent = buildStdinContent(input.pr, input.diff, input.priorFindings);
 
-  let lensResult: { result: RawLensOutput; raw: { stdout: string } } | undefined;
+  let lensJson: RawLensOutput | undefined;
   let extractionError = "";
 
   try {
-    lensResult = await input.substrate.runJson<RawLensOutput>({
+    // Pure platform call — substrate captures stdout/stderr; JSON
+    // extraction is the Module's job (sage#57).
+    const raw = await input.substrate.run({
       // System-role prompt for the JSON contract + lens focus. Models obey
       // system-role instructions more strictly than user messages.
       systemPrompt: COMMON_INSTRUCTION(spec),
@@ -194,8 +197,18 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       // source. Substrates that don't honor the flag (Claude Code) ignore
       // it harmlessly.
       thinking: input.thinking ?? "off",
+      // Hint to substrates with a native structured-output mode that we
+      // want JSON. Claude appends `--output-format json`; pi/codex ignore
+      // it and still emit text (the Pipeline handles both shapes).
+      responseFormat: "json",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });
+    const out = extractFromRunOrThrow<RawLensOutput>(
+      raw,
+      input.substrate.jsonPipeline,
+      input.substrate.name,
+    );
+    lensJson = out.result;
   } catch (err) {
     extractionError = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
@@ -215,7 +228,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   // The workflow layer's inline-catch synthesis (workflow.ts) is the
   // sibling path; both go through `buildErroredLensReport` so the
   // contract stays byte-stable (Holly round 3, finding #2).
-  if (!lensResult) {
+  if (!lensJson) {
     return buildErroredLensReport({
       lens: spec.name,
       rationale: truncate(extractionError, 4000),
@@ -224,7 +237,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     });
   }
 
-  const findings = (lensResult.result.findings ?? []).map<Finding>((f) => ({
+  const findings = (lensJson.findings ?? []).map<Finding>((f) => ({
     path: f.path,
     line: normalizeLine(f.line),
     severity: normalizeSeverity(f.severity),
@@ -232,11 +245,10 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     rationale: f.rationale ?? "",
     ...(f.suggestion ? { suggestion: f.suggestion } : {}),
   }));
-  void extractionError;
 
   return {
     lens: spec.name,
-    summary: lensResult.result.summary ?? "",
+    summary: lensJson.summary ?? "",
     findings,
     durationMs: Date.now() - started,
   };

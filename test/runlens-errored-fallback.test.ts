@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { runLens, type LensRunInput } from "../src/lenses/base.ts";
+import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
 import type { Substrate } from "../src/substrate/types.ts";
 
 /**
  * sage#27 Holly re-review (finding #1): `runLens`'s substrate-fallback
- * branch — fires when `substrate.runJson` throws or the model output
- * can't be parsed as JSON — emits `errored: true` and severity
- * `important`. Pre-fix it emitted severity `nit` and no errored flag,
- * which left the dominant in-production failure mode silently
- * mergable.
+ * branch — fires when `substrate.run` throws OR
+ * `extractFromRunOrThrow` against the captured stdout throws — emits
+ * `errored: true` and severity `important`. Pre-fix it emitted
+ * severity `nit` and no errored flag, which left the dominant
+ * in-production failure mode silently mergable.
  *
  * The running daemon's err.log shows this branch firing as
  * `CodeQuality lens JSON extraction failed — falling back to prose
@@ -36,8 +37,8 @@ function makeFailingSubstrate(message: string): Substrate {
     name: "pi" as const,
     displayName: "pi.dev",
     bin: "pi",
-    run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
-    runJson: async () => {
+    jsonPipeline: TEXT_PIPELINE,
+    run: async () => {
       throw new Error(message);
     },
   };
@@ -80,10 +81,12 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
       name: "pi" as const,
       displayName: "pi.dev",
       bin: "pi",
-      run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
-      runJson: async <T>() => ({
-        result: { summary: "ok", findings: [] } as unknown as T,
-        raw: { stdout: "", stderr: "", exitCode: 0, durationMs: 1 },
+      jsonPipeline: TEXT_PIPELINE,
+      run: async () => ({
+        stdout: JSON.stringify({ summary: "ok", findings: [] }),
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
       }),
     };
     const report = await runLens(

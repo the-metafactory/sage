@@ -6,6 +6,14 @@
  * depend on which LLM substrate runs them. This interface is the seam that
  * lets that principle hold in code, not just in the spec.
  *
+ * Substrate is pure platform (subprocess + capture). JSON extraction
+ * lives in its own Module — each Adapter declares its `jsonPipeline`
+ * as data, and lens callers route through
+ * `extractFromRunOrThrow(raw, substrate.jsonPipeline, substrate.name)`
+ * (sage#57). Substrates with native structured-output modes (Claude's
+ * `--output-format json`) honor `SubstrateRunOptions.responseFormat`;
+ * others ignore it.
+ *
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
  *   2. Register it in three sites:
@@ -14,12 +22,15 @@
  *        - the `SageConfigFile.substrate.<name>` typed field in
  *          `select.ts` so the config loader can carry substrate-specific
  *          overrides
- *   3. Update README and ISA's substrates table.
+ *   3. Declare `jsonPipeline` — usually `TEXT_PIPELINE` for plain-text
+ *      stdout, `CLAUDE_PIPELINE` for native-envelope shapes.
+ *   4. Update README and ISA's substrates table.
  *
- * Nothing else changes — `lenses/base.ts` calls `substrate.runJson(opts)` and
- * only sees this interface.
+ * Nothing else changes — `lenses/base.ts` only sees this interface plus
+ * the JSON Module's `extractFromRunOrThrow` entry.
  */
 
+import type { JsonPipeline } from "./json/types.ts";
 import type { SubstrateName } from "./registry.ts";
 
 export type { SubstrateName };
@@ -63,6 +74,16 @@ export interface SubstrateRunOptions {
   tools?: readonly string[];
   /** Extra env vars merged into the substrate child env. */
   env?: Record<string, string | undefined>;
+  /**
+   * Hint to the Adapter that the caller expects JSON. Substrates with a
+   * native structured-output mode (claude: `--output-format json`)
+   * honor it; others (pi, codex) ignore it. Default: `"text"`. JSON
+   * extraction itself does NOT live behind this flag — callers route
+   * through `extractFromRunOrThrow(raw, substrate.jsonPipeline, ...)`
+   * regardless, because text-only substrates can still emit JSON in
+   * their text stdout (sage#57).
+   */
+  responseFormat?: "text" | "json";
 }
 
 export interface SubstrateRunResult {
@@ -83,6 +104,14 @@ export interface Substrate {
   readonly displayName: string;
   /** Binary path used (post-resolution). */
   readonly bin: string;
+  /**
+   * Per-Adapter JSON-extraction Pipeline declared as data. Callers
+   * extracting JSON from this Substrate's output run
+   * `extractFromRun(raw, substrate.jsonPipeline, substrate.name)`.
+   * pi/codex declare `TEXT_PIPELINE`; claude declares
+   * `CLAUDE_PIPELINE` (envelope-first then text fallback) — sage#57.
+   */
+  readonly jsonPipeline: JsonPipeline;
 
   /**
    * Run the coding task. Implementations spawn the substrate binary as a
@@ -90,12 +119,4 @@ export interface Substrate {
    * timeout, and return the captured streams.
    */
   run(opts: SubstrateRunOptions): Promise<SubstrateRunResult>;
-
-  /**
-   * Convenience for when the prompt asks for a single JSON-shaped reply.
-   * `runJsonViaTextExtraction` strips fenced code blocks and
-   * JSON.parses the result. Substrates with a native structured-output
-   * mode (Claude Code's `--output-format json`) override directly.
-   */
-  runJson<T>(opts: SubstrateRunOptions): Promise<{ result: T; raw: SubstrateRunResult }>;
 }

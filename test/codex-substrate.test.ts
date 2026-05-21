@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { CodexSubstrate } from "../src/substrate/codex.ts";
+import { extractFromRunOrThrow } from "../src/substrate/json/index.ts";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -130,14 +131,18 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).not.toContain(" workspace-write ");
   });
 
-  test("runJson extracts lens-shaped JSON from codex output", async () => {
+  test("jsonPipeline extracts lens-shaped JSON from codex output", async () => {
     const bin = writeJsonResponder();
     const substrate = new CodexSubstrate({ bin });
 
-    const { result } = await substrate.runJson<{ summary: string; findings: unknown[] }>({
+    const raw = await substrate.run({
       prompt: "review",
       timeoutMs: 5_000,
     });
+    const { result } = extractFromRunOrThrow<{
+      summary: string;
+      findings: unknown[];
+    }>(raw, substrate.jsonPipeline, substrate.name);
 
     expect(result).toEqual({ summary: "ok", findings: [] });
   });

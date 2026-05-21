@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeStubForge } from "./forge-stub.ts";
+import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
 
 /**
  * sage#26: lens execution is parallel, not sequential.
@@ -67,22 +68,28 @@ let peakInFlight = 0;
 let substrateCalls: SubstrateCall[] = [];
 let runJsonImpl: (opts: SubstrateCall) => Promise<{ summary: string; findings: never[] }>;
 
+// Post-sage#57 the Substrate Interface is `run() + jsonPipeline`. The
+// lens layer (`base.ts`) calls `substrate.run({responseFormat: "json"})`
+// then routes through `extractFromRunOrThrow(raw, substrate.jsonPipeline,
+// ...)`. The stub embeds the mocked lens JSON in `stdout`; the standard
+// `TEXT_PIPELINE` parses it back out. Concurrency tracking moves onto
+// `run` because that's the seam every lens call now hits.
 const stubSubstrate = {
   name: "pi" as const,
   displayName: "pi.dev",
   bin: "pi",
-  run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
-  // The lens layer (base.ts) calls runJson; we don't need run for these
-  // tests. Track concurrency at this seam.
-  runJson: async <T>(opts: SubstrateCall) => {
+  jsonPipeline: TEXT_PIPELINE,
+  run: async (opts: SubstrateCall) => {
     substrateCalls.push({ systemPrompt: opts.systemPrompt, prompt: opts.prompt });
     inFlight++;
     if (inFlight > peakInFlight) peakInFlight = inFlight;
     try {
       const result = await runJsonImpl(opts);
       return {
-        result: result as unknown as T,
-        raw: { stdout: "", stderr: "", exitCode: 0, durationMs: 1 },
+        stdout: JSON.stringify(result),
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
       };
     } finally {
       inFlight--;
