@@ -1,4 +1,4 @@
-import { textExtractionRunJson } from "./json.ts";
+import { TEXT_PIPELINE } from "./json/pipelines.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
@@ -36,7 +36,7 @@ export interface PiSubstrateConfig {
 export class PiSubstrate implements Substrate {
   readonly name = "pi" as const;
   readonly displayName = "pi.dev";
-  readonly runJson = textExtractionRunJson((opts) => this.run(opts));
+  readonly jsonPipeline = TEXT_PIPELINE;
 
   constructor(private readonly cfg: PiSubstrateConfig = {}) {}
 

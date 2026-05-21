@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeStubForge } from "./forge-stub.ts";
+import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
 
 /**
  * sage#16: `ReviewResult.posted` reflects ACTUAL post outcome (whether
@@ -44,10 +45,12 @@ const stubSubstrate = {
   name: "pi" as const,
   displayName: "pi.dev",
   bin: "pi",
-  run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
-  runJson: async <T>() => ({
-    result: { summary: "ok", findings: [] } as unknown as T,
-    raw: { stdout: "", stderr: "", exitCode: 0, durationMs: 1 },
+  jsonPipeline: TEXT_PIPELINE,
+  run: async () => ({
+    stdout: JSON.stringify({ summary: "ok", findings: [] }),
+    stderr: "",
+    exitCode: 0,
+    durationMs: 1,
   }),
 };
 

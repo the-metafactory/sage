@@ -1,4 +1,4 @@
-import { textExtractionRunJson } from "./json.ts";
+import { TEXT_PIPELINE } from "./json/pipelines.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
@@ -39,7 +39,7 @@ export interface CodexSubstrateConfig {
 export class CodexSubstrate implements Substrate {
   readonly name = "codex" as const;
   readonly displayName = "Codex CLI";
-  readonly runJson = textExtractionRunJson((opts) => this.run(opts));
+  readonly jsonPipeline = TEXT_PIPELINE;
 
   constructor(private readonly cfg: CodexSubstrateConfig = {}) {}
 

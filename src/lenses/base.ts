@@ -1,4 +1,5 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
+import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -177,11 +178,13 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   const started = Date.now();
   const stdinContent = buildStdinContent(input.pr, input.diff, input.priorFindings);
 
-  let lensResult: { result: RawLensOutput; raw: { stdout: string } } | undefined;
+  let lensJson: RawLensOutput | undefined;
   let extractionError = "";
 
   try {
-    lensResult = await input.substrate.runJson<RawLensOutput>({
+    // Pure platform call — substrate captures stdout/stderr; JSON
+    // extraction is the Module's job (sage#57).
+    const raw = await input.substrate.run({
       // System-role prompt for the JSON contract + lens focus. Models obey
       // system-role instructions more strictly than user messages.
       systemPrompt: COMMON_INSTRUCTION(spec),
@@ -194,8 +197,48 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       // source. Substrates that don't honor the flag (Claude Code) ignore
       // it harmlessly.
       thinking: input.thinking ?? "off",
+      // Hint to substrates with a native structured-output mode that we
+      // want JSON. Claude appends `--output-format json`; pi/codex ignore
+      // it and still emit text (the Pipeline handles both shapes).
+      responseFormat: "json",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });
+    const outcome = extractFromRun<RawLensOutput>(
+      raw,
+      input.substrate.jsonPipeline,
+      input.substrate.name,
+    );
+    if (!outcome.ok) {
+      // Substrate crashed, returned empty stdout, or no extractor
+      // produced any JSON. Surface as a synthesized errored report.
+      const reasons = outcome.failure.attempts
+        .map((a) => `  - ${a.extractor}: ${a.reason}`)
+        .join("\n");
+      throw new Error(
+        `${outcome.failure.substrate} extraction failed (${outcome.failure.kind})` +
+          (outcome.failure.exitCode !== undefined
+            ? ` exit=${outcome.failure.exitCode}`
+            : "") +
+          (reasons ? `\n${reasons}` : "") +
+          (outcome.failure.text ? `\n--- output ---\n${outcome.failure.text}` : ""),
+      );
+    }
+    // Lens-shape gate: Pipeline's any-parseable Pass 2 can return a
+    // non-lens object (claude error envelope, unrelated JSON in a
+    // prose reply). `matchedPreferredShape: false` is the Pipeline's
+    // signal that Pass 1 didn't find lens shape — treat it as
+    // extraction failure for lens callers so a shape-rejected reply
+    // lands in the errored-report fallback path instead of silently
+    // producing an empty LensReport (sage#63 round-3 blocker; round-5
+    // dedup: use the Pipeline's own bit instead of re-running
+    // `isLensShaped`).
+    if (!outcome.matchedPreferredShape) {
+      throw new Error(
+        `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +
+          `(no \`summary\` or \`findings\` field) — extractor=${outcome.extractor}`,
+      );
+    }
+    lensJson = outcome.result;
   } catch (err) {
     extractionError = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
@@ -215,7 +258,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
   // The workflow layer's inline-catch synthesis (workflow.ts) is the
   // sibling path; both go through `buildErroredLensReport` so the
   // contract stays byte-stable (Holly round 3, finding #2).
-  if (!lensResult) {
+  if (!lensJson) {
     return buildErroredLensReport({
       lens: spec.name,
       rationale: truncate(extractionError, 4000),
@@ -224,7 +267,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     });
   }
 
-  const findings = (lensResult.result.findings ?? []).map<Finding>((f) => ({
+  const findings = (lensJson.findings ?? []).map<Finding>((f) => ({
     path: f.path,
     line: normalizeLine(f.line),
     severity: normalizeSeverity(f.severity),
@@ -232,11 +275,10 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     rationale: f.rationale ?? "",
     ...(f.suggestion ? { suggestion: f.suggestion } : {}),
   }));
-  void extractionError;
 
   return {
     lens: spec.name,
-    summary: lensResult.result.summary ?? "",
+    summary: lensJson.summary ?? "",
     findings,
     durationMs: Date.now() - started,
   };
