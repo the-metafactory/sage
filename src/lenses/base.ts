@@ -1,5 +1,5 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
-import { extractFromRunOrThrow } from "../substrate/json/index.ts";
+import { extractFromRunOrThrow, isLensShaped } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -208,6 +208,19 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       input.substrate.jsonPipeline,
       input.substrate.name,
     );
+    // Lens-shape gate: the Pipeline's any-parseable Pass 2 can return
+    // a non-lens object (claude error envelope, unrelated JSON in a
+    // prose reply). The old `ClaudeSubstrate.runJson` threw on
+    // `envelope-without-lens`; preserve that signal here so a
+    // shape-rejected reply lands in the errored-report fallback path
+    // instead of silently producing an empty LensReport (sage#63 Sage
+    // review CodeQuality blocker on Pass-2 drop).
+    if (!isLensShaped(out.result)) {
+      throw new Error(
+        `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +
+          `(no \`summary\` or \`findings\` field) — extractor=${out.extractor}`,
+      );
+    }
     lensJson = out.result;
   } catch (err) {
     extractionError = err instanceof Error ? err.message : String(err);

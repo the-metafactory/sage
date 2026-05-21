@@ -26,6 +26,7 @@
  *                            itself if it's bare lens-shaped JSON).
  */
 
+import { isLensShaped } from "./shape.ts";
 import type { NamedExtractor } from "./types.ts";
 
 export const RAW: NamedExtractor = {
@@ -118,7 +119,13 @@ export const CLAUDE_ENVELOPE: NamedExtractor = {
  * hit. Used by `CLAUDE_ENVELOPE` to dig into the envelope's inner
  * `.result` string when bare parse fails (sage#57 acceptance
  * criterion: 4-tier text extraction preserved byte-for-byte). Kept
- * private to this module so the public Pipeline shape stays simple.
+ * private to this module — the outer Pipeline machinery is one layer
+ * up and can't be invoked from here without a `pipelines.ts` import
+ * cycle. `isLensShaped` is shared via the leaf `shape.ts`.
+ *
+ * Memoizes `JSON.parse(candidate)` so Pass 2 doesn't re-parse the
+ * same strings Pass 1 already parsed (sage#63 Sage review Pass-2
+ * recompute suggestion applied here too).
  */
 function extractLensShapedFromText(text: string): unknown | undefined {
   // Build candidate set once — mirrors the prior `extractJson` shape.
@@ -133,28 +140,19 @@ function extractLensShapedFromText(text: string): unknown | undefined {
   const trailing = findTrailingBalancedObject(text);
   if (trailing) candidates.push(trailing);
 
-  // Pass 1: prefer lens shape.
-  for (const c of candidates) {
-    const parsed = tryJsonParse(c.trim());
-    if (parsed !== undefined && isLensShapedLite(parsed)) return parsed;
+  // Pass 1: prefer lens shape. Memoize parsed results so Pass 2
+  // doesn't re-invoke JSON.parse on the same strings.
+  const parsedSlots: Array<unknown | undefined> = candidates.map(() => undefined);
+  for (let i = 0; i < candidates.length; i++) {
+    const parsed = tryJsonParse(candidates[i]!.trim());
+    parsedSlots[i] = parsed;
+    if (parsed !== undefined && isLensShaped(parsed)) return parsed;
   }
-  // Pass 2: any-parseable.
-  for (const c of candidates) {
-    const parsed = tryJsonParse(c.trim());
+  // Pass 2: any-parseable replayed from memo.
+  for (const parsed of parsedSlots) {
     if (parsed !== undefined) return parsed;
   }
   return undefined;
-}
-
-/**
- * Local copy of the lens-shape predicate to avoid an import cycle
- * with `pipelines.ts`. Same byte-for-byte semantics: object with
- * `summary` OR `findings`.
- */
-function isLensShapedLite(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const obj = value as Record<string, unknown>;
-  return "summary" in obj || "findings" in obj;
 }
 
 function pickClaudeResultText(envelope: unknown): string | undefined {

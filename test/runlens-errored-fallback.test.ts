@@ -96,4 +96,26 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
     expect(report.errored).toBeUndefined();
     expect(report.findings).toHaveLength(0);
   });
+
+  test("non-lens JSON (no summary/findings) lands in errored-report path (sage#63 Pass-2 drop)", async () => {
+    const nonLens: Substrate = {
+      name: "claude" as const,
+      displayName: "Claude Code",
+      bin: "claude",
+      jsonPipeline: TEXT_PIPELINE,
+      run: async () => ({
+        stdout: JSON.stringify({ type: "error", is_error: true }),
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
+      }),
+    };
+    const report = await runLens(
+      { name: "CodeQuality", focus: "x" },
+      input(nonLens),
+    );
+    expect(report.errored).toBe(true);
+    expect(report.findings[0]!.severity).toBe("important");
+    expect(report.findings[0]!.rationale).toMatch(/not lens-shaped/i);
+  });
 });

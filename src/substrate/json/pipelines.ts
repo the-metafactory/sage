@@ -13,22 +13,10 @@ import {
   RAW,
   TRAILING,
 } from "./extractors.ts";
+import { isLensShaped } from "./shape.ts";
 import type { JsonPipeline } from "./types.ts";
 
-/**
- * Lens contract predicate. The lens prompt asks the model for an
- * object with `summary` + `findings`; this is the cheapest possible
- * signal that a parsed JSON value matches that contract.
- *
- * Preserved byte-for-byte from `src/substrate/json.ts`'s
- * `isLensShaped` so the first-pass preference for lens shape produces
- * the same outcomes after the refactor (sage#57 acceptance criterion).
- */
-export function isLensShaped(value: unknown): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const obj = value as Record<string, unknown>;
-  return "summary" in obj || "findings" in obj;
-}
+export { isLensShaped } from "./shape.ts";
 
 /**
  * Default text-extraction Pipeline. Used by Substrates whose stdout

@@ -40,9 +40,22 @@ export interface JsonPipeline {
   readonly preferredShape: (value: unknown) => boolean;
 }
 
+/**
+ * Per-extractor attempt outcome carried on `ExtractionFailure`.
+ *
+ *   - `"undefined"`      — strategy did not apply (no fenced block,
+ *                          no balanced object, no envelope shape).
+ *                          `tryJsonParse` failures inside the
+ *                          extractor surface here too — the extractor
+ *                          swallows the parse error and returns
+ *                          `undefined`.
+ *   - `"shape-rejected"` — extractor produced a value but the
+ *                          Pipeline's `preferredShape` rejected it
+ *                          on Pass 1.
+ */
 export interface ExtractionAttempt {
   readonly extractor: string;
-  readonly reason: "undefined" | "shape-rejected" | "parse-error";
+  readonly reason: "undefined" | "shape-rejected";
 }
 
 export interface ExtractionFailure {
