@@ -93,14 +93,15 @@ const SENSITIVE_OPT_IN_KEYS = ["NODE_OPTIONS"] as const;
  */
 
 /**
- * Lightweight subset of `Substrate` that `buildSubstrateEnv` actually
- * needs. Accepting `Pick<Substrate, "name" | "envRequirements">`
- * keeps the env helper independent of `run()` / `jsonPipeline` /
- * `displayName` — tests can pass a synthetic stub with just the two
- * required fields.
+ * Lightweight subset of `Substrate` that `buildSubstrateEnv`
+ * actually needs. Reads only `envRequirements` — does NOT pin
+ * `name` because the env helper doesn't use it, and pinning would
+ * force test fixtures into the closed `SubstrateName` union when
+ * the synthetic-4th-Adapter story (sage#60) deliberately escapes
+ * that union.
  */
 import type { Substrate } from "./types.ts";
-export type SubstrateEnvContract = Pick<Substrate, "name" | "envRequirements">;
+export type SubstrateEnvContract = Pick<Substrate, "envRequirements">;
 
 export interface BuildSubstrateEnvOptions {
   /** Caller-supplied extra env vars; merged last and win on conflict. */

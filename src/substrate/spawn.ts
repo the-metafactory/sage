@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 
-import { buildSubstrateEnv, type SubstrateEnvContract } from "./env.ts";
+import { buildSubstrateEnv } from "./env.ts";
 import type {
+  Substrate,
   SubstrateRunOptions,
   SubstrateRunResult,
 } from "./types.ts";
@@ -40,10 +41,12 @@ const DEFAULT_SUBSTRATE_TIMEOUT_MS = 10 * 60 * 1000;
 
 interface SpawnSubstrateForInput {
   /**
-   * Substrate Adapter that owns this spawn. Carries the env
-   * contract (`envRequirements`) the env builder reads — sage#60.
+   * Substrate Adapter that owns this spawn. The spawn helper reads
+   * `name` (for the timeout env-var key + label) and forwards the
+   * Adapter to `buildSubstrateEnv` which reads `envRequirements`
+   * (sage#60).
    */
-  substrate: SubstrateEnvContract;
+  substrate: Pick<Substrate, "name" | "envRequirements">;
   bin: string;
   args: string[];
   opts: SubstrateRunOptions;

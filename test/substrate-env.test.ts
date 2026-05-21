@@ -14,17 +14,17 @@ import {
  */
 
 const pi: SubstrateEnvContract = {
-  name: "pi",
+
   envRequirements: { namespaces: ["PI_"], keys: [] },
 };
 
 const claude: SubstrateEnvContract = {
-  name: "claude",
+
   envRequirements: { namespaces: ["CLAUDE_", "ANTHROPIC_"], keys: [] },
 };
 
 const codex: SubstrateEnvContract = {
-  name: "codex",
+
   envRequirements: { namespaces: ["CODEX_"], keys: [] },
 };
 
@@ -210,7 +210,7 @@ describe("buildSubstrateEnv — per-Adapter envRequirements (sage#60)", () => {
     // {pi|claude|codex} map. A new Adapter declaring its own
     // namespaces just works.
     const fake: SubstrateEnvContract = {
-      name: "pi" as const, // SubstrateName is closed (registry.ts); reuse for the type.
+    // closed-enum freedom: env builder no longer pins SubstrateName
       envRequirements: { namespaces: ["FAKE_"], keys: [] },
     };
     const env = buildSubstrateEnv(fake, {
@@ -227,7 +227,7 @@ describe("buildSubstrateEnv — per-Adapter envRequirements (sage#60)", () => {
 
   test("envRequirements.keys adds exact-match keys on top of shared base", () => {
     const adapter: SubstrateEnvContract = {
-      name: "pi",
+    
       envRequirements: { namespaces: [], keys: ["MY_EXACT_KEY"] },
     };
     const env = buildSubstrateEnv(adapter, {
@@ -239,7 +239,7 @@ describe("buildSubstrateEnv — per-Adapter envRequirements (sage#60)", () => {
 
   test("empty namespaces + keys still gets shell essentials + provider keys", () => {
     const adapter: SubstrateEnvContract = {
-      name: "pi",
+    
       envRequirements: { namespaces: [], keys: [] },
     };
     const env = buildSubstrateEnv(adapter, {
