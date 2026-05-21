@@ -15,11 +15,8 @@ export {
   extractionFailureToError,
   type ExtractFromRunResult,
 } from "./extract-from-run.ts";
-export {
-  CLAUDE_PIPELINE,
-  TEXT_PIPELINE,
-  isLensShaped,
-} from "./pipelines.ts";
+export { CLAUDE_PIPELINE, TEXT_PIPELINE } from "./pipelines.ts";
+export { isLensShaped } from "./shape.ts";
 export type {
   ExtractionAttempt,
   ExtractionFailure,

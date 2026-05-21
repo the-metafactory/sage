@@ -49,12 +49,9 @@ export function extractFromRun<T>(
       ok: false,
       failure: {
         substrate: substrateLabel,
-        attempts: [
-          {
-            extractor: "n/a",
-            reason: "undefined",
-          },
-        ],
+        kind: "exit-nonzero",
+        exitCode: raw.exitCode,
+        attempts: [],
         text: truncateTail(raw.stderr || raw.stdout),
       },
     };
@@ -66,7 +63,8 @@ export function extractFromRun<T>(
       ok: false,
       failure: {
         substrate: substrateLabel,
-        attempts: [{ extractor: "n/a", reason: "undefined" }],
+        kind: "empty-stdout",
+        attempts: [],
         text: "",
       },
     };
@@ -115,6 +113,7 @@ export function extractFromRun<T>(
     ok: false,
     failure: {
       substrate: substrateLabel,
+      kind: "no-extractor-matched",
       attempts,
       text: truncateTail(text),
     },
@@ -134,12 +133,22 @@ export function extractFromRunOrThrow<T>(
 }
 
 export function extractionFailureToError(failure: ExtractionFailure): Error {
-  const attemptLines = failure.attempts
-    .map((a) => `  - ${a.extractor}: ${a.reason}`)
-    .join("\n");
-  return new Error(
-    `${failure.substrate} JSON extraction failed:\n${attemptLines}\n--- output (last ${ERROR_TEXT_TAIL_LEN} chars) ---\n${failure.text}`,
-  );
+  switch (failure.kind) {
+    case "exit-nonzero":
+      return new Error(
+        `${failure.substrate} exited with code ${failure.exitCode}: ${failure.text}`,
+      );
+    case "empty-stdout":
+      return new Error(`${failure.substrate} returned empty stdout`);
+    case "no-extractor-matched": {
+      const attemptLines = failure.attempts
+        .map((a) => `  - ${a.extractor}: ${a.reason}`)
+        .join("\n");
+      return new Error(
+        `${failure.substrate} JSON extraction failed:\n${attemptLines}\n--- output (last ${ERROR_TEXT_TAIL_LEN} chars) ---\n${failure.text}`,
+      );
+    }
+  }
 }
 
 function truncateTail(s: string): string {

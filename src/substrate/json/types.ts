@@ -58,8 +58,22 @@ export interface ExtractionAttempt {
   readonly reason: "undefined" | "shape-rejected";
 }
 
+/**
+ * Failure shape returned when extraction can't recover a JSON value.
+ *
+ * `kind` separates substrate-level failures (the subprocess crashed
+ * or returned nothing) from extraction-level failures (subprocess
+ * succeeded but no extractor recovered JSON). The error renderer
+ * branches on it so operators see a useful message — the prior code
+ * collapsed all three paths into "JSON extraction failed", losing the
+ * exit code on the substrate-crash path (sage#63 round-3 Sage
+ * CodeQuality suggestion).
+ */
 export interface ExtractionFailure {
   readonly substrate: string;
+  readonly kind: "exit-nonzero" | "empty-stdout" | "no-extractor-matched";
+  /** Present iff `kind === "exit-nonzero"`. */
+  readonly exitCode?: number;
   readonly attempts: readonly ExtractionAttempt[];
   /** Truncated tail of the raw text for error-message context. */
   readonly text: string;

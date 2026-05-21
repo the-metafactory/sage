@@ -16,8 +16,6 @@ import {
 import { isLensShaped } from "./shape.ts";
 import type { JsonPipeline } from "./types.ts";
 
-export { isLensShaped } from "./shape.ts";
-
 /**
  * Default text-extraction Pipeline. Used by Substrates whose stdout
  * is the assistant's raw text (`pi`, `codex`). Four strategies, in
