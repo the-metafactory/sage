@@ -101,14 +101,14 @@ to post the review to GitHub via `gh`. Pass `--wait 1200` to bump the cap.
 
 The receiving cortex's `ReviewConsumer` subscribes to (per declared sage flavors):
 
-- `local.{org}.{stack}.tasks.code-review.<flavor>` (broadcast — competing consumer; flavors from `runtime.capabilities`)
-- `local.{org}.{stack}.tasks.@did-mf-sage.>` (direct — named recipient)
+- `local.{principal}.{stack}.tasks.code-review.<flavor>` (Offer Dispatch — competing consumer; flavors from `runtime.capabilities`)
+- `local.{principal}.{stack}.tasks.@did-mf-sage.>` (Direct/Delegate Dispatch — named recipient)
 
 And publishes:
 
-- `local.{org}.{stack}.dispatch.task.{started,progress,completed,failed,post-failed}`
+- `local.{principal}.{stack}.dispatch.task.{started,progress,completed,failed,post-failed}`
   - `post-failed` (sage#16): lens work succeeded but the `gh pr review` call threw. Verdict is on disk at `~/.config/sage/reviews/<owner>-<repo>-<n>.{json,md}`; the envelope payload carries the original `verdict` plus a structured `error: { message }`. Sibling of `failed` in the lifecycle namespace because it describes what happened to the message, not the message itself.
-- `local.{org}.{stack}.code.pr.review.{approved,changes-requested,commented}`
+- `local.{principal}.{stack}.code.pr.review.{approved,changes-requested,commented}`
 
 ### Task envelope payload
 
@@ -141,7 +141,7 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
                                 │      NATS (Myelin bus)    │
                                 └────────────┬──────────────┘
                                              │
-       local.{org}.{stack}.tasks.code-review.<flavor>      local.{org}.{stack}.tasks.@did-mf-sage.>
+       local.{principal}.{stack}.tasks.code-review.<flavor>      local.{principal}.{stack}.tasks.@did-mf-sage.>
                                              ▼
             ┌───────────────────────────────────────────────────┐
             │   cortex ReviewConsumer (cortex#237)              │
@@ -168,8 +168,8 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
             └────────────────────────┬──────────────────────────┘
                                      │
                                      ▼
-              local.{org}.{stack}.code.pr.review.{approved|…}
-              local.{org}.{stack}.dispatch.task.completed
+              local.{principal}.{stack}.code.pr.review.{approved|…}
+              local.{principal}.{stack}.dispatch.task.completed
 ```
 
 ## Module map
