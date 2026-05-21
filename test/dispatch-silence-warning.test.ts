@@ -3,7 +3,7 @@ import {
   SILENCE_WARN_MS,
   buildSilenceWarning,
   shouldEmitSilenceWarning,
-} from "../src/bus/dispatcher.ts";
+} from "../src/bus/lifecycle.ts";
 
 /**
  * sage#49: `sage dispatch` against a misaligned cortex (org / stack

@@ -1,6 +1,39 @@
 import { describe, test, expect } from "bun:test";
-import { buildReviewTaskPayload } from "../src/bus/dispatcher.ts";
+import {
+  buildTaskEnvelopeSpec,
+  type BuildTaskEnvelopeSpecInput,
+} from "../src/tasks/envelope.ts";
+import type { DispatchTaskPayload } from "../src/tasks/types.ts";
 import type { PrRef } from "../src/forge/types.ts";
+
+/**
+ * Adapter so the existing payload-shape tests still read against the
+ * Task Envelope Module surface. `buildReviewTaskPayload` used to be
+ * exported from `dispatcher.ts`; sage#58 folded it into
+ * `buildTaskEnvelopeSpec`. The tests only care about the payload
+ * field, so this helper unwraps the spec and drops the placeholder
+ * `principal`/`stack` segments needed for Subject derivation.
+ */
+function buildReviewTaskPayload(input: {
+  ref: PrRef;
+  post: boolean;
+  timeoutSeconds?: number;
+  forge?: "github" | "gitlab";
+  reviewer?: string;
+}): DispatchTaskPayload {
+  const args: BuildTaskEnvelopeSpecInput = {
+    ref: input.ref,
+    principal: "compat",
+    stack: "compat",
+    post: input.post,
+    ...(input.timeoutSeconds !== undefined
+      ? { timeoutSeconds: input.timeoutSeconds }
+      : {}),
+    ...(input.forge !== undefined ? { forge: input.forge } : {}),
+    ...(input.reviewer !== undefined ? { reviewer: input.reviewer } : {}),
+  };
+  return buildTaskEnvelopeSpec(args).payload;
+}
 
 /**
  * Issue #8: dispatcher used to always send `payload.post: opts.post`, which

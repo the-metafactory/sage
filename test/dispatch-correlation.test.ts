@@ -1,7 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import {
-  matchesPublishedEnvelope,
-} from "../src/bus/dispatcher.ts";
+import { matchesPublishedEnvelope } from "../src/tasks/envelope.ts";
 
 /**
  * sage#53: dispatch correlation_id filter mismatch with cortex#237 spec.
