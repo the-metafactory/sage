@@ -237,6 +237,19 @@ export async function* interpretDispatch(
 
   let lifePending: PendingNext = lifeIter.next();
   let verdictPending: PendingNext = verdictIter.next();
+  // Cache wrapped pending promises alongside the raw ones — `.then()`
+  // creates a new promise on each invocation, so re-wrapping the
+  // same `lifePending` / `verdictPending` inside `race()` on every
+  // loop iteration accumulates unresolved `.then()` handlers
+  // against the quiet stream's pending promise (sage#65 round-2
+  // Performance suggestion). Recreated only when the underlying
+  // iterator advances.
+  let lifeWrapped: Promise<RaceWinner> = lifePending.then(
+    (result) => ({ kind: "lifecycle" as const, result }),
+  );
+  let verdictWrapped: Promise<RaceWinner> = verdictPending.then(
+    (result) => ({ kind: "verdict" as const, result }),
+  );
   let silenceFired = false;
 
   try {
@@ -248,8 +261,8 @@ export async function* interpretDispatch(
         : Math.max(0, input.timeouts.silenceMs - elapsed);
 
       const winner = await race(
-        lifePending,
-        verdictPending,
+        lifeWrapped,
+        verdictWrapped,
         silenceRemainingMs,
         waitRemainingMs,
       );
@@ -293,6 +306,10 @@ export async function* interpretDispatch(
         }
 
         lifePending = lifeIter.next();
+        lifeWrapped = lifePending.then((result) => ({
+          kind: "lifecycle" as const,
+          result,
+        }));
 
         const item = result.value as SubscribedEnvelope;
         const action = lifecycleActionFromType(item.envelope.type);
@@ -335,9 +352,17 @@ export async function* interpretDispatch(
           verdictPending = new Promise<IteratorResult<SubscribedEnvelope>>(
             () => {},
           );
+          verdictWrapped = verdictPending.then((r) => ({
+            kind: "verdict" as const,
+            result: r,
+          }));
           continue;
         }
         verdictPending = verdictIter.next();
+        verdictWrapped = verdictPending.then((r) => ({
+          kind: "verdict" as const,
+          result: r,
+        }));
         yield extractVerdictEvent(result.value);
         continue;
       }
@@ -361,15 +386,15 @@ export async function* interpretDispatch(
 }
 
 async function race(
-  lifePending: PendingNext,
-  verdictPending: PendingNext,
+  lifeWrapped: Promise<RaceWinner>,
+  verdictWrapped: Promise<RaceWinner>,
   silenceMs: number,
   waitMs: number,
 ): Promise<RaceWinner> {
   const timers: Array<ReturnType<typeof setTimeout>> = [];
   const racers: Array<Promise<RaceWinner>> = [
-    lifePending.then((result) => ({ kind: "lifecycle" as const, result })),
-    verdictPending.then((result) => ({ kind: "verdict" as const, result })),
+    lifeWrapped,
+    verdictWrapped,
   ];
   if (Number.isFinite(silenceMs)) {
     racers.push(

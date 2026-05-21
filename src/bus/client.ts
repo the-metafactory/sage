@@ -177,31 +177,41 @@ function makeEnvelopeStream(
   log: (msg: string) => void,
 ): EnvelopeStream {
   let closed = false;
+  const closeOnce = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    try {
+      // `Subscription.unsubscribe()` returns void; nats.js handles
+      // the underlying UNSUB frame. Awaiting in case a future
+      // version returns a Promise.
+      await Promise.resolve(sub.unsubscribe());
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      log(`unsubscribe failed: ${m}`);
+    }
+  };
   return {
     async *[Symbol.asyncIterator](): AsyncIterator<SubscribedEnvelope> {
-      for await (const msg of sub) {
-        if (closed) return;
-        const envelope = safeDecodeEnvelope(msg.data, msg.subject, {
-          onError: (reason, subject) =>
-            log(`${reason} on ${subject ?? "?"}`),
-        });
-        if (!envelope) continue;
-        yield { envelope, subject: msg.subject };
-      }
-    },
-    async close() {
-      if (closed) return;
-      closed = true;
+      // try/finally so the NATS subscription is released when the
+      // consumer breaks / returns out of `for await`. Without it,
+      // an early-exit consumer would leak the subscription until
+      // `close()` was explicitly invoked (sage#65 round-2
+      // CodeQuality important).
       try {
-        // `Subscription.unsubscribe()` returns void; nats.js handles
-        // the underlying UNSUB frame. Awaiting in case a future
-        // version returns a Promise.
-        await Promise.resolve(sub.unsubscribe());
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        log(`unsubscribe failed: ${m}`);
+        for await (const msg of sub) {
+          if (closed) return;
+          const envelope = safeDecodeEnvelope(msg.data, msg.subject, {
+            onError: (reason, subject) =>
+              log(`${reason} on ${subject ?? "?"}`),
+          });
+          if (!envelope) continue;
+          yield { envelope, subject: msg.subject };
+        }
+      } finally {
+        await closeOnce();
       }
     },
+    close: closeOnce,
   };
 }
 
