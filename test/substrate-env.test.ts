@@ -1,11 +1,36 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildSubstrateEnv } from "../src/substrate/env.ts";
+import {
+  buildSubstrateEnv,
+  type SubstrateEnvContract,
+} from "../src/substrate/env.ts";
+
+/**
+ * sage#60 — each Substrate Adapter declares its own
+ * `envRequirements` (namespaces + extra keys) as data; the env
+ * builder reads it instead of a hardcoded closed-class map.
+ *
+ * Test fixtures mirror the production Adapters' declarations.
+ */
+
+const pi: SubstrateEnvContract = {
+
+  envRequirements: { namespaces: ["PI_"], keys: [] },
+};
+
+const claude: SubstrateEnvContract = {
+
+  envRequirements: { namespaces: ["CLAUDE_", "ANTHROPIC_"], keys: [] },
+};
+
+const codex: SubstrateEnvContract = {
+
+  envRequirements: { namespaces: ["CODEX_"], keys: [] },
+};
 
 describe("buildSubstrateEnv allow-list", () => {
   test("forwards provider keys + shell essentials", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: {
         PATH: "/usr/bin",
         HOME: "/tmp",
@@ -21,19 +46,10 @@ describe("buildSubstrateEnv allow-list", () => {
     expect(env.UNRELATED_VAR).toBeUndefined();
   });
 
-  // pi.dev's `google` provider (its default) reads `GEMINI_API_KEY`.
-  // Sage previously only forwarded `GOOGLE_API_KEY` /
-  // `GOOGLE_GENERATIVE_AI_API_KEY`, so the key never reached pi and
-  // operators saw "missing API key" errors despite having Gemini
-  // configured. Forwarding all three names covers every documented
-  // env-var shape.
   test.each(["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"])(
     "forwards %s for Gemini",
     (key) => {
-      const env = buildSubstrateEnv({
-        substrate: "pi",
-        parent: { [key]: "AIza-xxxx" },
-      });
+      const env = buildSubstrateEnv(pi, { parent: { [key]: "AIza-xxxx" } });
       expect(env[key]).toBe("AIza-xxxx");
     },
   );
@@ -41,49 +57,42 @@ describe("buildSubstrateEnv allow-list", () => {
   test.each(["AZURE_OPENAI_API_KEY", "CEREBRAS_API_KEY"])(
     "forwards %s (newer provider-key shape)",
     (key) => {
-      const env = buildSubstrateEnv({
-        substrate: "pi",
-        parent: { [key]: "secret" },
-      });
+      const env = buildSubstrateEnv(pi, { parent: { [key]: "secret" } });
       expect(env[key]).toBe("secret");
     },
   );
 
   test("forwards PI_* namespace only to pi substrate", () => {
-    const pi = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { PI_PROVIDER: "anthropic", CLAUDE_MODEL: "sonnet" },
     });
-    expect(pi.PI_PROVIDER).toBe("anthropic");
-    expect(pi.CLAUDE_MODEL).toBeUndefined();
+    expect(env.PI_PROVIDER).toBe("anthropic");
+    expect(env.CLAUDE_MODEL).toBeUndefined();
   });
 
   test("forwards CLAUDE_* + ANTHROPIC_* namespace only to claude substrate", () => {
-    const claude = buildSubstrateEnv({
-      substrate: "claude",
+    const env = buildSubstrateEnv(claude, {
       parent: { PI_PROVIDER: "anthropic", CLAUDE_MODEL: "sonnet" },
     });
-    expect(claude.CLAUDE_MODEL).toBe("sonnet");
-    expect(claude.PI_PROVIDER).toBeUndefined();
+    expect(env.CLAUDE_MODEL).toBe("sonnet");
+    expect(env.PI_PROVIDER).toBeUndefined();
   });
 
   test("forwards CODEX_* namespace only to codex substrate", () => {
-    const codex = buildSubstrateEnv({
-      substrate: "codex",
+    const env = buildSubstrateEnv(codex, {
       parent: {
         CODEX_MODEL: "gpt-5.2",
         PI_PROVIDER: "anthropic",
         CLAUDE_MODEL: "sonnet",
       },
     });
-    expect(codex.CODEX_MODEL).toBe("gpt-5.2");
-    expect(codex.PI_PROVIDER).toBeUndefined();
-    expect(codex.CLAUDE_MODEL).toBeUndefined();
+    expect(env.CODEX_MODEL).toBe("gpt-5.2");
+    expect(env.PI_PROVIDER).toBeUndefined();
+    expect(env.CLAUDE_MODEL).toBeUndefined();
   });
 
   test("SAGE_ENV_DENY blocks otherwise-allowed keys", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: {
         OPENAI_API_KEY: "sk-leaked",
         SAGE_ENV_DENY: "OPENAI_API_KEY",
@@ -93,30 +102,26 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("SAGE_ENV_ALLOW extends allow-list", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { MY_CUSTOM_TOKEN: "x", SAGE_ENV_ALLOW: "MY_CUSTOM_TOKEN" },
     });
     expect(env.MY_CUSTOM_TOKEN).toBe("x");
   });
 
   test("legacy PI_ENV_ALLOW / PI_ENV_DENY are still honored (back-compat)", () => {
-    const allowed = buildSubstrateEnv({
-      substrate: "pi",
+    const allowed = buildSubstrateEnv(pi, {
       parent: { MY_CUSTOM_TOKEN: "x", PI_ENV_ALLOW: "MY_CUSTOM_TOKEN" },
     });
     expect(allowed.MY_CUSTOM_TOKEN).toBe("x");
 
-    const denied = buildSubstrateEnv({
-      substrate: "pi",
+    const denied = buildSubstrateEnv(pi, {
       parent: { OPENAI_API_KEY: "sk-leaked", PI_ENV_DENY: "OPENAI_API_KEY" },
     });
     expect(denied.OPENAI_API_KEY).toBeUndefined();
   });
 
   test("sage-internal keys never reach the substrate", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: {
         SAGE_DID: "did:mf:sage",
         SAGE_ORG: "metafactory",
@@ -132,8 +137,7 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("forwarding-policy keys never reach the substrate", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: {
         PI_ENV_ALLOW: "K1,K2",
         PI_ENV_DENY: "K3",
@@ -148,16 +152,14 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("NODE_OPTIONS is sensitive — NOT forwarded by default", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { NODE_OPTIONS: "--require=evil.js" },
     });
     expect(env.NODE_OPTIONS).toBeUndefined();
   });
 
   test("NODE_OPTIONS forwarded when explicitly allowed via SAGE_ENV_ALLOW", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: {
         NODE_OPTIONS: "--require=evil.js",
         SAGE_ENV_ALLOW: "NODE_OPTIONS",
@@ -167,8 +169,7 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("opts.deny strips even allow-listed keys", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { OPENAI_API_KEY: "k" },
       deny: ["OPENAI_API_KEY"],
     });
@@ -176,8 +177,7 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("extra wins on conflict", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { PATH: "/usr/bin" },
       extra: { PATH: "/opt/bin" },
     });
@@ -185,8 +185,7 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("extra: undefined value deletes the key", () => {
-    const env = buildSubstrateEnv({
-      substrate: "pi",
+    const env = buildSubstrateEnv(pi, {
       parent: { OPENAI_API_KEY: "k" },
       extra: { OPENAI_API_KEY: undefined },
     });
@@ -194,15 +193,59 @@ describe("buildSubstrateEnv allow-list", () => {
   });
 
   test("ANTHROPIC_API_KEY is forwarded to both substrates (provider key)", () => {
-    const pi = buildSubstrateEnv({
-      substrate: "pi",
+    const piEnv = buildSubstrateEnv(pi, {
       parent: { ANTHROPIC_API_KEY: "sk-ant-x" },
     });
-    const claude = buildSubstrateEnv({
-      substrate: "claude",
+    const claudeEnv = buildSubstrateEnv(claude, {
       parent: { ANTHROPIC_API_KEY: "sk-ant-x" },
     });
-    expect(pi.ANTHROPIC_API_KEY).toBe("sk-ant-x");
-    expect(claude.ANTHROPIC_API_KEY).toBe("sk-ant-x");
+    expect(piEnv.ANTHROPIC_API_KEY).toBe("sk-ant-x");
+    expect(claudeEnv.ANTHROPIC_API_KEY).toBe("sk-ant-x");
+  });
+});
+
+describe("buildSubstrateEnv — per-Adapter envRequirements (sage#60)", () => {
+  test("synthetic 4th Substrate with FAKE_ namespace forwards FAKE_* env", () => {
+    // Pins the closed-class enum removal: no hardcoded
+    // {pi|claude|codex} map. A new Adapter declaring its own
+    // namespaces just works.
+    const fake: SubstrateEnvContract = {
+    // closed-enum freedom: env builder no longer pins SubstrateName
+      envRequirements: { namespaces: ["FAKE_"], keys: [] },
+    };
+    const env = buildSubstrateEnv(fake, {
+      parent: {
+        FAKE_PROVIDER: "anthropic",
+        FAKE_MODEL: "claude-sonnet-4-6",
+        PI_PROVIDER: "should-not-leak",
+      },
+    });
+    expect(env.FAKE_PROVIDER).toBe("anthropic");
+    expect(env.FAKE_MODEL).toBe("claude-sonnet-4-6");
+    expect(env.PI_PROVIDER).toBeUndefined();
+  });
+
+  test("envRequirements.keys adds exact-match keys on top of shared base", () => {
+    const adapter: SubstrateEnvContract = {
+    
+      envRequirements: { namespaces: [], keys: ["MY_EXACT_KEY"] },
+    };
+    const env = buildSubstrateEnv(adapter, {
+      parent: { MY_EXACT_KEY: "value", OTHER: "ignored" },
+    });
+    expect(env.MY_EXACT_KEY).toBe("value");
+    expect(env.OTHER).toBeUndefined();
+  });
+
+  test("empty namespaces + keys still gets shell essentials + provider keys", () => {
+    const adapter: SubstrateEnvContract = {
+    
+      envRequirements: { namespaces: [], keys: [] },
+    };
+    const env = buildSubstrateEnv(adapter, {
+      parent: { PATH: "/usr/bin", ANTHROPIC_API_KEY: "k" },
+    });
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.ANTHROPIC_API_KEY).toBe("k");
   });
 });

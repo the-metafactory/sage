@@ -40,6 +40,10 @@ export class CodexSubstrate implements Substrate {
   readonly name = "codex" as const;
   readonly displayName = "Codex CLI";
   readonly jsonPipeline = TEXT_PIPELINE;
+  readonly envRequirements = {
+    namespaces: ["CODEX_"],
+    keys: [],
+  } as const;
 
   constructor(private readonly cfg: CodexSubstrateConfig = {}) {}
 
@@ -73,7 +77,7 @@ export class CodexSubstrate implements Substrate {
     args.push(...buildPromptArgs(opts));
 
     return spawnSubstrateFor({
-      name: "codex",
+      substrate: this,
       bin: this.bin,
       args,
       opts,

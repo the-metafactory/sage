@@ -48,6 +48,10 @@ export class ClaudeSubstrate implements Substrate {
   readonly name = "claude" as const;
   readonly displayName = "Claude Code";
   readonly jsonPipeline = CLAUDE_PIPELINE;
+  readonly envRequirements = {
+    namespaces: ["CLAUDE_", "ANTHROPIC_"],
+    keys: [],
+  } as const;
 
   constructor(private readonly cfg: ClaudeSubstrateConfig = {}) {}
 
@@ -62,7 +66,7 @@ export class ClaudeSubstrate implements Substrate {
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {
     const args = this.buildArgs(opts);
     return spawnSubstrateFor({
-      name: "claude",
+      substrate: this,
       bin: this.bin,
       args,
       opts,

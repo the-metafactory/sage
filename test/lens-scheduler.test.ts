@@ -18,6 +18,7 @@ const stubSubstrate: Substrate = {
   displayName: "pi.dev",
   bin: "pi",
   jsonPipeline: TEXT_PIPELINE,
+  envRequirements: { namespaces: [], keys: [] },
   run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
 };
 

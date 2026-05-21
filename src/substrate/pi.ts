@@ -37,6 +37,10 @@ export class PiSubstrate implements Substrate {
   readonly name = "pi" as const;
   readonly displayName = "pi.dev";
   readonly jsonPipeline = TEXT_PIPELINE;
+  readonly envRequirements = {
+    namespaces: ["PI_"],
+    keys: [],
+  } as const;
 
   constructor(private readonly cfg: PiSubstrateConfig = {}) {}
 
@@ -71,7 +75,7 @@ export class PiSubstrate implements Substrate {
     args.push(opts.prompt);
 
     return spawnSubstrateFor({
-      name: "pi",
+      substrate: this,
       bin: this.bin,
       args,
       opts,
