@@ -12,7 +12,10 @@ import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
 import {
-  buildErroredLensReport,
+  readConcurrencyEnv,
+  runLenses,
+} from "./scheduler.ts";
+import {
   decideVerdict,
   type LensReport,
   type ReviewVerdict,
@@ -46,21 +49,17 @@ export interface ReviewOptions {
   lensConcurrency?: number;
   /**
    * Prior Findings Module — fetches Sage-authored findings from earlier
-   * Reviews on the same PR, used by Lenses to suppress repeat findings
-   * across iterations (CONTEXT.md — Prior Findings). When omitted, the
-   * workflow runs without prior-iteration context (every Finding is
-   * treated as new).
+   * Reviews on the same PR (CONTEXT.md). When omitted, defaults from
+   * `opts.forge.reviewSource()`.
    */
   priorFindings?: PriorFindings;
   /**
-   * Fired when `priorFindings.collect()` returns a non-`ok` status
-   * (trust gate could not resolve a Sage identity, or the Forge source
-   * threw). Used by `sage dispatch` to surface the degradation on a
-   * Lifecycle envelope payload (sage#56 — degraded paths are
-   * first-class, not silent).
+   * Fired when `priorFindings.collect()` returns a non-`ok` status.
+   * Used by `sage dispatch` to surface the degradation on a Lifecycle
+   * envelope payload (sage#56).
    */
   onPriorFindingsDegraded?: (status: PriorFindingsStatus, reason: string) => void | Promise<void>;
-  /** Progress callback fired after each lens completes — used for envelope emission in serve mode. */
+  /** Progress callback fired after each lens completes — envelope emission. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
 }
 
@@ -68,99 +67,43 @@ export interface ReviewResult {
   verdict: ReviewVerdict;
   /**
    * True only when `opts.post` was set AND `postReview` actually returned
-   * without throwing. Was previously `opts.post === true` (intent, not
-   * outcome) — the lens-completion path published the verdict envelope
-   * with `posted: true` even when the GH `gh pr review` call had crashed
-   * silently. See sage#16.
+   * without throwing (sage#16).
    */
   posted: boolean;
-  /**
-   * Set when GH blocked self-{approve,request-changes} and postReview fell
-   * back to `--comment`. The verdict.decision is unchanged — only the
-   * GitHub-side event surface was downgraded. Undefined when post was
-   * skipped or the original event was accepted.
-   */
   postedEvent?: ReviewEvent;
   downgraded?: boolean;
   /** Post-step failure detail (set only when `opts.post && !posted`). */
   postError?: PostError;
   /**
    * Absolute path to the on-disk verdict file (`.md` form, ready for
-   * `gh pr review --body-file`). Always set when `persistVerdict`
-   * succeeded — the operator can re-post manually after a post
-   * failure. Built by workflow (which already owns the persist/post
-   * sequence) so the bus layer doesn't need to know the storage
-   * layout (sage#16 round-5 review).
+   * `gh pr review --body-file`). Set when `persistVerdict` succeeded.
    */
   recoveryPath?: string;
 }
 
-/**
- * Structured shape for a post-step failure. Plain JSON — no `Error`
- * prototype, no stack trace — so it can cross the NATS bus.
- */
 export interface PostError {
   message: string;
 }
 
-/**
- * Cap on UTF-16 characters of `gh` stderr that ride the post-failed
- * envelope. 500 is enough to surface a typical `gh pr review` failure
- * (auth message, HTTP status + body snippet) without becoming a vector
- * for stderr-stuffing if the subprocess crashes mid-output. Internal —
- * tests assert observable truncation behavior, not this constant.
- */
 const POST_ERROR_MAX_LEN = 500;
 
-export function readConcurrencyEnv(name: string): number | undefined {
-  return parseConcurrencyValue(process.env[name], name);
-}
-
-export function parseConcurrencyValue(
-  raw: string | undefined,
-  source: string,
-): number | undefined {
-  if (raw === undefined || raw.trim() === "") return undefined;
-  const trimmed = raw.trim();
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error(`${source} must be an integer >= 1 (got ${JSON.stringify(raw)})`);
-  }
-  const value = Number(trimmed);
-  if (!Number.isSafeInteger(value) || value < 1) {
-    throw new Error(`${source} must be an integer >= 1 (got ${JSON.stringify(raw)})`);
-  }
-  return value;
-}
+/** Re-export for back-compat with existing CLI callers (sage#59). */
+export { parseConcurrencyValue, readConcurrencyEnv } from "./scheduler.ts";
 
 /**
- * Strip control bytes and ANSI escape sequences from a string. `gh`'s
- * stderr can include color codes and (theoretically) attacker-shaped
- * content reflected from a remote repository's name or PR body; we
- * sanitize before the message rides the NATS bus or hits an operator's
- * terminal via `console.error`.
- *
- *   - `\x00-\x08` + `\x0b-\x1f` + `\x7f`: C0 control bytes except
- *     `\t` (`\x09`) and `\n` (`\x0a`), which are useful in error
- *     dumps.
- *   - `\x1b\[[0-9;]*[A-Za-z]`: CSI ANSI escape sequences (the most
- *     common terminal-injection vector).
+ * Strip control bytes + ANSI escapes — gh stderr can include color
+ * codes / attacker-shaped content reflected from a remote repo name.
+ * Sanitized before the message rides the NATS bus or hits the
+ * operator's terminal.
  */
 function sanitizeErrorMessage(raw: string): string {
-  // ORDER MATTERS: alternation is left-to-right at each position, so the
-  // CSI pattern must come BEFORE the control-byte class — otherwise the
-  // engine consumes `\x1b` as a single control byte (which it is) before
-  // the CSI pattern gets a chance to match `\x1b[31m` as a unit, leaving
-  // a visible `[31m` orphan in the output.
+  // ORDER MATTERS: CSI pattern must come BEFORE the control-byte
+  // class so `\x1b[31m` matches as a unit, not as `\x1b` + `[31m`.
   // eslint-disable-next-line no-control-regex
   return raw.replace(/\x1b\[[0-9;]*[A-Za-z]|[\x00-\x08\x0b-\x1f\x7f]/g, "");
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
-  // Default the Prior Findings Module from the Forge's own
-  // `ForgeReviewSource` Adapter so cortex / CLI callers that don't
-  // wire one explicitly still get prior-iteration context. Explicit
-  // `opts.priorFindings` wins (e.g., tests injecting an in-memory
-  // source) — sage#56 design A+D.
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
@@ -172,10 +115,6 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   if (priorResult.status !== "ok") {
     const reason = priorResult.reason ?? "";
-    // Stderr keeps existing operator-visible signal; the callback feeds
-    // the Lifecycle envelope on `sage dispatch` so degraded paths
-    // become first-class (sage#56 Acceptance: workflow exposes
-    // `onPriorFindingsDegraded` for envelope mapping).
     console.error(
       `[workflow] prior Sage findings degraded (${priorResult.status}); continuing without iteration context: ${reason}`,
     );
@@ -186,111 +125,25 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       console.error(`[workflow] onPriorFindingsDegraded failed: ${m}`);
     }
   }
-  const priorFindings = priorResult.findings;
 
-  const ctx = { pr, diff };
-  const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};
-
-  // Lens execution is parallel: each lens runs against the same read-only
-  // `pr`/`diff` inputs and produces a disjoint `LensReport`, so the
-  // sequential awaits in the prior implementation were latency the
-  // operator paid for, not correctness. Per cortex/docs/design-pi-dev-
-  // review-agent.md §7 + sage#26.
-  //
-  // Each lens runs in its own async slot with an inline try/catch:
-  //   - on success: the lens's own `LensReport` is returned
-  //   - on throw:   an `errored: true` `LensReport` is synthesized
-  //                 (severity `important`, captured elapsed time,
-  //                 captured error message)
-  //
-  // Catching inline (rather than via `Promise.allSettled` post-processing)
-  // ensures `onLensComplete` fires for BOTH the success and failure
-  // paths. Per Holly re-review of sage#27 (finding #2): the lens-
-  // failure event is the most important event in the progress stream,
-  // and silently skipping the callback on rejection meant bridge
-  // consumers never saw it. The lens-completion callback now has a
-  // uniform contract: fires exactly once per applicable lens, with the
-  // report (real or synthesized) the verdict will see.
-  //
-  // Order is preserved by filtering against the registry first;
-  // `Promise.all` keeps the result array aligned with the input. The
-  // rendered review body therefore reads the same way regardless of
-  // which lens happened to finish first, which keeps verdict diffs
-  // stable for downstream consumers (cortex dashboard, pilot loop) and
-  // matches the registry-declared reading order in src/lenses/registry.ts
-  // §canonical lens order.
-  const applicable = LENSES.filter(
-    (lens) => !lens.applies || lens.applies(ctx),
-  );
-  const lensConcurrency =
+  const concurrency =
     opts.lensConcurrency ?? readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
 
-  const runOne = async (lens: (typeof applicable)[number]): Promise<LensReport> => {
-    const lensStartedAt = Date.now();
-    let report: LensReport;
-    try {
-      report = await lens.review({
-        pr,
-        diff,
-        priorFindings,
-        substrate: opts.substrate,
-        ...timeout,
-      });
-    } catch (err) {
-      // Defense in depth — `runLens` (base.ts) catches substrate
-      // errors and returns an `errored: true` report rather than
-      // throwing, so today this branch is reached only by lens
-      // implementations that bypass `runLens`. Both synthesis sites
-      // share `buildErroredLensReport` (types.ts) so the verdict
-      // gate, renderer, and bus contract see byte-stable shape
-      // regardless of which failure path triggered (Holly round 3,
-      // finding #2).
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[workflow] lens "${lens.name}" threw — synthesizing errored report: ${msg}`,
-      );
-      report = buildErroredLensReport({
-        lens: lens.name,
-        rationale: msg,
-        durationMs: Date.now() - lensStartedAt,
-        source: "runtime",
-      });
-    }
-    // Progress callbacks (e.g., NATS publish in daemon mode) fire as
-    // each lens completes, INCLUDING errored ones. Order is
-    // completion-order, not registry-order — bridge consumers treat
-    // `dispatch.task.progress` events as a stream. Callback failures
-    // are non-critical: a publish error must not discard a completed
-    // lens report.
-    try {
-      await opts.onLensComplete?.(report);
-    } catch (cbErr) {
-      const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
-      console.error(`[workflow] onLensComplete (${report.lens}) failed: ${m}`);
-    }
-    return report;
-  };
-
-  const lensReports: LensReport[] =
-    lensConcurrency === undefined
-      ? await Promise.all(applicable.map(runOne))
-      : await runBounded(applicable, lensConcurrency, runOne);
+  const lensReports = await runLenses({
+    lenses: LENSES,
+    ctx: { pr, diff },
+    substrate: opts.substrate,
+    priorFindings: priorResult.findings,
+    ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    ...(concurrency !== undefined ? { concurrency } : {}),
+    ...(opts.onLensComplete !== undefined ? { onLensComplete: opts.onLensComplete } : {}),
+  });
 
   const verdict = decideVerdict(lensReports);
   const body = renderReviewBody(verdict, opts.substrate.displayName);
 
-  // Persist the verdict + rendered body BEFORE the network call. If
-  // `postReview` fails permanently, the operator can re-post from disk
-  // without re-running the lenses. The file at
-  // ~/.config/sage/reviews/<owner>-<repo>-<pr>.{json,md} holds the latest
-  // verdict per PR; older ones are overwritten on next run.
-  // The recovery path is built here (workflow already owns persist +
-  // post) and threaded through `ReviewResult` only when persistence
-  // actually succeeded. Bridge ships the opaque string in the
-  // post-failed envelope payload; neither bus nor dispatcher needs a
-  // compile-time dependency on the storage layout (sage#16 round-5).
-  // Persist-failure → `recoveryPath` stays undefined so we don't
-  // promise a file that isn't there (sage#16 round-6).
+  // Persist BEFORE post: a failed post leaves the verdict on disk
+  // for manual re-post via `gh pr review --body-file` (sage#16).
   const persisted = persistVerdict(opts.ref, verdict, body);
   const recoveryPath = persisted ? verdictFilePath(opts.ref, "md") : undefined;
 
@@ -307,31 +160,6 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   };
 }
 
-async function runBounded<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  runOne: (item: T) => Promise<R>,
-): Promise<R[]> {
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-    throw new Error(`lensConcurrency must be an integer >= 1 (got ${concurrency})`);
-  }
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const workerCount = Math.min(concurrency, items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = next++;
-        if (index >= items.length) return;
-        results[index] = await runOne(items[index]);
-      }
-    }),
-  );
-
-  return results;
-}
-
 interface AttemptPostResult {
   posted: boolean;
   postedEvent?: ReviewEvent;
@@ -340,19 +168,11 @@ interface AttemptPostResult {
 }
 
 /**
- * Attempt the GitHub post step. Pure helper extracted from `reviewPr` so
- * the data flow is explicit (return value, not four outer-scope mutations)
- * and `reviewPr` stays scannable (sage#16 round-2 review).
- *
- * Never re-throws — pre-#16, a `postReview` throw escaped out of
- * `reviewPr` and landed in the bridge's outer try/catch, kicking the
- * whole task to `dispatch.task.failed`. That conflated a post failure
- * with a lens failure and discarded the (otherwise-valid) verdict. Now
- * the verdict is preserved on disk by the caller before this is invoked,
- * and the captured error is surfaced via `postError`; bridge mode
- * publishes a dedicated `dispatch.task.post-failed` envelope (sibling of
- * `failed` in the lifecycle namespace) so operators can act on the
- * partial outcome without the lens work being lost.
+ * Attempt the Forge post step. Pure helper extracted from `reviewPr`
+ * so the data flow is explicit (return value, not outer-scope
+ * mutations) and `reviewPr` stays scannable. Never re-throws —
+ * pre-sage#16, a `postReview` throw escaped and conflated a post
+ * failure with a lens failure.
  */
 async function attemptPost(
   forge: ForgeBackend,
@@ -382,9 +202,7 @@ async function attemptPost(
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : String(err);
     // Sanitize BEFORE truncate so control bytes / ANSI escapes can't
-    // partially-survive past the slice boundary. The sanitized string
-    // is the one that rides the bus AND the one operators see in their
-    // terminal, so the same hygiene applies in both directions.
+    // partially-survive past the slice boundary.
     const sanitized = sanitizeErrorMessage(rawMessage);
     const message =
       sanitized.length > POST_ERROR_MAX_LEN
@@ -411,12 +229,6 @@ function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
 export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string): string {
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
   const sections = verdict.lenses.map((lens) => {
-    // Errored lenses get a distinctive heading + callout so operators
-    // see at a glance that a lens didn't actually run. The `lens.summary`
-    // line is dropped on errored sections to avoid the triple-redundant
-    // statement (heading + callout + summary all saying the same thing
-    // — Holly round 3, finding #3). The synthesized `important` finding
-    // still renders below with the substrate-specific rationale.
     const heading = lens.errored
       ? `### ${lens.lens} — DID NOT RUN`
       : `### ${lens.lens}`;
@@ -445,9 +257,9 @@ export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string
 }
 
 /**
- * Pick a code-fence delimiter longer than any run of backticks inside the
- * content. Prevents triple-backtick injection when an LLM-supplied
- * `suggestion` contains its own fenced code block.
+ * Pick a code-fence delimiter longer than any run of backticks
+ * inside the content. Prevents triple-backtick injection when an
+ * LLM-supplied `suggestion` contains its own fenced code block.
  */
 function pickFence(content: string): string {
   let maxRun = 0;
