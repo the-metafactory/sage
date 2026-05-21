@@ -41,8 +41,12 @@ export interface LensRunInput {
    * Findings already raised by Sage on earlier reviews of this PR. They
    * are prompt context only: lenses should avoid re-raising them unless
    * the current diff introduces a materially new instance.
+   *
+   * `readonly` because the Prior Findings Module owns the array; lenses
+   * are consumers and must not mutate it (sage#56 — Module Interface
+   * returns `readonly PriorReviewFinding[]`).
    */
-  priorFindings?: PriorReviewFinding[];
+  priorFindings?: readonly PriorReviewFinding[];
 }
 
 interface RawLensOutput {
@@ -135,7 +139,7 @@ function normalizeLine(raw: number | string | undefined): number {
 function buildStdinContent(
   pr: PrMetadata,
   diff: string,
-  priorFindings: PriorReviewFinding[] = [],
+  priorFindings: readonly PriorReviewFinding[] = [],
 ): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)

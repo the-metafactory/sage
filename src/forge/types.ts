@@ -16,6 +16,8 @@
 
 import { z } from "zod";
 
+import type { ForgeReviewSource } from "../prior-findings/types.ts";
+
 /**
  * Identifier of the forge platform. Discriminator for routing in
  * `selectForge` (sage#43 Phase 4). Today the only value sage emits is
@@ -102,14 +104,24 @@ export interface PostReviewResult {
 /**
  * Prior-review finding parsed out of a previous Sage review body. Used
  * by lenses to suppress repeat findings on iterative reviews. The
- * markdown grammar is forge-agnostic — every backend's
- * `priorSageReviewFindings` reuses the same parser.
+ * markdown grammar is forge-agnostic — every Forge's
+ * `ForgeReviewSource` Adapter feeds bodies into the shared parser in
+ * `src/forge/prior-findings.ts`; trust-gating + dedup + enrichment
+ * live in the Prior Findings Module (`src/prior-findings/`).
+ *
+ * `lensClass` and `postedAt` are additive (sage#56) — old review
+ * bodies parse with these undefined, and the workflow keeps reading
+ * `readonly PriorReviewFinding[]` so no Lens file changes.
  */
 export interface PriorReviewFinding {
   path: string;
   line: number;
   severity: "blocker" | "important" | "suggestion" | "nit";
   title: string;
+  /** Lens-name attribution when the source body carried a heading. */
+  lensClass?: string;
+  /** ISO-8601 timestamp from the source review body. */
+  postedAt?: string;
 }
 
 export interface AuthStatusResult {
@@ -156,10 +168,14 @@ export interface ForgeBackend {
   postReview(input: PostReviewInput): Promise<PostReviewResult>;
 
   /**
-   * Fetch findings from prior Sage reviews on this PR/MR. Used by
-   * lenses to suppress repeat findings on iterative review cycles.
+   * Construct the `ForgeReviewSource` Adapter for this Forge — the
+   * platform-primitive Port consumed by the Prior Findings Module
+   * (`src/prior-findings/`). Trust-gating, parsing, and dedup all
+   * happen in the Module; the Adapter only knows how to fetch raw
+   * review bodies + resolve the Sage identity for this Forge
+   * (sage#56).
    */
-  priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]>;
+  reviewSource(): ForgeReviewSource;
 
   /** Cheap auth-health probe. */
   authStatus(): Promise<AuthStatusResult>;

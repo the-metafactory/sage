@@ -2,12 +2,12 @@ import { spawn } from "node:child_process";
 import { mkdtemp, writeFile, unlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
 
 import { buildGlabEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
+import { createGitLabReviewSource } from "../../prior-findings/gitlab-source.ts";
+import type { ForgeReviewSource } from "../../prior-findings/types.ts";
 import { PrMetadataSchema } from "../types.ts";
-import { parseSageReviewFindings } from "../prior-findings.ts";
 import type {
   AuthStatusResult,
   ForgeBackend,
@@ -15,7 +15,6 @@ import type {
   PostReviewResult,
   PrMetadata,
   PrRef,
-  PriorReviewFinding,
   ReviewEvent,
 } from "../types.ts";
 
@@ -40,9 +39,6 @@ import type {
  */
 
 export const DEFAULT_GITLAB_HOST = "gitlab.com";
-
-/** Module-level cache so `gitlabViewerLogin()` only fetches once per process per host. */
-const glabViewerLoginCache = new Map<string, Promise<string>>();
 
 /**
  * URL forms the parser recognizes:
@@ -256,6 +252,15 @@ async function glabJson<T>(
   return raw as T;
 }
 
+/**
+ * Exported subprocess + JSON helper for use by the GitLab
+ * `ForgeReviewSource` Adapter (`src/prior-findings/gitlab-source.ts`).
+ * Same shape as the internal `glabJson` — exists at module scope so the
+ * Adapter can reuse env-building, hostname routing, and JSON-error
+ * messages without duplicating subprocess code.
+ */
+export const glabApiJson = glabJson;
+
 function resolveHost(ref: PrRef, fallback: string): string {
   return ref.host ?? fallback;
 }
@@ -420,123 +425,6 @@ export async function postReview(
   }
 }
 
-const GlNoteSchema = z.object({
-  body: z.string(),
-  author: z.object({ username: z.string() }),
-  created_at: z.string(),
-  system: z.boolean(),
-  type: z.string().nullable(),
-});
-
-const GlNotesPagesSchema = z.array(z.array(GlNoteSchema));
-
-const GlUserSchema = z.object({
-  username: z.string(),
-});
-
-export async function gitlabViewerLogin(
-  host: string,
-): Promise<string> {
-  const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
-  if (envLogin) return envLogin;
-
-  const cached = glabViewerLoginCache.get(host);
-  if (cached) return cached;
-
-  // Wrap with a .catch that evicts the rejected promise — otherwise a
-  // single transient `glab api /user` failure would poison the cache
-  // for the rest of the process lifetime, breaking every subsequent
-  // prior-findings lookup against this host (sage review on #46,
-  // CodeQuality lens).
-  const promise = fetchGitlabViewerLogin(host).catch((err) => {
-    glabViewerLoginCache.delete(host);
-    throw err;
-  });
-  glabViewerLoginCache.set(host, promise);
-  return promise;
-}
-
-async function fetchGitlabViewerLogin(host: string): Promise<string> {
-  const raw = await glabJson<unknown>(["/user"], host);
-  const parsed = GlUserSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`glab api /user payload failed schema validation: ${parsed.error.message}`);
-  }
-  return parsed.data.username;
-}
-
-/**
- * Coerce `glab api --paginate` output into a flat note array.
- *
- * `glab` returns either a single JSON array (one page of results) or
- * an array-of-arrays (multiple pages slurped). Each per-forge backend
- * has to handle both shapes; isolating the normalization here keeps
- * `priorSageReviewFindings` focused on Sage-finding extraction (sage
- * review on #46, Maintainability lens — split mixed-responsibility
- * block).
- */
-export function normalizeGlNotes(
-  raw: unknown,
-  refLabel: string,
-): Array<z.infer<typeof GlNoteSchema>> {
-  const paged = GlNotesPagesSchema.safeParse(raw);
-  if (paged.success) return paged.data.flat();
-  const flat = z.array(GlNoteSchema).safeParse(raw);
-  if (!flat.success) {
-    throw new Error(
-      `glab api notes payload failed schema validation for ${refLabel}: ${flat.error.message}`,
-    );
-  }
-  return flat.data;
-}
-
-/**
- * Pull Sage's prior findings out of a flat note list. Filters to
- * non-system, non-DiffNote, sage-authored notes, then runs the
- * forge-agnostic markdown parser. De-dupes by
- * `path:line:severity:title`.
- */
-export function extractSageFindingsFromNotes(
-  notes: Array<z.infer<typeof GlNoteSchema>>,
-  sageAuthorLogin: string,
-): PriorReviewFinding[] {
-  const seen = new Set<string>();
-  const findings: PriorReviewFinding[] = [];
-  for (const note of notes) {
-    if (note.system) continue;
-    if (note.type === "DiffNote") continue;
-    if (note.author.username !== sageAuthorLogin) continue;
-    for (const finding of parseSageReviewFindings(note.body)) {
-      const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      findings.push(finding);
-    }
-  }
-  return findings;
-}
-
-export async function priorSageReviewFindings(
-  ref: PrRef,
-  fallbackHost: string = DEFAULT_GITLAB_HOST,
-): Promise<PriorReviewFinding[]> {
-  const host = resolveHost(ref, fallbackHost);
-  const project = encodeProject(ref);
-  const [raw, sageAuthorLogin] = await Promise.all([
-    glabJson<unknown>(
-      [
-        "--paginate",
-        `/projects/${project}/merge_requests/${ref.number}/notes?sort=asc&per_page=100`,
-      ],
-      host,
-    ),
-    gitlabViewerLogin(host),
-  ]);
-
-  const notes = normalizeGlNotes(raw, `${formatProjectPath(ref)}!${ref.number}`);
-  return extractSageFindingsFromNotes(notes, sageAuthorLogin);
-}
-
 export async function glabAuthStatus(
   host: string = DEFAULT_GITLAB_HOST,
 ): Promise<AuthStatusResult> {
@@ -559,7 +447,7 @@ interface RunGlabResult {
 
 const DEFAULT_GLAB_TIMEOUT_MS = 30_000;
 
-async function runGlab(
+export async function runGlab(
   args: string[],
   opts: { allowNonZero?: boolean; timeoutMs?: number } = {},
 ): Promise<RunGlabResult> {
@@ -615,6 +503,13 @@ export class GitLabBackend implements ForgeBackend {
   readonly kind = "gitlab" as const;
   readonly defaultHost: string;
 
+  /**
+   * Per-backend-instance review source. The Adapter holds a per-host
+   * identity cache in its closure; sharing one Adapter across Reviews
+   * keeps the cache hot.
+   */
+  private _reviewSource?: ForgeReviewSource;
+
   constructor(opts: { defaultHost?: string } = {}) {
     this.defaultHost = opts.defaultHost ?? DEFAULT_GITLAB_HOST;
   }
@@ -635,8 +530,11 @@ export class GitLabBackend implements ForgeBackend {
     return postReview(input, this.defaultHost);
   }
 
-  priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]> {
-    return priorSageReviewFindings(ref, this.defaultHost);
+  reviewSource(): ForgeReviewSource {
+    if (!this._reviewSource) {
+      this._reviewSource = createGitLabReviewSource({ defaultHost: this.defaultHost });
+    }
+    return this._reviewSource;
   }
 
   authStatus(): Promise<AuthStatusResult> {
