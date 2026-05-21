@@ -14,7 +14,6 @@
 export {
   extractFromRun,
   extractFromRunOrThrow,
-  extractionFailureToError,
   type ExtractFromRunResult,
 } from "./extract-from-run.ts";
 export { CLAUDE_PIPELINE, TEXT_PIPELINE } from "./pipelines.ts";

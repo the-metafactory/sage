@@ -1,5 +1,5 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
-import { extractFromRunOrThrow, isLensShaped } from "../substrate/json/index.ts";
+import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -203,25 +203,42 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       responseFormat: "json",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });
-    const out = extractFromRunOrThrow<RawLensOutput>(
+    const outcome = extractFromRun<RawLensOutput>(
       raw,
       input.substrate.jsonPipeline,
       input.substrate.name,
     );
-    // Lens-shape gate: the Pipeline's any-parseable Pass 2 can return
-    // a non-lens object (claude error envelope, unrelated JSON in a
-    // prose reply). The old `ClaudeSubstrate.runJson` threw on
-    // `envelope-without-lens`; preserve that signal here so a
-    // shape-rejected reply lands in the errored-report fallback path
-    // instead of silently producing an empty LensReport (sage#63 Sage
-    // review CodeQuality blocker on Pass-2 drop).
-    if (!isLensShaped(out.result)) {
+    if (!outcome.ok) {
+      // Substrate crashed, returned empty stdout, or no extractor
+      // produced any JSON. Surface as a synthesized errored report.
+      const reasons = outcome.failure.attempts
+        .map((a) => `  - ${a.extractor}: ${a.reason}`)
+        .join("\n");
       throw new Error(
-        `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +
-          `(no \`summary\` or \`findings\` field) — extractor=${out.extractor}`,
+        `${outcome.failure.substrate} extraction failed (${outcome.failure.kind})` +
+          (outcome.failure.exitCode !== undefined
+            ? ` exit=${outcome.failure.exitCode}`
+            : "") +
+          (reasons ? `\n${reasons}` : "") +
+          (outcome.failure.text ? `\n--- output ---\n${outcome.failure.text}` : ""),
       );
     }
-    lensJson = out.result;
+    // Lens-shape gate: Pipeline's any-parseable Pass 2 can return a
+    // non-lens object (claude error envelope, unrelated JSON in a
+    // prose reply). `matchedPreferredShape: false` is the Pipeline's
+    // signal that Pass 1 didn't find lens shape — treat it as
+    // extraction failure for lens callers so a shape-rejected reply
+    // lands in the errored-report fallback path instead of silently
+    // producing an empty LensReport (sage#63 round-3 blocker; round-5
+    // dedup: use the Pipeline's own bit instead of re-running
+    // `isLensShaped`).
+    if (!outcome.matchedPreferredShape) {
+      throw new Error(
+        `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +
+          `(no \`summary\` or \`findings\` field) — extractor=${outcome.extractor}`,
+      );
+    }
+    lensJson = outcome.result;
   } catch (err) {
     extractionError = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console

@@ -32,7 +32,7 @@ import type { NamedExtractor } from "./types.ts";
 export const RAW: NamedExtractor = {
   name: "raw",
   extract(text) {
-    return tryJsonParse(text.trim());
+    return tryJsonParse(text);
   },
 };
 
@@ -93,7 +93,7 @@ export const TRAILING: NamedExtractor = {
 export const CLAUDE_ENVELOPE: NamedExtractor = {
   name: "claude-envelope",
   extract(text) {
-    const envelope = tryJsonParse(text.trim());
+    const envelope = tryJsonParse(text);
     if (envelope === undefined) return undefined;
     const inner = pickClaudeResultText(envelope);
     if (inner !== undefined) {

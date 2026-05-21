@@ -100,7 +100,7 @@ export function extractFromRunOrThrow<T>(
   throw extractionFailureToError(outcome.failure);
 }
 
-export function extractionFailureToError(failure: ExtractionFailure): Error {
+function extractionFailureToError(failure: ExtractionFailure): Error {
   switch (failure.kind) {
     case "exit-nonzero":
       return new Error(
