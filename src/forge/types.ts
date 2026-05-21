@@ -102,19 +102,67 @@ export interface PostReviewResult {
 /**
  * Prior-review finding parsed out of a previous Sage review body. Used
  * by lenses to suppress repeat findings on iterative reviews. The
- * markdown grammar is forge-agnostic — every backend's
- * `priorSageReviewFindings` reuses the same parser.
+ * markdown grammar is forge-agnostic — every Forge's
+ * `ForgeReviewSource` Adapter feeds bodies into the shared parser in
+ * `src/forge/prior-findings.ts`; trust-gating + dedup + enrichment
+ * live in the Prior Findings Module (`src/prior-findings/`).
+ *
+ * `lensClass` and `postedAt` are additive (sage#56) — old review
+ * bodies parse with these undefined, and the workflow keeps reading
+ * `readonly PriorReviewFinding[]` so no Lens file changes.
  */
 export interface PriorReviewFinding {
   path: string;
   line: number;
   severity: "blocker" | "important" | "suggestion" | "nit";
   title: string;
+  /** Lens-name attribution when the source body carried a heading. */
+  lensClass?: string;
+  /** ISO-8601 timestamp from the source review body. */
+  postedAt?: string;
 }
 
 export interface AuthStatusResult {
   ok: boolean;
   output: string;
+}
+
+/**
+ * Platform-primitive Port consumed by the Prior Findings Module
+ * (`src/prior-findings/`). Defined here, not in the Module, so the
+ * layering reads cleanly — the Forge owns the Port shape (it's the
+ * lower-layer thing being adapted), the Module owns the orchestration
+ * that consumes it. One Adapter per Forge backend.
+ *
+ * Contract:
+ *   - Pre-filters system / diff-pinned notes (they cannot be a Sage
+ *     review).
+ *   - Returns bodies oldest-first; the Module preserves that order.
+ *   - Resolves the Sage identity internally — the Adapter knows the
+ *     Forge's user API and caches per-host inside its closure.
+ *   - `sageLogin === null` ⇒ identity could not be resolved (env
+ *     unset AND the Forge's user API failed). The Module maps this to
+ *     `PriorFindingsResult.status = "trust-gate-failed"`.
+ */
+export interface ForgeReviewSource {
+  fetchReviewBodies(ref: PrRef): Promise<ForgeReviewSourceResult>;
+}
+
+export interface ForgeReviewSourceResult {
+  readonly bodies: readonly ForgeReviewBody[];
+  readonly sageLogin: string | null;
+}
+
+export interface ForgeReviewBody {
+  readonly authorLogin: string;
+  readonly body: string;
+  /**
+   * ISO-8601 timestamp from the Forge's review/note record. `undefined`
+   * when the Forge omitted it. The Module forwards present values
+   * onto `PriorReviewFinding.postedAt`; `undefined` passes through
+   * unchanged — no empty-string sentinel in the Module's contract.
+   */
+  readonly postedAt?: string;
 }
 
 /**
@@ -156,10 +204,14 @@ export interface ForgeBackend {
   postReview(input: PostReviewInput): Promise<PostReviewResult>;
 
   /**
-   * Fetch findings from prior Sage reviews on this PR/MR. Used by
-   * lenses to suppress repeat findings on iterative review cycles.
+   * Construct the `ForgeReviewSource` Adapter for this Forge — the
+   * platform-primitive Port consumed by the Prior Findings Module
+   * (`src/prior-findings/`). Trust-gating, parsing, and dedup all
+   * happen in the Module; the Adapter only knows how to fetch raw
+   * review bodies + resolve the Sage identity for this Forge
+   * (sage#56).
    */
-  priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]>;
+  reviewSource(): ForgeReviewSource;
 
   /** Cheap auth-health probe. */
   authStatus(): Promise<AuthStatusResult>;

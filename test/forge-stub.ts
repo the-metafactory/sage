@@ -18,9 +18,9 @@ import type {
   PostReviewInput,
   PostReviewResult,
   PrMetadata,
-  PrRef,
-  PriorReviewFinding,
 } from "../src/forge/types.ts";
+import { createInMemoryReviewSource } from "../src/prior-findings/in-memory-source.ts";
+import type { ForgeReviewSource } from "../src/prior-findings/types.ts";
 
 export interface MakeStubForgeOptions {
   pr: PrMetadata | unknown;
@@ -31,13 +31,26 @@ export interface MakeStubForgeOptions {
    * downgraded: false }` and increments no counter.
    */
   postReview?: (input: PostReviewInput) => Promise<PostReviewResult>;
-  /** Override prior findings; default empty. */
-  priorSageReviewFindings?: (ref: PrRef) => Promise<PriorReviewFinding[]>;
   /** Override `authStatus`; default `{ ok: true, output: "" }`. */
   authStatus?: () => Promise<{ ok: boolean; output: string }>;
+  /**
+   * Override the `ForgeReviewSource` returned by `reviewSource()`.
+   * Default: an in-memory source returning an empty trusted-author
+   * result (`sageLogin: "sage", bodies: []`) so workflow tests get an
+   * `ok` PriorFindings status without exercising prior-iteration logic.
+   */
+  reviewSource?: ForgeReviewSource;
 }
 
 export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
+  const reviewSource =
+    opts.reviewSource ??
+    createInMemoryReviewSource({
+      behavior: {
+        kind: "ok",
+        result: { sageLogin: "sage", bodies: [] },
+      },
+    });
   return {
     kind: "github",
     parseRef: (ref: string) => {
@@ -47,10 +60,10 @@ export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
     },
     prView: async () => opts.pr as PrMetadata,
     prDiff: async () => opts.diff,
-    priorSageReviewFindings: opts.priorSageReviewFindings ?? (async () => []),
     postReview:
       opts.postReview ??
       (async () => ({ posted: "comment", downgraded: false })),
+    reviewSource: () => reviewSource,
     authStatus: opts.authStatus ?? (async () => ({ ok: true, output: "" })),
   };
 }

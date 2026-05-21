@@ -2,8 +2,12 @@ import type {
   ForgeBackend,
   PrRef,
   ReviewEvent,
-  PriorReviewFinding,
 } from "../forge/types.ts";
+import { createPriorFindings } from "../prior-findings/index.ts";
+import type {
+  PriorFindings,
+  PriorFindingsStatus,
+} from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
 import { LENSES } from "./registry.ts";
@@ -40,6 +44,22 @@ export interface ReviewOptions {
    * fully-parallel behavior; set via CLI flag or SAGE_LENS_CONCURRENCY.
    */
   lensConcurrency?: number;
+  /**
+   * Prior Findings Module — fetches Sage-authored findings from earlier
+   * Reviews on the same PR, used by Lenses to suppress repeat findings
+   * across iterations (CONTEXT.md — Prior Findings). When omitted, the
+   * workflow runs without prior-iteration context (every Finding is
+   * treated as new).
+   */
+  priorFindings?: PriorFindings;
+  /**
+   * Fired when `priorFindings.collect()` returns a non-`ok` status
+   * (trust gate could not resolve a Sage identity, or the Forge source
+   * threw). Used by `sage dispatch` to surface the degradation on a
+   * Lifecycle envelope payload (sage#56 — degraded paths are
+   * first-class, not silent).
+   */
+  onPriorFindingsDegraded?: (status: PriorFindingsStatus, reason: string) => void | Promise<void>;
   /** Progress callback fired after each lens completes — used for envelope emission in serve mode. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
 }
@@ -136,20 +156,37 @@ function sanitizeErrorMessage(raw: string): string {
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
-  const priorFindingsPromise = opts.forge
-    .priorSageReviewFindings(opts.ref)
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[workflow] prior Sage review lookup failed; continuing without iteration context: ${msg}`,
-      );
-      return [] as PriorReviewFinding[];
-    });
-  const [pr, diff, priorFindings] = await Promise.all([
+  // Default the Prior Findings Module from the Forge's own
+  // `ForgeReviewSource` Adapter so cortex / CLI callers that don't
+  // wire one explicitly still get prior-iteration context. Explicit
+  // `opts.priorFindings` wins (e.g., tests injecting an in-memory
+  // source) — sage#56 design A+D.
+  const priorFindingsModule: PriorFindings =
+    opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
+
+  const [pr, diff, priorResult] = await Promise.all([
     opts.forge.prView(opts.ref),
     opts.forge.prDiff(opts.ref),
-    priorFindingsPromise,
+    priorFindingsModule.collect(opts.ref),
   ]);
+
+  if (priorResult.status !== "ok") {
+    const reason = priorResult.reason ?? "";
+    // Stderr keeps existing operator-visible signal; the callback feeds
+    // the Lifecycle envelope on `sage dispatch` so degraded paths
+    // become first-class (sage#56 Acceptance: workflow exposes
+    // `onPriorFindingsDegraded` for envelope mapping).
+    console.error(
+      `[workflow] prior Sage findings degraded (${priorResult.status}); continuing without iteration context: ${reason}`,
+    );
+    try {
+      await opts.onPriorFindingsDegraded?.(priorResult.status, reason);
+    } catch (cbErr) {
+      const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
+      console.error(`[workflow] onPriorFindingsDegraded failed: ${m}`);
+    }
+  }
+  const priorFindings = priorResult.findings;
 
   const ctx = { pr, diff };
   const timeout = opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {};

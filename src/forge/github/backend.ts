@@ -2,12 +2,22 @@ import { spawn } from "node:child_process";
 import { writeFileSync, unlinkSync, mkdtempSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { z } from "zod";
 
 import { buildGhEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
+import { createGitHubReviewSource } from "../../prior-findings/github-source.ts";
 import { PrMetadataSchema } from "../types.ts";
 import { parseSageReviewFindings } from "../prior-findings.ts";
+import type {
+  AuthStatusResult,
+  ForgeBackend,
+  ForgeReviewSource,
+  PostReviewInput,
+  PostReviewResult,
+  PrMetadata,
+  PrRef,
+  ReviewEvent,
+} from "../types.ts";
 
 /**
  * Re-export of the canonical `PrMetadataSchema` (now owned by
@@ -17,16 +27,6 @@ import { parseSageReviewFindings } from "../prior-findings.ts";
  * `forge/types.ts` directly.
  */
 export { PrMetadataSchema };
-import type {
-  AuthStatusResult,
-  ForgeBackend,
-  PostReviewInput,
-  PostReviewResult,
-  PrMetadata,
-  PrRef,
-  PriorReviewFinding,
-  ReviewEvent,
-} from "../types.ts";
 
 /**
  * GitHub adapter — wraps the `gh` CLI. Piggybacks on the user's existing
@@ -210,11 +210,6 @@ export async function postReview(input: PostReviewInput): Promise<PostReviewResu
   }
 }
 
-export interface GhReview {
-  body: string;
-  user: { login: string };
-}
-
 /**
  * Re-export of the canonical `parseSageReviewFindings` (now owned by
  * `../prior-findings.ts`) so historical
@@ -222,90 +217,6 @@ export interface GhReview {
  * call sites keep resolving. Folds in once all callers migrate.
  */
 export { parseSageReviewFindings };
-
-const GhReviewSchema = z.object({
-  body: z.string().nullable().transform((s) => s ?? ""),
-  user: z.object({ login: z.string() }),
-});
-
-const GhReviewPagesSchema = z.array(z.array(GhReviewSchema));
-
-const GhUserSchema = z.object({
-  login: z.string(),
-});
-
-let ghViewerLoginPromise: Promise<string> | undefined;
-
-export function parsePriorSageReviewFindingsFromReviews(
-  reviews: GhReview[],
-  sageAuthorLogin: string,
-): PriorReviewFinding[] {
-  const seen = new Set<string>();
-  const findings: PriorReviewFinding[] = [];
-  for (const review of reviews) {
-    if (review.user.login !== sageAuthorLogin) continue;
-    for (const finding of parseSageReviewFindings(review.body)) {
-      const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      findings.push(finding);
-    }
-  }
-  return findings;
-}
-
-async function ghViewerLogin(): Promise<string> {
-  const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
-  if (envLogin) return envLogin;
-  ghViewerLoginPromise ??= fetchGhViewerLogin();
-  return ghViewerLoginPromise;
-}
-
-async function fetchGhViewerLogin(): Promise<string> {
-  const out = await runGh(["api", "user"]);
-  let raw: unknown;
-  try {
-    raw = JSON.parse(out.stdout);
-  } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh api user returned non-JSON output: ${m}`);
-  }
-
-  const parsed = GhUserSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`gh api user payload failed schema validation: ${parsed.error.message}`);
-  }
-  return parsed.data.login;
-}
-
-export async function priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]> {
-  const [out, sageAuthorLogin] = await Promise.all([
-    runGh([
-      "api",
-      "--paginate",
-      "--slurp",
-      `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`,
-    ]),
-    ghViewerLogin(),
-  ]);
-
-  let raw: unknown;
-  try {
-    raw = JSON.parse(out.stdout);
-  } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh api reviews returned non-JSON output: ${m}`);
-  }
-
-  const parsed = GhReviewPagesSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(
-      `gh api reviews payload failed schema validation for ${formatRepo(ref)}#${ref.number}: ${parsed.error.message}`,
-    );
-  }
-
-  return parsePriorSageReviewFindingsFromReviews(parsed.data.flat(), sageAuthorLogin);
-}
 
 export async function ghAuthStatus(): Promise<AuthStatusResult> {
   try {
@@ -317,7 +228,7 @@ export async function ghAuthStatus(): Promise<AuthStatusResult> {
   }
 }
 
-interface RunGhResult {
+export interface RunGhResult {
   stdout: string;
   stderr: string;
   exitCode: number;
@@ -325,7 +236,13 @@ interface RunGhResult {
 
 const DEFAULT_GH_TIMEOUT_MS = 30_000;
 
-async function runGh(
+/**
+ * Subprocess wrapper around the `gh` CLI. Exported so the
+ * `ForgeReviewSource` Adapter in `src/prior-findings/github-source.ts`
+ * can reuse the same env-building / timeout / stderr-capture path
+ * without duplicating spawn code.
+ */
+export async function runGh(
   args: string[],
   opts: { allowNonZero?: boolean; timeoutMs?: number } = {},
 ): Promise<RunGhResult> {
@@ -384,6 +301,14 @@ async function runGh(
 export class GitHubBackend implements ForgeBackend {
   readonly kind = "github" as const;
 
+  /**
+   * Per-backend-instance review source. Constructed lazily on first
+   * read; subsequent `reviewSource()` calls return the same Adapter
+   * so the GitHub identity cache inside its closure is shared across
+   * the Reviews that use this backend instance.
+   */
+  private _reviewSource?: ForgeReviewSource;
+
   parseRef(input: string): PrRef {
     return parsePrRef(input);
   }
@@ -400,8 +325,11 @@ export class GitHubBackend implements ForgeBackend {
     return postReview(input);
   }
 
-  priorSageReviewFindings(ref: PrRef): Promise<PriorReviewFinding[]> {
-    return priorSageReviewFindings(ref);
+  reviewSource(): ForgeReviewSource {
+    if (!this._reviewSource) {
+      this._reviewSource = createGitHubReviewSource();
+    }
+    return this._reviewSource;
   }
 
   authStatus(): Promise<AuthStatusResult> {
@@ -410,4 +338,4 @@ export class GitHubBackend implements ForgeBackend {
 }
 
 /** Type re-exports for callers that haven't migrated to `../types.ts` yet. */
-export type { PrRef, PrMetadata, ReviewEvent, PriorReviewFinding, PostReviewInput, PostReviewResult };
+export type { PrRef, PrMetadata, ReviewEvent, PostReviewInput, PostReviewResult };
