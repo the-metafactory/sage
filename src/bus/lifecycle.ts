@@ -102,10 +102,9 @@ export const SILENCE_WARN_MS = 5_000;
 
 /**
  * Pure-policy: should the silence warning fire given the current
- * dispatcher state? Kept as a free function so the policy stays
- * unit-testable without timer mocks. The interpreter's outer loop
- * encodes the same predicate inline via `silenceFired`; this helper
- * is the documented contract.
+ * dispatcher state? Free function so the policy stays unit-testable
+ * without timer mocks. The interpreter calls this directly — one
+ * source of truth (sage#65 round-3 Maintainability suggestion).
  */
 export function shouldEmitSilenceWarning(state: {
   terminated: boolean;
@@ -277,13 +276,25 @@ export async function* interpretDispatch(
       }
 
       if (winner.kind === "silence") {
+        // Re-check policy at fire-time. Silence has its own boolean
+        // because both branches (lifecycle arrival + initial fire)
+        // need to suppress further firings; routing through the
+        // exported `shouldEmitSilenceWarning` keeps one
+        // predicate definition.
+        if (
+          shouldEmitSilenceWarning({
+            terminated: false,
+            receivedSeen: silenceFired,
+          })
+        ) {
+          yield {
+            kind: "silence-warning",
+            principal: input.context.principal,
+            stack: input.context.stack,
+            silenceMs: input.timeouts.silenceMs,
+          };
+        }
         silenceFired = true;
-        yield {
-          kind: "silence-warning",
-          principal: input.context.principal,
-          stack: input.context.stack,
-          silenceMs: input.timeouts.silenceMs,
-        };
         continue;
       }
 
