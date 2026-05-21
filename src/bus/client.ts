@@ -34,9 +34,20 @@ import {
   type Sovereignty,
 } from "@the-metafactory/myelin";
 
-import type { TaskEnvelopeSpec } from "../tasks/envelope.ts";
-
 const te = new TextEncoder();
+
+/**
+ * Transport-level publish input. The bus layer stays a thin
+ * transport boundary — domain-specific shapes (TaskEnvelopeSpec
+ * etc.) are adapted at the composer (dispatcher.ts), not imported
+ * into the bus module. Symmetric with the prior `PublishInput` in
+ * the deleted `emit.ts`.
+ */
+export interface PublishInput {
+  readonly subject: string;
+  readonly type: string;
+  readonly payload: Record<string, unknown>;
+}
 
 export interface SubscribedEnvelope {
   readonly envelope: MyelinEnvelope;
@@ -62,12 +73,15 @@ export interface BusClient {
   subscribe(subjectPattern: string): EnvelopeStream;
 
   /**
-   * Publish one Task envelope. Returns the published envelope's `id`
+   * Publish one envelope. Returns the published envelope's `id`
    * (cortex#237 §5.x uses this value as `correlation_id` on every
-   * emitted lifecycle / verdict envelope).
+   * emitted lifecycle / verdict envelope). The bus layer doesn't
+   * know about task envelopes specifically — domain adapters
+   * (`buildTaskEnvelopeSpec`) supply the subject + type + payload
+   * triple via `PublishInput`.
    */
   publish(
-    spec: TaskEnvelopeSpec,
+    input: PublishInput,
     sovereignty: Sovereignty,
     source: string,
   ): Promise<string>;
@@ -116,12 +130,12 @@ function makeBusClient(
       return makeEnvelopeStream(sub, opts.log);
     },
 
-    async publish(spec, sovereignty, source) {
+    async publish(input, sovereignty, source) {
       const envelope = createEnvelope({
         source,
-        type: spec.type,
+        type: input.type,
         sovereignty,
-        payload: spec.payload as Record<string, unknown>,
+        payload: input.payload,
       });
 
       const result = validateEnvelope(envelope);
@@ -130,17 +144,17 @@ function makeBusClient(
           .map((e) => `${e.field}: ${e.message}`)
           .join(", ");
         throw new Error(
-          `refusing to publish invalid envelope on ${spec.subject}: ${detail}`,
+          `refusing to publish invalid envelope on ${input.subject}: ${detail}`,
         );
       }
 
       try {
-        nc.publish(spec.subject, te.encode(JSON.stringify(envelope)));
-        opts.log(`published ${spec.subject} (${envelope.id})`);
+        nc.publish(input.subject, te.encode(JSON.stringify(envelope)));
+        opts.log(`published ${input.subject} (${envelope.id})`);
         return envelope.id;
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
-        opts.log(`publish failed for ${spec.subject} (${envelope.id}): ${m}`);
+        opts.log(`publish failed for ${input.subject} (${envelope.id}): ${m}`);
         throw err;
       }
     },

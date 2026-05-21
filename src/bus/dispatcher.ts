@@ -102,7 +102,15 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
 
   try {
     log(`▶ publishing ${spec.subject}`);
-    publishedId = await bus.publish(spec, sovereignty, opts.source);
+    publishedId = await bus.publish(
+      {
+        subject: spec.subject,
+        type: spec.type,
+        payload: spec.payload as Record<string, unknown>,
+      },
+      sovereignty,
+      opts.source,
+    );
     log(`▶ published envelope ${publishedId}`);
 
     for await (const ev of interpretDispatch({
