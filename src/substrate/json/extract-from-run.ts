@@ -73,10 +73,17 @@ export function extractFromRun<T>(
   }
 
   const attempts: ExtractionAttempt[] = [];
+  // Memoize extractor outputs from Pass 1 so Pass 2 can replay them
+  // without re-running expensive scans (balanced-object walks, fenced
+  // regex, trailing-walk) twice. Mirrors the prior `extractJson`
+  // shape which built candidates once and iterated twice (sage#57 →
+  // sage#63 Sage review Performance suggestion).
+  const memoized: Array<{ name: string; value: unknown | undefined }> = [];
 
   // Pass 1: prefer Pipeline's preferredShape.
   for (const ex of pipeline.extractors) {
     const candidate = ex.extract(text);
+    memoized.push({ name: ex.name, value: candidate });
     if (candidate === undefined) {
       attempts.push({ extractor: ex.name, reason: "undefined" });
       continue;
@@ -92,14 +99,13 @@ export function extractFromRun<T>(
     attempts.push({ extractor: ex.name, reason: "shape-rejected" });
   }
 
-  // Pass 2: any-parseable fallback.
-  for (const ex of pipeline.extractors) {
-    const candidate = ex.extract(text);
-    if (candidate !== undefined) {
+  // Pass 2: any-parseable fallback, replayed from Pass 1 memo.
+  for (const slot of memoized) {
+    if (slot.value !== undefined) {
       return {
         ok: true,
-        result: candidate as T,
-        extractor: ex.name,
+        result: slot.value as T,
+        extractor: slot.name,
         matchedPreferredShape: false,
       };
     }

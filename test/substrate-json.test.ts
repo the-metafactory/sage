@@ -199,6 +199,42 @@ describe("extractFromRun (CLAUDE_PIPELINE)", () => {
     // body, so it matches preferredShape directly.
     expect(["claude-envelope", "raw"]).toContain(out.extractor);
   });
+
+  test("CLAUDE_ENVELOPE: fenced inner string still extracts lens body (sage#57→#63 blocker)", () => {
+    // Reproduces the regression Sage flagged on PR #63: when the
+    // assistant wraps its reply in a ```json … ``` fence inside the
+    // envelope's `.result` string, the inner 4-tier strategies must
+    // run against the *inner* string. The outer envelope encodes
+    // newlines as `\n` literals, so fence regex / balanced-walk on
+    // the outer text would never see the fence.
+    const innerBody = '```json\n{"summary":"fenced","findings":[]}\n```';
+    const envelope = { result: innerBody };
+    const out = extractFromRun(
+      ok(JSON.stringify(envelope)),
+      CLAUDE_PIPELINE,
+      "claude",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.extractor).toBe("claude-envelope");
+    expect(out.result).toEqual({ summary: "fenced", findings: [] });
+  });
+
+  test("CLAUDE_ENVELOPE: prose-wrapped inner with trailing JSON still extracts", () => {
+    const innerBody =
+      "Here is my review:\n" +
+      'I found one issue.\n' +
+      '{"summary":"trailing","findings":[]}';
+    const envelope = { result: innerBody };
+    const out = extractFromRun(
+      ok(JSON.stringify(envelope)),
+      CLAUDE_PIPELINE,
+      "claude",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect((out.result as { summary: string }).summary).toBe("trailing");
+  });
 });
 
 describe("extractFromRunOrThrow", () => {

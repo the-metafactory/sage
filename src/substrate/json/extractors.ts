@@ -74,10 +74,20 @@ export const TRAILING: NamedExtractor = {
  * envelopes that *are* already the lens body (some claude versions
  * print it that way when no tools were used) pass through unchanged.
  *
+ * When the inner string doesn't parse bare, the four text-extraction
+ * strategies (RAW/FENCED_LAST_FIRST/BALANCED_LARGEST/TRAILING) run
+ * against the *inner* string — NOT the outer envelope. The outer
+ * envelope encodes newlines as `\n` literals, so the fence regex and
+ * balanced-object walks would never match the lens body inside a
+ * fenced reply at the outer level. This preserves the byte-for-byte
+ * behavior of the prior `tryParseClaudeEnvelope` (sage#57 → sage#63
+ * Sage review blocker).
+ *
  * Returns `undefined` when stdout isn't JSON at all OR the envelope
- * has no `.result`/`.response` and isn't itself a JSON object — the
- * next extractor in the Pipeline (text-extraction strategies) will
- * have a chance against the raw stdout.
+ * carries `.result` / `.response` but no extractor can recover lens
+ * shape from it — in that case the next Pipeline extractor gets a
+ * shot at the raw outer stdout (degraded path; in practice the bare
+ * parse + inner 4-tier covers every observed shape).
  */
 export const CLAUDE_ENVELOPE: NamedExtractor = {
   name: "claude-envelope",
@@ -86,18 +96,66 @@ export const CLAUDE_ENVELOPE: NamedExtractor = {
     if (envelope === undefined) return undefined;
     const inner = pickClaudeResultText(envelope);
     if (inner !== undefined) {
-      // Try the inner string as JSON directly; if it doesn't parse,
-      // the next extractor in the Pipeline gets a shot at the raw
-      // stdout (some models wrap the body in prose or fences inside
-      // the inner string).
+      // 1. Inner as JSON directly.
       const innerParsed = tryJsonParse(inner.trim());
       if (innerParsed !== undefined) return innerParsed;
+      // 2. Run the four text strategies against the inner string. The
+      //    same two-pass shape preference logic the top-level Pipeline
+      //    uses applies here, scoped to the inner content. Lens-shaped
+      //    candidate wins over any-parseable.
+      const innerOut = extractLensShapedFromText(inner);
+      if (innerOut !== undefined) return innerOut;
       return undefined;
     }
     // No .result / .response — envelope itself may be the lens body.
     return envelope;
   },
 };
+
+/**
+ * Run the four text-extraction strategies against a string and return
+ * the first lens-shaped hit, falling back to the first any-parseable
+ * hit. Used by `CLAUDE_ENVELOPE` to dig into the envelope's inner
+ * `.result` string when bare parse fails (sage#57 acceptance
+ * criterion: 4-tier text extraction preserved byte-for-byte). Kept
+ * private to this module so the public Pipeline shape stays simple.
+ */
+function extractLensShapedFromText(text: string): unknown | undefined {
+  // Build candidate set once — mirrors the prior `extractJson` shape.
+  const candidates: string[] = [];
+  candidates.push(text);
+  for (const block of allFencedBlocks(text).reverse()) candidates.push(block);
+  for (const balanced of findAllBalancedObjects(text).sort(
+    (a, b) => b.length - a.length,
+  )) {
+    candidates.push(balanced);
+  }
+  const trailing = findTrailingBalancedObject(text);
+  if (trailing) candidates.push(trailing);
+
+  // Pass 1: prefer lens shape.
+  for (const c of candidates) {
+    const parsed = tryJsonParse(c.trim());
+    if (parsed !== undefined && isLensShapedLite(parsed)) return parsed;
+  }
+  // Pass 2: any-parseable.
+  for (const c of candidates) {
+    const parsed = tryJsonParse(c.trim());
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+/**
+ * Local copy of the lens-shape predicate to avoid an import cycle
+ * with `pipelines.ts`. Same byte-for-byte semantics: object with
+ * `summary` OR `findings`.
+ */
+function isLensShapedLite(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return "summary" in obj || "findings" in obj;
+}
 
 function pickClaudeResultText(envelope: unknown): string | undefined {
   if (!envelope || typeof envelope !== "object") return undefined;
