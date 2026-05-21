@@ -62,15 +62,15 @@ export function createGitLabReviewSource(
     if (envLogin) return envLogin;
     const cached = viewerLoginCache.get(host);
     if (cached) return cached;
-    const promise = fetchViewerLogin(glabJson, host).catch((err) => {
+    // Single catch chain: on rejection, evict the cache slot for `host`
+    // (so the next caller re-fetches) and return null (so the Module
+    // yields `trust-gate-failed` for *this* call without throwing).
+    const promise: Promise<string | null> = fetchViewerLogin(glabJson, host).catch(() => {
       viewerLoginCache.delete(host);
-      throw err;
+      return null;
     });
-    // Wrap so we always cache a never-rejecting promise (eviction above
-    // ensures a transient failure is retried next call).
-    const wrapped: Promise<string | null> = promise.catch(() => null);
-    viewerLoginCache.set(host, wrapped);
-    return wrapped;
+    viewerLoginCache.set(host, promise);
+    return promise;
   }
 
   return {

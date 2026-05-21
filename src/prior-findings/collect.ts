@@ -63,7 +63,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
           seen.add(key);
           findings.push({
             ...finding,
-            ...(review.postedAt ? { postedAt: review.postedAt } : {}),
+            ...(review.postedAt !== undefined ? { postedAt: review.postedAt } : {}),
           });
         }
       }

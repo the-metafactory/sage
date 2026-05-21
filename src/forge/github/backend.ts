@@ -5,8 +5,19 @@ import { join } from "node:path";
 
 import { buildGhEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
+import { createGitHubReviewSource } from "../../prior-findings/github-source.ts";
 import { PrMetadataSchema } from "../types.ts";
 import { parseSageReviewFindings } from "../prior-findings.ts";
+import type {
+  AuthStatusResult,
+  ForgeBackend,
+  ForgeReviewSource,
+  PostReviewInput,
+  PostReviewResult,
+  PrMetadata,
+  PrRef,
+  ReviewEvent,
+} from "../types.ts";
 
 /**
  * Re-export of the canonical `PrMetadataSchema` (now owned by
@@ -16,17 +27,6 @@ import { parseSageReviewFindings } from "../prior-findings.ts";
  * `forge/types.ts` directly.
  */
 export { PrMetadataSchema };
-import { createGitHubReviewSource } from "../../prior-findings/github-source.ts";
-import type { ForgeReviewSource } from "../../prior-findings/types.ts";
-import type {
-  AuthStatusResult,
-  ForgeBackend,
-  PostReviewInput,
-  PostReviewResult,
-  PrMetadata,
-  PrRef,
-  ReviewEvent,
-} from "../types.ts";
 
 /**
  * GitHub adapter — wraps the `gh` CLI. Piggybacks on the user's existing

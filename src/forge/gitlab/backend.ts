@@ -6,11 +6,11 @@ import { join } from "node:path";
 import { buildGlabEnv } from "./env.ts";
 import { retryTransient } from "../../util/retry.ts";
 import { createGitLabReviewSource } from "../../prior-findings/gitlab-source.ts";
-import type { ForgeReviewSource } from "../../prior-findings/types.ts";
 import { PrMetadataSchema } from "../types.ts";
 import type {
   AuthStatusResult,
   ForgeBackend,
+  ForgeReviewSource,
   PostReviewInput,
   PostReviewResult,
   PrMetadata,

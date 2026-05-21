@@ -45,17 +45,26 @@ export function createGitHubReviewSource(
 ): ForgeReviewSource {
   const runGh = opts.runGh ?? defaultRunGh;
 
-  // Per-Adapter-instance identity cache. Resolves once; subsequent calls
-  // return the cached promise. A rejected promise is evicted so a
-  // transient `gh api user` failure cannot poison the cache for the
-  // process lifetime.
+  // Per-Adapter-instance identity cache. Resolves once; subsequent
+  // calls return the cached promise. On rejection the cache slot is
+  // evicted so a transient `gh api user` failure does not poison the
+  // cache for the rest of the process lifetime — the next caller
+  // re-fetches. Mirrors the GitLab Adapter's eviction-on-reject
+  // pattern.
   let viewerLoginPromise: Promise<string | null> | undefined;
 
   async function resolveSageLogin(): Promise<string | null> {
     const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
     if (envLogin) return envLogin;
     if (!viewerLoginPromise) {
-      viewerLoginPromise = fetchViewerLogin(runGh).catch(() => null);
+      viewerLoginPromise = fetchViewerLogin(runGh).catch(() => {
+        // Evict the rejected slot so the next caller re-fetches.
+        viewerLoginPromise = undefined;
+        // Map to null so the Module yields `trust-gate-failed` for
+        // *this* call without throwing; the next call gets a fresh
+        // attempt because the eviction above ran first.
+        return null;
+      });
     }
     return viewerLoginPromise;
   }
@@ -90,7 +99,7 @@ export function createGitHubReviewSource(
       const bodies: ForgeReviewBody[] = parsed.data.flat().map((r) => ({
         authorLogin: r.user.login,
         body: r.body,
-        postedAt: r.submitted_at ?? "",
+        ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
       }));
 
       return { bodies, sageLogin };

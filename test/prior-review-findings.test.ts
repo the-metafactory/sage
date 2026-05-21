@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
+  createGitHubReviewSource,
+  createGitLabReviewSource,
   createInMemoryReviewSource,
   createPriorFindings,
 } from "../src/prior-findings/index.ts";
@@ -147,5 +149,60 @@ describe("PriorFindings Module (sage#56)", () => {
       expect(result.status).not.toBe("ok");
       expect(result.reason).toBeDefined();
     }
+  });
+});
+
+describe("Adapter identity cache eviction on transient failure", () => {
+  const originalEnv = process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+    else process.env.SAGE_REVIEW_AUTHOR_LOGIN = originalEnv;
+  });
+
+  test("GitHub source: rejected /user re-fetches on next call (no cache poisoning)", async () => {
+    delete process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+    let attempt = 0;
+    const fakeRunGh = async (args: string[]) => {
+      if (args[0] === "api" && args[1] === "user") {
+        attempt++;
+        if (attempt === 1) throw new Error("transient ECONNREFUSED");
+        return { stdout: JSON.stringify({ login: "sage" }) };
+      }
+      // Empty reviews page so fetchReviewBodies just returns no bodies.
+      return { stdout: JSON.stringify([[]]) };
+    };
+
+    const source = createGitHubReviewSource({ runGh: fakeRunGh });
+
+    const r1 = await source.fetchReviewBodies(ref);
+    expect(r1.sageLogin).toBeNull();
+
+    const r2 = await source.fetchReviewBodies(ref);
+    expect(r2.sageLogin).toBe("sage");
+    expect(attempt).toBe(2);
+  });
+
+  test("GitLab source: rejected /user re-fetches on next call (no cache poisoning)", async () => {
+    delete process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+    let attempt = 0;
+    const fakeGlabJson = async <T,>(args: string[]): Promise<T> => {
+      if (args[0] === "/user") {
+        attempt++;
+        if (attempt === 1) throw new Error("transient 503");
+        return { username: "sage" } as T;
+      }
+      // Notes endpoint — return empty array.
+      return [] as unknown as T;
+    };
+
+    const source = createGitLabReviewSource({ glabJson: fakeGlabJson });
+    const glRef = { owner: "g/sub", repo: "p", number: 1, host: "gitlab.com" };
+
+    const r1 = await source.fetchReviewBodies(glRef);
+    expect(r1.sageLogin).toBeNull();
+
+    const r2 = await source.fetchReviewBodies(glRef);
+    expect(r2.sageLogin).toBe("sage");
+    expect(attempt).toBe(2);
   });
 });

@@ -16,8 +16,6 @@
 
 import { z } from "zod";
 
-import type { ForgeReviewSource } from "../prior-findings/types.ts";
-
 /**
  * Identifier of the forge platform. Discriminator for routing in
  * `selectForge` (sage#43 Phase 4). Today the only value sage emits is
@@ -127,6 +125,44 @@ export interface PriorReviewFinding {
 export interface AuthStatusResult {
   ok: boolean;
   output: string;
+}
+
+/**
+ * Platform-primitive Port consumed by the Prior Findings Module
+ * (`src/prior-findings/`). Defined here, not in the Module, so the
+ * layering reads cleanly — the Forge owns the Port shape (it's the
+ * lower-layer thing being adapted), the Module owns the orchestration
+ * that consumes it. One Adapter per Forge backend.
+ *
+ * Contract:
+ *   - Pre-filters system / diff-pinned notes (they cannot be a Sage
+ *     review).
+ *   - Returns bodies oldest-first; the Module preserves that order.
+ *   - Resolves the Sage identity internally — the Adapter knows the
+ *     Forge's user API and caches per-host inside its closure.
+ *   - `sageLogin === null` ⇒ identity could not be resolved (env
+ *     unset AND the Forge's user API failed). The Module maps this to
+ *     `PriorFindingsResult.status = "trust-gate-failed"`.
+ */
+export interface ForgeReviewSource {
+  fetchReviewBodies(ref: PrRef): Promise<ForgeReviewSourceResult>;
+}
+
+export interface ForgeReviewSourceResult {
+  readonly bodies: readonly ForgeReviewBody[];
+  readonly sageLogin: string | null;
+}
+
+export interface ForgeReviewBody {
+  readonly authorLogin: string;
+  readonly body: string;
+  /**
+   * ISO-8601 timestamp from the Forge's review/note record. `undefined`
+   * when the Forge omitted it. The Module forwards present values
+   * onto `PriorReviewFinding.postedAt`; `undefined` passes through
+   * unchanged — no empty-string sentinel in the Module's contract.
+   */
+  readonly postedAt?: string;
 }
 
 /**
