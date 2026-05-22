@@ -13,27 +13,19 @@ import {
   RAW,
   TRAILING,
 } from "../src/substrate/json/extractors.ts";
-import type { JsonPipeline } from "../src/substrate/json/types.ts";
 import type { SubstrateRunResult } from "../src/substrate/types.ts";
-import { isLensShaped } from "../src/lenses/shape.ts";
+import { isLensShaped, makeLensPipeline } from "../src/lenses/shape.ts";
 
 /**
  * sage#57 introduced the Substrate JSON Module; sage#73 refined it
  * to make Pipeline a per-call composable and move `isLensShaped` to
- * the Lens side. Tests build their pipelines inline by pairing the
- * Substrate-side extractor lists (TEXT_EXTRACTORS / CLAUDE_EXTRACTORS)
- * with the caller's preferred-shape predicate.
+ * the Lens side. Tests build their pipelines via `makeLensPipeline`
+ * — the same construction site `lenses/base.ts` uses in production —
+ * so they cannot drift on the composition shape.
  */
 
-const TEXT_PIPELINE: JsonPipeline = {
-  extractors: TEXT_EXTRACTORS,
-  preferredShape: isLensShaped,
-};
-
-const CLAUDE_PIPELINE: JsonPipeline = {
-  extractors: CLAUDE_EXTRACTORS,
-  preferredShape: isLensShaped,
-};
+const TEXT_PIPELINE = makeLensPipeline(TEXT_EXTRACTORS);
+const CLAUDE_PIPELINE = makeLensPipeline(CLAUDE_EXTRACTORS);
 
 const ok = (stdout: string): SubstrateRunResult => ({
   stdout,

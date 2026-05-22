@@ -1,8 +1,7 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
 import { extractFromRun } from "../substrate/json/index.ts";
-import type { JsonPipeline } from "../substrate/json/types.ts";
 import type { Substrate } from "../substrate/types.ts";
-import { isLensShaped } from "./shape.ts";
+import { makeLensPipeline } from "./shape.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
 /**
@@ -207,15 +206,11 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     });
     // Compose the Pipeline at the call site: Substrate owns the
     // extractor strategy as data; the Lens kernel supplies the
-    // preferred-shape predicate. Substrate JSON Module is Lens-
-    // shape-agnostic (sage#73 — refines sage#57).
-    const pipeline: JsonPipeline = {
-      extractors: input.substrate.jsonExtractors,
-      preferredShape: isLensShaped,
-    };
+    // preferred-shape predicate via `makeLensPipeline`. Substrate
+    // JSON Module is Lens-shape-agnostic (sage#73 — refines sage#57).
     const outcome = extractFromRun<RawLensOutput>(
       raw,
-      pipeline,
+      makeLensPipeline(input.substrate.jsonExtractors),
       input.substrate.name,
     );
     if (!outcome.ok) {

@@ -29,6 +29,15 @@
 import { runTextStrategies } from "./run-strategies.ts";
 import type { NamedExtractor } from "./types.ts";
 
+/**
+ * Sentinel `preferredShape` predicate for callers without a shape
+ * preference. Pass 1 always rejects → resolution falls through to
+ * Pass 2 ("first parseable wins"). Used by CLAUDE_ENVELOPE's
+ * inner-string recovery, which delegates shape decisions back to
+ * the outer Pipeline (sage#73).
+ */
+const NO_SHAPE_PREFERENCE: (v: unknown) => boolean = () => false;
+
 export const RAW: NamedExtractor = {
   name: "raw",
   extract(text) {
@@ -111,7 +120,7 @@ export const CLAUDE_ENVELOPE: NamedExtractor = {
       return runTextStrategies(
         inner,
         [RAW, FENCED_LAST_FIRST, BALANCED_LARGEST, TRAILING],
-        () => false,
+        NO_SHAPE_PREFERENCE,
       ).value;
     }
     // No .result / .response — envelope itself may be the lens body.
