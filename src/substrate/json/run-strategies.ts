@@ -6,8 +6,7 @@
  * two-pass loop that previously lived inline in `CLAUDE_ENVELOPE`
  * (sage#63 round-4 Maintainability finding).
  *
- * Resolution semantics (preserved byte-for-byte from the original
- * `extractJson` in `src/substrate/json.ts`):
+ * Resolution semantics:
  *
  *   - Pass 1: walk extractors in order; if one produces a value that
  *     matches `preferredShape`, return it.
@@ -21,12 +20,13 @@
  * outcome — the outer Pipeline uses them for error-message context;
  * the inner CLAUDE_ENVELOPE caller ignores them.
  *
- * `preferredShape` defaults to `isLensShaped` so callers don't have
- * to thread it through when they want the same predicate the Module
- * uses by default.
+ * `preferredShape` is REQUIRED. The Module does not carry a default
+ * predicate — Lens-shape is a caller-side concern owned by consuming
+ * Modules (sage#73 — refines sage#57). Callers without a shape
+ * preference pass `() => false` to fall through to Pass-2
+ * "any-parseable wins."
  */
 
-import { isLensShaped } from "./shape.ts";
 import type {
   ExtractionAttempt,
   NamedExtractor,
@@ -46,7 +46,7 @@ export interface TextStrategyOutcome {
 export function runTextStrategies(
   text: string,
   extractors: readonly NamedExtractor[],
-  preferredShape: (v: unknown) => boolean = isLensShaped,
+  preferredShape: (v: unknown) => boolean,
 ): TextStrategyOutcome {
   const attempts: ExtractionAttempt[] = [];
   const memo: Array<{ name: string; value: unknown | undefined }> = [];

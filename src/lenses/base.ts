@@ -1,6 +1,7 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
 import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
+import { makeLensPipeline } from "./shape.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
 /**
@@ -203,9 +204,13 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       responseFormat: "json",
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });
+    // Compose the Pipeline at the call site: Substrate owns the
+    // extractor strategy as data; the Lens kernel supplies the
+    // preferred-shape predicate via `makeLensPipeline`. Substrate
+    // JSON Module is Lens-shape-agnostic (sage#73 — refines sage#57).
     const outcome = extractFromRun<RawLensOutput>(
       raw,
-      input.substrate.jsonPipeline,
+      makeLensPipeline(input.substrate.jsonExtractors),
       input.substrate.name,
     );
     if (!outcome.ok) {
@@ -225,13 +230,14 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     }
     // Lens-shape gate: Pipeline's any-parseable Pass 2 can return a
     // non-lens object (claude error envelope, unrelated JSON in a
-    // prose reply). `matchedPreferredShape: false` is the Pipeline's
-    // signal that Pass 1 didn't find lens shape — treat it as
-    // extraction failure for lens callers so a shape-rejected reply
-    // lands in the errored-report fallback path instead of silently
-    // producing an empty LensReport (sage#63 round-3 blocker; round-5
-    // dedup: use the Pipeline's own bit instead of re-running
-    // `isLensShaped`).
+    // prose reply). `matchedPreferredShape: false` is the algorithm's
+    // signal that Pass 1 didn't find the caller-supplied preferred
+    // shape — treat it as extraction failure for lens callers so a
+    // shape-rejected reply lands in the errored-report fallback path
+    // instead of silently producing an empty LensReport (sage#63
+    // round-3 blocker; sage#73 — the predicate is now Lens-owned,
+    // composed into the Pipeline at this call site rather than baked
+    // into a Substrate-side Pipeline constant).
     if (!outcome.matchedPreferredShape) {
       throw new Error(
         `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +

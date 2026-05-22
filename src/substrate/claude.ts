@@ -1,4 +1,4 @@
-import { CLAUDE_PIPELINE } from "./json/pipelines.ts";
+import { CLAUDE_EXTRACTORS } from "./json/extractors.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
@@ -47,7 +47,7 @@ export interface ClaudeSubstrateConfig {
 export class ClaudeSubstrate implements Substrate {
   readonly name = "claude" as const;
   readonly displayName = "Claude Code";
-  readonly jsonPipeline = CLAUDE_PIPELINE;
+  readonly jsonExtractors = CLAUDE_EXTRACTORS;
   readonly envRequirements = {
     namespaces: ["CLAUDE_", "ANTHROPIC_"],
     keys: [],

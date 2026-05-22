@@ -29,6 +29,15 @@
 import { runTextStrategies } from "./run-strategies.ts";
 import type { NamedExtractor } from "./types.ts";
 
+/**
+ * Sentinel `preferredShape` predicate for callers without a shape
+ * preference. Pass 1 always rejects → resolution falls through to
+ * Pass 2 ("first parseable wins"). Used by CLAUDE_ENVELOPE's
+ * inner-string recovery, which delegates shape decisions back to
+ * the outer Pipeline (sage#73).
+ */
+const NO_SHAPE_PREFERENCE: (v: unknown) => boolean = () => false;
+
 export const RAW: NamedExtractor = {
   name: "raw",
   extract(text) {
@@ -101,12 +110,18 @@ export const CLAUDE_ENVELOPE: NamedExtractor = {
       // walker over the four text strategies. Same algorithm the
       // outer Pipeline uses — one source of truth (sage#63 round-4
       // Maintainability finding: collapses duplication).
-      return runTextStrategies(inner, [
-        RAW,
-        FENCED_LAST_FIRST,
-        BALANCED_LARGEST,
-        TRAILING,
-      ]).value;
+      //
+      // No inner-shape preference — Pass 1 always falls through to
+      // Pass 2 ("first parseable wins") because Lens-shape knowledge
+      // is now a caller-side concern (sage#73). For Claude's typical
+      // single-JSON inner string this is identical to the prior
+      // isLensShaped default; for malformed multi-JSON inner strings
+      // the result becomes order-driven instead of shape-driven.
+      return runTextStrategies(
+        inner,
+        [RAW, FENCED_LAST_FIRST, BALANCED_LARGEST, TRAILING],
+        NO_SHAPE_PREFERENCE,
+      ).value;
     }
     // No .result / .response — envelope itself may be the lens body.
     return envelope;
@@ -213,3 +228,38 @@ function allFencedBlocks(text: string): string[] {
   }
   return blocks;
 }
+
+/**
+ * Default text-extraction strategy. Used by Substrates whose stdout
+ * is the assistant's raw text (`pi`, `codex`). Four strategies, in
+ * order:
+ *   1. RAW
+ *   2. FENCED_LAST_FIRST
+ *   3. BALANCED_LARGEST
+ *   4. TRAILING
+ *
+ * Composed into a `JsonPipeline` at the call site with a caller-
+ * supplied `preferredShape` predicate. The Lens kernel pairs this
+ * with `isLensShaped` (`src/lenses/shape.ts`); other callers can
+ * pair it with a different shape (sage#73).
+ */
+export const TEXT_EXTRACTORS: readonly NamedExtractor[] = [
+  RAW,
+  FENCED_LAST_FIRST,
+  BALANCED_LARGEST,
+  TRAILING,
+];
+
+/**
+ * claude strategy. Starts with the native envelope extractor; falls
+ * back to the same four text strategies when stdout isn't an envelope
+ * (upstream shape change, mid-stream prose). Composed into a
+ * `JsonPipeline` at the call site (sage#73).
+ */
+export const CLAUDE_EXTRACTORS: readonly NamedExtractor[] = [
+  CLAUDE_ENVELOPE,
+  RAW,
+  FENCED_LAST_FIRST,
+  BALANCED_LARGEST,
+  TRAILING,
+];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { runLens, type LensRunInput } from "../src/lenses/base.ts";
-import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
+import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 import type { Substrate } from "../src/substrate/types.ts";
 
 /**
@@ -37,8 +37,8 @@ function makeFailingSubstrate(message: string): Substrate {
     name: "pi" as const,
     displayName: "pi.dev",
     bin: "pi",
-    jsonPipeline: TEXT_PIPELINE,
-  envRequirements: { namespaces: [], keys: [] },
+    jsonExtractors: TEXT_EXTRACTORS,
+    envRequirements: { namespaces: [], keys: [] },
     run: async () => {
       throw new Error(message);
     },
@@ -82,8 +82,8 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
       name: "pi" as const,
       displayName: "pi.dev",
       bin: "pi",
-      jsonPipeline: TEXT_PIPELINE,
-  envRequirements: { namespaces: [], keys: [] },
+      jsonExtractors: TEXT_EXTRACTORS,
+      envRequirements: { namespaces: [], keys: [] },
       run: async () => ({
         stdout: JSON.stringify({ summary: "ok", findings: [] }),
         stderr: "",
@@ -104,8 +104,8 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
       name: "claude" as const,
       displayName: "Claude Code",
       bin: "claude",
-      jsonPipeline: TEXT_PIPELINE,
-  envRequirements: { namespaces: [], keys: [] },
+      jsonExtractors: TEXT_EXTRACTORS,
+      envRequirements: { namespaces: [], keys: [] },
       run: async () => ({
         stdout: JSON.stringify({ type: "error", is_error: true }),
         stderr: "",

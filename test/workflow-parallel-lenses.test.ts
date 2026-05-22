@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeStubForge } from "./forge-stub.ts";
-import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
+import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 
 /**
  * sage#26: lens execution is parallel, not sequential.
@@ -68,17 +68,18 @@ let peakInFlight = 0;
 let substrateCalls: SubstrateCall[] = [];
 let runJsonImpl: (opts: SubstrateCall) => Promise<{ summary: string; findings: never[] }>;
 
-// Post-sage#57 the Substrate Interface is `run() + jsonPipeline`. The
-// lens layer (`base.ts`) calls `substrate.run({responseFormat: "json"})`
-// then routes through `extractFromRunOrThrow(raw, substrate.jsonPipeline,
-// ...)`. The stub embeds the mocked lens JSON in `stdout`; the standard
-// `TEXT_PIPELINE` parses it back out. Concurrency tracking moves onto
-// `run` because that's the seam every lens call now hits.
+// Post-sage#57/#73 the Substrate Interface is `run() + jsonExtractors`.
+// The lens layer (`base.ts`) calls `substrate.run({responseFormat: "json"})`
+// then builds the Pipeline at the call site by pairing
+// `substrate.jsonExtractors` with `isLensShaped` (sage#73). The stub
+// embeds the mocked lens JSON in `stdout`; the `TEXT_EXTRACTORS` strategy
+// parses it back out. Concurrency tracking moves onto `run` because
+// that's the seam every lens call now hits.
 const stubSubstrate = {
   name: "pi" as const,
   displayName: "pi.dev",
   bin: "pi",
-  jsonPipeline: TEXT_PIPELINE,
+  jsonExtractors: TEXT_EXTRACTORS,
   envRequirements: { namespaces: [], keys: [] },
   run: async (opts: SubstrateCall) => {
     substrateCalls.push({ systemPrompt: opts.systemPrompt, prompt: opts.prompt });

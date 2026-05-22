@@ -7,12 +7,13 @@
  * lets that principle hold in code, not just in the spec.
  *
  * Substrate is pure platform (subprocess + capture). JSON extraction
- * lives in its own Module — each Adapter declares its `jsonPipeline`
- * as data, and lens callers route through
- * `extractFromRunOrThrow(raw, substrate.jsonPipeline, substrate.name)`
- * (sage#57). Substrates with native structured-output modes (Claude's
- * `--output-format json`) honor `SubstrateRunOptions.responseFormat`;
- * others ignore it.
+ * lives in its own Module — each Adapter declares its `jsonExtractors`
+ * as data, and lens callers compose a `JsonPipeline` at the call site
+ * by pairing those extractors with a caller-owned preferred-shape
+ * predicate (sage#57 introduced the Module; sage#73 made Pipeline a
+ * per-call composable and moved Lens-shape to the Lens side). Substrates
+ * with native structured-output modes (Claude's `--output-format json`)
+ * honor `SubstrateRunOptions.responseFormat`; others ignore it.
  *
  * Adding a new substrate (Codex, Aider, …):
  *   1. Drop a new file under src/substrate/ that exports a `Substrate`.
@@ -22,15 +23,15 @@
  *        - the `SageConfigFile.substrate.<name>` typed field in
  *          `select.ts` so the config loader can carry substrate-specific
  *          overrides
- *   3. Declare `jsonPipeline` — usually `TEXT_PIPELINE` for plain-text
- *      stdout, `CLAUDE_PIPELINE` for native-envelope shapes.
+ *   3. Declare `jsonExtractors` — usually `TEXT_EXTRACTORS` for plain-text
+ *      stdout, `CLAUDE_EXTRACTORS` for native-envelope shapes.
  *   4. Update README and ISA's substrates table.
  *
  * Nothing else changes — `lenses/base.ts` only sees this interface plus
  * the JSON Module's `extractFromRunOrThrow` entry.
  */
 
-import type { JsonPipeline } from "./json/types.ts";
+import type { NamedExtractor } from "./json/types.ts";
 import type { SubstrateName } from "./registry.ts";
 
 export type { SubstrateName };
@@ -112,10 +113,11 @@ export interface SubstrateRunOptions {
    * Hint to the Adapter that the caller expects JSON. Substrates with a
    * native structured-output mode (claude: `--output-format json`)
    * honor it; others (pi, codex) ignore it. Default: `"text"`. JSON
-   * extraction itself does NOT live behind this flag — callers route
-   * through `extractFromRunOrThrow(raw, substrate.jsonPipeline, ...)`
+   * extraction itself does NOT live behind this flag — callers
+   * compose a Pipeline from `substrate.jsonExtractors` and route
+   * through `extractFromRunOrThrow(raw, pipeline, substrate.name)`
    * regardless, because text-only substrates can still emit JSON in
-   * their text stdout (sage#57).
+   * their text stdout (sage#57 + sage#73).
    */
   responseFormat?: "text" | "json";
 }
@@ -139,13 +141,24 @@ export interface Substrate {
   /** Binary path used (post-resolution). */
   readonly bin: string;
   /**
-   * Per-Adapter JSON-extraction Pipeline declared as data. Callers
-   * extracting JSON from this Substrate's output run
-   * `extractFromRun(raw, substrate.jsonPipeline, substrate.name)`.
-   * pi/codex declare `TEXT_PIPELINE`; claude declares
-   * `CLAUDE_PIPELINE` (envelope-first then text fallback) — sage#57.
+   * Per-Adapter JSON-extraction strategy declared as data. Callers
+   * extracting JSON compose this with their own preferred-shape
+   * predicate at the call site:
+   *
+   *   const pipeline: JsonPipeline = {
+   *     extractors: substrate.jsonExtractors,
+   *     preferredShape: <caller's predicate>,
+   *   };
+   *   extractFromRun(raw, pipeline, substrate.name);
+   *
+   * pi/codex declare `TEXT_EXTRACTORS`; claude declares
+   * `CLAUDE_EXTRACTORS` (envelope-first then text fallback). The
+   * Substrate JSON Module does NOT carry a notion of "preferred
+   * shape" — that's a caller-side concern, owned by the consuming
+   * Module (Lens kernel pairs with `isLensShaped`) — sage#73 refines
+   * sage#57.
    */
-  readonly jsonPipeline: JsonPipeline;
+  readonly jsonExtractors: readonly NamedExtractor[];
 
   /**
    * Per-Adapter env contract declared as data. sage#60 — each
