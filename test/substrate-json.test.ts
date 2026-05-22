@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
-  CLAUDE_PIPELINE,
-  TEXT_PIPELINE,
+  CLAUDE_EXTRACTORS,
+  TEXT_EXTRACTORS,
   extractFromRun,
   extractFromRunOrThrow,
-  isLensShaped,
 } from "../src/substrate/json/index.ts";
 // Extractor primitives are Module internals — deep-imported here so
 // the public barrel stays tight (sage#63 round-4 Maintainability).
@@ -14,14 +13,27 @@ import {
   RAW,
   TRAILING,
 } from "../src/substrate/json/extractors.ts";
+import type { JsonPipeline } from "../src/substrate/json/types.ts";
 import type { SubstrateRunResult } from "../src/substrate/types.ts";
+import { isLensShaped } from "../src/lenses/shape.ts";
 
 /**
- * sage#57: Substrate JSON extraction moves into a dedicated Module.
- * Pipelines compose extractors as data; the two-pass resolution
- * (preferredShape first, then any-parseable fallback) is preserved
- * byte-for-byte from the previous in-Substrate implementation.
+ * sage#57 introduced the Substrate JSON Module; sage#73 refined it
+ * to make Pipeline a per-call composable and move `isLensShaped` to
+ * the Lens side. Tests build their pipelines inline by pairing the
+ * Substrate-side extractor lists (TEXT_EXTRACTORS / CLAUDE_EXTRACTORS)
+ * with the caller's preferred-shape predicate.
  */
+
+const TEXT_PIPELINE: JsonPipeline = {
+  extractors: TEXT_EXTRACTORS,
+  preferredShape: isLensShaped,
+};
+
+const CLAUDE_PIPELINE: JsonPipeline = {
+  extractors: CLAUDE_EXTRACTORS,
+  preferredShape: isLensShaped,
+};
 
 const ok = (stdout: string): SubstrateRunResult => ({
   stdout,

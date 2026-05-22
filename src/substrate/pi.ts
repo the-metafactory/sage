@@ -1,4 +1,4 @@
-import { TEXT_PIPELINE } from "./json/pipelines.ts";
+import { TEXT_EXTRACTORS } from "./json/extractors.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import type {
   Substrate,
@@ -36,7 +36,7 @@ export interface PiSubstrateConfig {
 export class PiSubstrate implements Substrate {
   readonly name = "pi" as const;
   readonly displayName = "pi.dev";
-  readonly jsonPipeline = TEXT_PIPELINE;
+  readonly jsonExtractors = TEXT_EXTRACTORS;
   readonly envRequirements = {
     namespaces: ["PI_"],
     keys: [],

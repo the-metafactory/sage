@@ -7,7 +7,7 @@ import {
 import type { LensModule } from "../src/lenses/registry.ts";
 import type { LensReport } from "../src/lenses/types.ts";
 import type { Substrate } from "../src/substrate/types.ts";
-import { TEXT_PIPELINE } from "../src/substrate/json/pipelines.ts";
+import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 
 /**
  * sage#59 Lens-run scheduling Module — invariants I1–I7.
@@ -17,7 +17,7 @@ const stubSubstrate: Substrate = {
   name: "pi",
   displayName: "pi.dev",
   bin: "pi",
-  jsonPipeline: TEXT_PIPELINE,
+  jsonExtractors: TEXT_EXTRACTORS,
   envRequirements: { namespaces: [], keys: [] },
   run: async () => ({ stdout: "", stderr: "", exitCode: 0, durationMs: 1 }),
 };

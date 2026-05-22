@@ -3,11 +3,12 @@
  * object with `summary` + `findings`; this is the cheapest possible
  * signal that a parsed JSON value matches that contract.
  *
- * Lives in its own leaf module so both `extractors.ts` (used inside
- * `CLAUDE_ENVELOPE` for the inner-string recovery path) and
- * `pipelines.ts` (used as `JsonPipeline.preferredShape`) can import
- * it without a cycle. One predicate, one source (sage#57 → sage#63
- * Sage review #3 Architecture suggestion).
+ * Lives on the Lens side (not Substrate) because Lens shape is a
+ * Lens-domain concern — the Substrate is pure platform per ISA
+ * principle #1. Callers requesting JSON extraction supply this as
+ * the Pipeline's `preferredShape`; the Substrate JSON Module no
+ * longer carries a notion of "preferred shape" itself (sage#73 —
+ * refines sage#57).
  */
 export function isLensShaped(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

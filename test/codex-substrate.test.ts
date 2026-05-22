@@ -3,8 +3,10 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { isLensShaped } from "../src/lenses/shape.ts";
 import { CodexSubstrate } from "../src/substrate/codex.ts";
 import { extractFromRunOrThrow } from "../src/substrate/json/index.ts";
+import type { JsonPipeline } from "../src/substrate/json/types.ts";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -131,7 +133,7 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).not.toContain(" workspace-write ");
   });
 
-  test("jsonPipeline extracts lens-shaped JSON from codex output", async () => {
+  test("jsonExtractors compose with isLensShaped to extract lens-shaped JSON from codex output", async () => {
     const bin = writeJsonResponder();
     const substrate = new CodexSubstrate({ bin });
 
@@ -139,10 +141,16 @@ describe("CodexSubstrate", () => {
       prompt: "review",
       timeoutMs: 5_000,
     });
+    // sage#73 — Pipeline is composed at the call site: Substrate
+    // owns extractors as data; caller owns preferredShape.
+    const pipeline: JsonPipeline = {
+      extractors: substrate.jsonExtractors,
+      preferredShape: isLensShaped,
+    };
     const { result } = extractFromRunOrThrow<{
       summary: string;
       findings: unknown[];
-    }>(raw, substrate.jsonPipeline, substrate.name);
+    }>(raw, pipeline, substrate.name);
 
     expect(result).toEqual({ summary: "ok", findings: [] });
   });
