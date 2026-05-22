@@ -68,14 +68,13 @@ beforeEach(() => {
   postReviewBehavior = "success";
   postReviewErrorMessage = "gh pr review failed (exit 1): network unreachable";
 
-  mock.module("../src/util/persistence.ts", () => ({
+  mock.module("../src/verdict/persist.ts", () => ({
     persistVerdict: () => {
       persistedCount++;
       return persistBehavior === "success";
     },
     verdictFilePath: (ref: { owner: string; repo: string; number: number }, ext: string) =>
       `/tmp/sage-test/${ref.owner}-${ref.repo}-${ref.number}.${ext}`,
-    safeRefSegment: (v: string) => v.replace(/[^a-zA-Z0-9._-]/g, "_"),
   }));
 });
 

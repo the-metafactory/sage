@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseSageReviewFindings } from "../src/forge/github/backend.ts";
-import { renderReviewBody } from "../src/lenses/workflow.ts";
-import type { ReviewVerdict, LensReport } from "../src/lenses/types.ts";
+import type { LensReport } from "../src/lenses/types.ts";
+import { renderVerdict, type Verdict } from "../src/verdict/index.ts";
 
 /**
  * sage#27 Holly re-review (finding #5): a lens that errored is visually
@@ -32,36 +32,36 @@ function erroredLens(name: string, msg: string): LensReport {
   };
 }
 
-describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => {
+describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
   test("clean lens renders with plain heading", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "approved",
       summary: "No findings. Sage approves.",
       lenses: [cleanLens("CodeQuality")],
     };
-    const body = renderReviewBody(verdict, "pi.dev");
+    const body = renderVerdict(verdict, "pi.dev");
     expect(body).toMatch(/### CodeQuality\n/);
     expect(body).not.toMatch(/DID NOT RUN/);
     expect(body).not.toMatch(/Lens failed to execute/);
   });
 
   test("errored lens heading carries 'DID NOT RUN' marker", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Security.",
       lenses: [erroredLens("Security", "pi unreachable")],
     };
-    const body = renderReviewBody(verdict, "pi.dev");
+    const body = renderVerdict(verdict, "pi.dev");
     expect(body).toMatch(/### Security — DID NOT RUN/);
   });
 
   test("errored lens renders a callout above the findings", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Security.",
       lenses: [erroredLens("Security", "pi unreachable")],
     };
-    const body = renderReviewBody(verdict, "pi.dev");
+    const body = renderVerdict(verdict, "pi.dev");
     expect(body).toMatch(
       /> ⚠ Lens failed to execute\. Verdict cannot rely on this lens's coverage/,
     );
@@ -74,12 +74,12 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
     // The summary content (`Lens "X" did not produce a usable
     // verdict; verdict cannot rely on this lens.`) must not appear in
     // the rendered body even though it's on the LensReport object.
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Security.",
       lenses: [erroredLens("Security", "pi unreachable")],
     };
-    const body = renderReviewBody(verdict, "pi.dev");
+    const body = renderVerdict(verdict, "pi.dev");
     expect(body).not.toMatch(
       /Lens "Security" failed to execute; verdict cannot rely on this lens\.|did not produce a usable verdict/,
     );
@@ -90,7 +90,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
   });
 
   test("mixed verdict — errored section marked, clean sections plain", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Performance.",
       lenses: [
@@ -99,7 +99,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
         cleanLens("Maintainability"),
       ],
     };
-    const body = renderReviewBody(verdict, "pi.dev");
+    const body = renderVerdict(verdict, "pi.dev");
     expect(body).toMatch(/### CodeQuality\n/);
     expect(body).toMatch(/### Performance — DID NOT RUN/);
     expect(body).toMatch(/### Maintainability\n/);
@@ -109,7 +109,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
   });
 
   test("deduped cross-lens finding renders contributing lenses", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 finding(s): 1 important.",
       lenses: [
@@ -132,12 +132,12 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
       ],
     };
 
-    const body = renderReviewBody(verdict, "codex");
+    const body = renderVerdict(verdict, "codex");
     expect(body).toMatch(/Lenses: Architecture, Maintainability/);
   });
 
   test("rendered finding headings round-trip through prior-review parser", () => {
-    const verdict: ReviewVerdict = {
+    const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 finding(s): 1 important.",
       lenses: [
@@ -158,7 +158,7 @@ describe("renderReviewBody errored-lens visual marker (sage#27 round 2)", () => 
       ],
     };
 
-    const body = renderReviewBody(verdict, "codex");
+    const body = renderVerdict(verdict, "codex");
     expect(parseSageReviewFindings(body)).toEqual([
       {
         path: "src/forge/github/backend.ts",
