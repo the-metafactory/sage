@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { decideVerdict, type LensReport } from "../src/lenses/types.ts";
+import type { LensReport } from "../src/lenses/types.ts";
+import { decideVerdict } from "../src/verdict/index.ts";
 
 function lens(name: string, findings: LensReport["findings"]): LensReport {
   return { lens: name, summary: "", findings, durationMs: 0 };

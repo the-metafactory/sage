@@ -9,17 +9,20 @@ import type {
   PriorFindingsStatus,
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
-import { persistVerdict, verdictFilePath } from "../util/persistence.ts";
+import {
+  decideVerdict,
+  persistVerdict,
+  renderVerdict,
+  type Verdict,
+  verdictFilePath,
+  verdictToEvent,
+} from "../verdict/index.ts";
 import { LENSES } from "./registry.ts";
 import {
   readConcurrencyEnv,
   runLenses,
 } from "./scheduler.ts";
-import {
-  decideVerdict,
-  type LensReport,
-  type ReviewVerdict,
-} from "./types.ts";
+import type { LensReport } from "./types.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -64,7 +67,7 @@ export interface ReviewOptions {
 }
 
 export interface ReviewResult {
-  verdict: ReviewVerdict;
+  verdict: Verdict;
   /**
    * True only when `opts.post` was set AND `postReview` actually returned
    * without throwing (sage#16).
@@ -140,7 +143,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   });
 
   const verdict = decideVerdict(lensReports);
-  const body = renderReviewBody(verdict, opts.substrate.displayName);
+  const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
   // for manual re-post via `gh pr review --body-file` (sage#16).
@@ -177,7 +180,7 @@ interface AttemptPostResult {
 async function attemptPost(
   forge: ForgeBackend,
   ref: PrRef,
-  verdict: ReviewVerdict,
+  verdict: Verdict,
   body: string,
 ): Promise<AttemptPostResult> {
   const target = `${ref.owner}/${ref.repo}#${ref.number}`;
@@ -212,61 +215,4 @@ async function attemptPost(
     console.error(`[workflow] post: failed ${target}: ${message}`);
     return { posted: false, postError: { message } };
   }
-}
-
-function verdictToEvent(decision: ReviewVerdict["decision"]): ReviewEvent {
-  switch (decision) {
-    case "approved":
-      return "approve";
-    case "changes-requested":
-      return "request-changes";
-    case "commented":
-    default:
-      return "comment";
-  }
-}
-
-export function renderReviewBody(verdict: ReviewVerdict, substrateLabel?: string): string {
-  const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
-  const sections = verdict.lenses.map((lens) => {
-    const heading = lens.errored
-      ? `### ${lens.lens} — DID NOT RUN`
-      : `### ${lens.lens}`;
-    const intro = lens.errored
-      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging."
-      : lens.summary;
-    const body =
-      lens.findings.length === 0
-        ? "_No findings._"
-        : lens.findings
-            .map((f) => {
-              const lensTag =
-                f.sourceLenses && f.sourceLenses.length > 1
-                  ? `\n  Lenses: ${f.sourceLenses.join(", ")}`
-                  : "";
-              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}`;
-              if (!f.suggestion) return findingHead;
-              const fence = pickFence(f.suggestion);
-              return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
-            })
-            .join("\n\n");
-    return `${heading}\n${intro}\n\n${body}`;
-  });
-  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
-  return [head, ...sections, footer].join("\n\n");
-}
-
-/**
- * Pick a code-fence delimiter longer than any run of backticks
- * inside the content. Prevents triple-backtick injection when an
- * LLM-supplied `suggestion` contains its own fenced code block.
- */
-function pickFence(content: string): string {
-  let maxRun = 0;
-  const re = /`+/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    if (m[0].length > maxRun) maxRun = m[0].length;
-  }
-  return "`".repeat(Math.max(3, maxRun + 1));
 }

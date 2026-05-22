@@ -9,9 +9,9 @@ import {
   parseConcurrencyValue,
   readConcurrencyEnv,
   reviewPr,
-  renderReviewBody,
 } from "../lenses/workflow.ts";
 import { selectSubstrate } from "../substrate/select.ts";
+import { renderVerdict } from "../verdict/index.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -111,7 +111,7 @@ program
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
-      const body = renderReviewBody(result.verdict, selection.substrate.displayName);
+      const body = renderVerdict(result.verdict, selection.substrate.displayName);
       console.log(body);
       console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
       if (result.verdict.decision === "changes-requested") {
