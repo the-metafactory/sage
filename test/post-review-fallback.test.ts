@@ -40,6 +40,20 @@ describe("SELF_REVIEW_BLOCK_RE", () => {
     expect(SELF_REVIEW_BLOCK_RE.test(selfRequestChangesError().message)).toBe(true);
   });
 
+  test("sage#75 — matches wording-drift variants (semantic-core match, not exact prose)", () => {
+    // The bug: the old regex required the exact "Can not approve …" prefix and
+    // silently missed GitHub's live wording → approved verdicts posted nothing
+    // (cortex#422 / sage#75). The semantic-core regex matches the whole family.
+    for (const message of [
+      "GraphQL: Cannot approve your own pull request (addPullRequestReview)",
+      "You can not approve your own pull request",
+      "Review can't be submitted on your own pull request",
+      "Can not request changes on your own pull request",
+    ]) {
+      expect(SELF_REVIEW_BLOCK_RE.test(message)).toBe(true);
+    }
+  });
+
   test("does not match unrelated review errors", () => {
     expect(SELF_REVIEW_BLOCK_RE.test("HTTP 502 Bad Gateway from api.github.com")).toBe(false);
     expect(SELF_REVIEW_BLOCK_RE.test("401 Bad credentials")).toBe(false);
