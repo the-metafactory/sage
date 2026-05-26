@@ -104,13 +104,20 @@ export async function prDiff(ref: PrRef): Promise<string> {
 }
 
 /**
- * GraphQL error family GH returns when the authenticated user equals the PR
- * author and tries to approve/request-changes their own PR. Matches both
- * "approve" and "request changes" wording; the `--comment` event is always
- * allowed and never produces this error.
+ * Error family GH returns when the authenticated user equals the PR author
+ * and tries to approve / request-changes their own PR.
+ *
+ * Match only the STABLE semantic core — "your own pull request" — not the
+ * full sentence. The leading prose drifts ("Can not" vs "Cannot", GraphQL vs
+ * REST phrasing, occasional rewordings), and the old full-sentence regex
+ * (`/Can not (?:approve|request changes on) your own pull request/`) silently
+ * stopped matching the live wording → approved verdicts on self-authored PRs
+ * posted NOTHING (cortex#422 / sage#75). The `--comment` event is always
+ * allowed and never produces this, so this stays self-review-specific:
+ * transient (502), auth (401), and validation ("Body is too long") failures
+ * don't contain the phrase and correctly propagate without a silent downgrade.
  */
-export const SELF_REVIEW_BLOCK_RE =
-  /Can not (?:approve|request changes on) your own pull request/i;
+export const SELF_REVIEW_BLOCK_RE = /your own pull request/i;
 
 function eventFlag(event: ReviewEvent): string {
   return event === "approve"
