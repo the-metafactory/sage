@@ -162,11 +162,30 @@ function makeBusClient(
     async close() {
       if (drained) return;
       drained = true;
+      // Bound the graceful drain. sage#77: a quiet/half-open connection
+      // (e.g. subscriptions whose async iterators were abandoned mid-flight)
+      // could make `nc.drain()` hang, wedging the CLI so `process.exit` is
+      // never reached. Race the drain against a 2s cap; on timeout the CLI
+      // returns and `process.exit` tears the connection down anyway.
+      let capTimer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await nc.drain();
+        await Promise.race([
+          nc.drain().catch((err) => {
+            const m = err instanceof Error ? err.message : String(err);
+            opts.log(`drain failed during cleanup: ${m}`);
+          }),
+          new Promise<void>((resolve) => {
+            capTimer = setTimeout(resolve, 2_000);
+          }),
+        ]);
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err);
-        opts.log(`drain failed during cleanup: ${m}`);
+        opts.log(`close failed during cleanup: ${m}`);
+      } finally {
+        // Clear the cap timer when drain wins the race — an un-cleared
+        // pending timer keeps the event loop alive up to 2s even after
+        // close() resolved (sage#78 review).
+        if (capTimer) clearTimeout(capTimer);
       }
     },
   };
