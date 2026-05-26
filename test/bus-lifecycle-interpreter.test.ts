@@ -102,6 +102,31 @@ async function collect(
   return out;
 }
 
+/**
+ * A REAL async generator that never yields and never completes — its
+ * `.next()` stays pending forever. Unlike `pendingForever()` (a plain
+ * object with no `.return()`), this has a generator `.return()` that the
+ * runtime serialises BEHIND the outstanding `.next()`. That is exactly the
+ * production shape (`filterByCorrelation` wrapping a live-but-silent NATS
+ * subscription) that deadlocked `interpretDispatch`'s finally (sage#77).
+ */
+async function* quietGenerator(): AsyncGenerator<SubscribedEnvelope> {
+  await new Promise<void>(() => {
+    /* never resolves — models a live subscription with no traffic */
+  });
+  yield undefined as unknown as SubscribedEnvelope; // unreachable
+}
+
+/** Reject if `p` doesn't settle within `ms` — turns a hang into a failure. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`timed out after ${ms}ms (hang)`)), ms),
+    ),
+  ]);
+}
+
 describe("interpretDispatch — terminal events", () => {
   test("completed lifecycle yields {lifecycle:completed} + {terminated,0}", async () => {
     const gen = interpretDispatch({
@@ -115,6 +140,27 @@ describe("interpretDispatch — terminal events", () => {
     expect(events).toHaveLength(2);
     expect(events[0]!.kind).toBe("lifecycle");
     expect(events[1]).toEqual({
+      kind: "terminated",
+      exitCode: 0,
+      reason: "completed",
+    });
+  });
+
+  test("sage#77 — completed via lifecycle terminates even when the verdict stream is a live async generator (no finally deadlock)", async () => {
+    // Repro for the dispatch hang: completion arrives on the lifecycle
+    // stream while the verdict stream is a real async generator with an
+    // outstanding pending `.next()`. The old finally `await
+    // verdictIter.return?.()` serialised behind that pending `.next()` and
+    // never resolved → the whole dispatch wedged. `withTimeout` turns a
+    // recurrence into a test failure instead of a hung suite.
+    const gen = interpretDispatch({
+      lifecycle: fromArray([ev("dispatch.task.completed")]),
+      verdict: quietGenerator(),
+      timeouts: { waitMs: 60_000, silenceMs: 30_000 },
+      context: { principal: "jc", stack: "default" },
+    });
+    const events = await withTimeout(collect(gen), 2_000);
+    expect(events[events.length - 1]).toEqual({
       kind: "terminated",
       exitCode: 0,
       reason: "completed",

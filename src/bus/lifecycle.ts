@@ -379,20 +379,26 @@ export async function* interpretDispatch(
       }
     }
   } finally {
-    // Best-effort close upstream iterables. Both streams are
-    // expected to be Bus Client `EnvelopeStream`s whose `close()` is
-    // idempotent + non-throwing; an iterator without `.return()` is
-    // skipped silently.
-    try {
-      await lifeIter.return?.();
-    } catch {
-      /* swallow — composer's finally also drains */
-    }
-    try {
-      await verdictIter.return?.();
-    } catch {
-      /* swallow */
-    }
+    // Best-effort close upstream iterables — but do NOT `await` them.
+    //
+    // sage#77: on termination one stream is quiet (when `completed`
+    // arrives via lifecycle, the verdict stream never yielded — and vice
+    // versa) and still has an outstanding `.next()` pending on a live but
+    // silent NATS subscription. An async generator serialises `.return()`
+    // behind any in-flight `.next()`, so `await <quiet>Iter.return?.()`
+    // would block forever waiting on a message that never comes →
+    // `dispatchReview` never resolves → the CLI hangs and `process.exit`
+    // is never reached (the original symptom: verdict printed, process
+    // wedged). The earlier unit tests missed this because their fake
+    // iterables had no `.return()` method, making the await a no-op.
+    //
+    // Fire-and-forget instead. The real unsubscribe is the composer's
+    // job: `dispatcher.ts`'s finally closes the underlying NATS
+    // subscriptions (`sub.unsubscribe()`), which ends the upstream
+    // iterators and lets these `.return()` promises settle. `.catch` keeps
+    // a late rejection from surfacing as an unhandledRejection.
+    void lifeIter.return?.()?.catch(() => {});
+    void verdictIter.return?.()?.catch(() => {});
   }
 }
 
