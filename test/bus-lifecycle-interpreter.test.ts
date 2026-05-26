@@ -111,10 +111,12 @@ async function collect(
  * subscription) that deadlocked `interpretDispatch`'s finally (sage#77).
  */
 async function* quietGenerator(): AsyncGenerator<SubscribedEnvelope> {
-  await new Promise<void>(() => {
+  // Never yields and never returns — `.next()` stays pending forever.
+  // (No unreachable `yield` needed: a generator may yield zero times, so the
+  // declared `SubscribedEnvelope` yield type is satisfied vacuously.)
+  await new Promise<never>(() => {
     /* never resolves — models a live subscription with no traffic */
   });
-  yield undefined as unknown as SubscribedEnvelope; // unreachable
 }
 
 /** Reject if `p` doesn't settle within `ms` — turns a hang into a failure. */
