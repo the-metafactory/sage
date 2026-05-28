@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  APPROVAL_ACTION_UNAVAILABLE_RE_GITLAB,
   mapGlMrToPrMetadata,
   countDiffLines,
   stitchUnifiedDiff,
@@ -214,6 +215,18 @@ describe("postReviewWithFallback (GitLab)", () => {
     expect(result).toEqual({ posted: "comment", downgraded: true });
   });
 
+  test("request-changes falls back to comment when GitLab lacks unapprove endpoint", async () => {
+    const { calls, deps } = stubDeps({
+      unapprove: async () => {
+        calls.push("unapprove(404)");
+        throw new Error("glab: 404 Not Found (HTTP 404)");
+      },
+    });
+    const result = await postReviewWithFallback("request-changes", deps);
+    expect(calls).toEqual(["unapprove(404)", "postNote"]);
+    expect(result).toEqual({ posted: "comment", downgraded: true });
+  });
+
   test("non-self-review errors propagate without fallback", async () => {
     const { deps } = stubDeps({
       approve: async () => {
@@ -227,5 +240,12 @@ describe("postReviewWithFallback (GitLab)", () => {
     expect(SELF_REVIEW_BLOCK_RE_GITLAB.test("user cannot approve own merge request")).toBe(true);
     expect(SELF_REVIEW_BLOCK_RE_GITLAB.test("Access denied: self-approval disabled")).toBe(true);
     expect(SELF_REVIEW_BLOCK_RE_GITLAB.test("404 Not Found")).toBe(false);
+  });
+
+  test("approval-action unavailable regex only matches explicit 404s", () => {
+    expect(APPROVAL_ACTION_UNAVAILABLE_RE_GITLAB.test("glab: 404 Not Found (HTTP 404)")).toBe(
+      true,
+    );
+    expect(APPROVAL_ACTION_UNAVAILABLE_RE_GITLAB.test("500 internal error")).toBe(false);
   });
 });
