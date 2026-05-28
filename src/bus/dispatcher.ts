@@ -25,6 +25,7 @@
  */
 
 import { parsePrRef } from "../forge/parse.ts";
+import type { ForgeKind } from "../forge/types.ts";
 import { buildSovereignty } from "../identity.ts";
 import {
   buildTaskEnvelopeSpec,
@@ -61,10 +62,11 @@ export interface DispatchOptions {
   requireNatsAuth?: boolean;
   stack?: string;
   reviewer?: string;
+  forge?: ForgeKind;
 }
 
 export async function dispatchReview(opts: DispatchOptions): Promise<number> {
-  const ref = parsePrRef(opts.prRef);
+  const ref = parsePrRef(opts.prRef, opts.forge);
   const stack = resolveStack(opts.stack);
   const sovereignty = buildSovereignty(
     opts.dataResidency ? { data_residency: opts.dataResidency } : undefined,
@@ -75,7 +77,7 @@ export async function dispatchReview(opts: DispatchOptions): Promise<number> {
     stack,
     post: opts.post,
     ...(opts.timeoutSeconds ? { timeoutSeconds: opts.timeoutSeconds } : {}),
-    forge: ref.kind ?? "github",
+    forge: opts.forge ?? ref.kind ?? "github",
     ...(opts.reviewer !== undefined ? { reviewer: opts.reviewer } : {}),
   });
 

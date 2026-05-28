@@ -73,6 +73,18 @@ describe("buildTaskEnvelopeSpec", () => {
     expect(spec.payload.forge).toBe("gitlab");
   });
 
+  test("legacy pr_url uses GitLab MR path when gitlab", () => {
+    const spec = buildTaskEnvelopeSpec({
+      ref: glRef,
+      principal: "jc",
+      stack: "default",
+      post: false,
+    });
+    expect(spec.payload.pr_url).toBe(
+      "https://gitlab.example.com/metafactory/team/sage/-/merge_requests/7",
+    );
+  });
+
   test("payload.reviewer defaults to capability-dispatch", () => {
     const spec = buildTaskEnvelopeSpec({
       ref: ghRef,

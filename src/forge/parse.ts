@@ -43,9 +43,16 @@ export function detectForgeKindFromRef(input: string): ForgeKind | null {
  */
 export function parsePrRef(input: string, hint?: ForgeKind): PrRef {
   const kind = hint ?? detectForgeKindFromRef(input);
-  if (kind === "gitlab") return parseGitlabRef(input);
+  if (kind === "gitlab") return parseGitlabRef(normalizeGitlabHintRef(input, hint));
   if (kind === "github") return parseGithubRef(input);
   throw new Error(
     `unrecognized PR/MR reference: "${input}" — expected a GitHub (OWNER/REPO#N, https://github.com/.../pull/N) or GitLab (GROUP/PROJ!N, https://HOST/.../-/merge_requests/N) form`,
   );
+}
+
+function normalizeGitlabHintRef(input: string, hint?: ForgeKind): string {
+  if (hint !== "gitlab") return input;
+  const trimmed = input.trim();
+  if (!/^[^#!\s]+#\d+$/.test(trimmed)) return input;
+  return trimmed.replace(/#(\d+)$/, "!$1");
 }
