@@ -338,6 +338,8 @@ export async function repoFile(
 export const SELF_REVIEW_BLOCK_RE_GITLAB =
   /cannot approve|cannot unapprove|user cannot approve (?:own|their own)|self.?approval/i;
 
+export const APPROVAL_ACTION_UNAVAILABLE_RE_GITLAB = /\b404 Not Found\b/i;
+
 export interface GitLabPostReviewDeps {
   approve: () => Promise<void>;
   unapprove: () => Promise<void>;
@@ -369,8 +371,11 @@ export async function postReviewWithFallback(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (SELF_REVIEW_BLOCK_RE_GITLAB.test(msg)) {
-      log(`[sage] glab blocked self-${event}; falling back to comment-only`);
+    if (
+      SELF_REVIEW_BLOCK_RE_GITLAB.test(msg) ||
+      APPROVAL_ACTION_UNAVAILABLE_RE_GITLAB.test(msg)
+    ) {
+      log(`[sage] glab could not apply ${event}; falling back to comment-only`);
       await deps.postNote();
       return { posted: "comment", downgraded: true };
     }
