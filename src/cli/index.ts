@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
+import type { ForgeKind } from "../forge/types.ts";
 import {
   parseConcurrencyValue,
   readConcurrencyEnv,
@@ -31,6 +32,12 @@ function resolveLensConcurrency(raw: string | undefined): number | undefined {
     parseConcurrencyValue(raw, "--lens-concurrency") ??
     readConcurrencyEnv("SAGE_LENS_CONCURRENCY")
   );
+}
+
+function parseForgeKind(raw: string | undefined): ForgeKind | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  if (raw === "github" || raw === "gitlab") return raw;
+  throw new Error(`--forge must be "github" or "gitlab" (got ${JSON.stringify(raw)})`);
 }
 
 const program = new Command();
@@ -147,6 +154,11 @@ program
   .option("--creds <file>", "NATS .creds file", process.env.NATS_CREDS_FILE)
   .option("--post", "Ask the receiving daemon to post the review back to GitHub", false)
   .option(
+    "--forge <kind>",
+    "Forge kind for shorthand refs (github|gitlab); also reads SAGE_FORGE",
+    process.env.SAGE_FORGE,
+  )
+  .option(
     "--wait <seconds>",
     "Max seconds to wait for the verdict before timing out (default 900)",
     (v) => parseInt(v, 10),
@@ -181,9 +193,11 @@ program
         timeout?: number;
         residency?: string;
         stack?: string;
+        forge?: string;
       },
     ) => {
       const requireNatsAuth = requiresNatsAuth();
+      const forge = parseForgeKind(opts.forge);
 
       const exitCode = await dispatchReview({
         prRef,
@@ -197,6 +211,7 @@ program
         ...(opts.residency ? { dataResidency: opts.residency } : {}),
         ...(requireNatsAuth ? { requireNatsAuth: true } : {}),
         ...(opts.stack ? { stack: opts.stack } : {}),
+        ...(forge ? { forge } : {}),
       });
       process.exit(exitCode);
     },

@@ -78,11 +78,16 @@ describe("parsePrRef (top-level)", () => {
     });
   });
 
-  test("honors an explicit hint (forces gitlab)", () => {
-    // Bare `g/p#3` would normally route to GitHub by separator; an
-    // explicit hint overrides detection. Used by the CLI when
-    // `--forge` is set so the operator's flag wins.
-    expect(() => parsePrRef("g/p#3", "gitlab")).toThrow();
+  test("honors an explicit GitLab hint for hash shorthand", () => {
+    // Bare `g/p#3` would normally route to GitHub by separator. An
+    // explicit GitLab hint comes from `--forge gitlab`, so tolerate
+    // the operator's familiar PR shorthand and publish a GitLab MR.
+    expect(parsePrRef("g/p#3", "gitlab")).toEqual({
+      kind: "gitlab",
+      owner: "g",
+      repo: "p",
+      number: 3,
+    });
   });
 
   test("throws on unrecognized input", () => {
