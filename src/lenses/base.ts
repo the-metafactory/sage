@@ -1,6 +1,7 @@
 import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
 import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
+import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architecture-docs.ts";
 import { makeLensPipeline } from "./shape.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
@@ -49,6 +50,11 @@ export interface LensRunInput {
    * returns `readonly PriorReviewFinding[]`).
    */
   priorFindings?: readonly PriorReviewFinding[];
+  /**
+   * Target-repo architecture context loaded by the workflow. The Lens
+   * kernel injects it only for the Architecture lens.
+   */
+  architectureDocs?: ArchitectureDocsContext;
 }
 
 interface RawLensOutput {
@@ -142,6 +148,7 @@ function buildStdinContent(
   pr: PrMetadata,
   diff: string,
   priorFindings: readonly PriorReviewFinding[] = [],
+  architectureDocs?: ArchitectureDocsContext,
 ): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)
@@ -154,6 +161,10 @@ ${priorFindings
   .map((f) => `  - [${f.severity}] ${f.path}:${f.line} — ${f.title}`)
   .join("\n")}`;
 
+  const architectureSection = architectureDocs
+    ? `\n${renderArchitectureDocs(architectureDocs)}\n`
+    : "";
+
   return `PR #${pr.number}: ${pr.title}
 Author: ${pr.author.login}
 Base: ${pr.baseRefName} ← Head: ${pr.headRefName}
@@ -164,6 +175,7 @@ Description:
 ${pr.body || "(no description)"}
 
 ${priorSection}
+${architectureSection}
 
 ---
 Unified diff:
@@ -177,7 +189,12 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
-  const stdinContent = buildStdinContent(input.pr, input.diff, input.priorFindings);
+  const stdinContent = buildStdinContent(
+    input.pr,
+    input.diff,
+    input.priorFindings,
+    spec.name === "Architecture" ? input.architectureDocs : undefined,
+  );
 
   let lensJson: RawLensOutput | undefined;
   let extractionError = "";

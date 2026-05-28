@@ -99,6 +99,15 @@ export interface PostReviewResult {
   downgraded: boolean;
 }
 
+export interface RepoFileOptions {
+  /**
+   * Branch/tag/SHA to read from. Review workflow passes the PR base
+   * branch so repository context reflects the contract being merged
+   * into, not the reviewer's installed sage checkout.
+   */
+  refName?: string;
+}
+
 /**
  * Prior-review finding parsed out of a previous Sage review body. Used
  * by lenses to suppress repeat findings on iterative reviews. The
@@ -200,6 +209,13 @@ export interface ForgeBackend {
   /** Fetch the unified diff for the PR/MR. */
   prDiff(ref: PrRef): Promise<string>;
 
+  /**
+   * Fetch a repository file as UTF-8 text. Missing files return null;
+   * transport/auth/schema failures throw so the caller can decide
+   * whether that context source is optional.
+   */
+  repoFile(ref: PrRef, path: string, opts?: RepoFileOptions): Promise<string | null>;
+
   /** Post a review back to the forge. Returns the event actually accepted. */
   postReview(input: PostReviewInput): Promise<PostReviewResult>;
 
@@ -216,4 +232,3 @@ export interface ForgeBackend {
   /** Cheap auth-health probe. */
   authStatus(): Promise<AuthStatusResult>;
 }
-

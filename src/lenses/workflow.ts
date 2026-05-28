@@ -9,6 +9,8 @@ import type {
   PriorFindingsStatus,
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
+import { loadArchitectureDocs } from "./architecture-docs.ts";
+import { architectureApplies } from "./applicability.ts";
 import {
   decideVerdict,
   persistVerdict,
@@ -115,6 +117,13 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
+  const architectureDocs = architectureApplies({ pr, diff })
+    ? await loadArchitectureDocs({
+        forge: opts.forge,
+        ref: opts.ref,
+        baseRefName: pr.baseRefName,
+      })
+    : undefined;
 
   if (priorResult.status !== "ok") {
     const reason = priorResult.reason ?? "";
@@ -137,6 +146,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ctx: { pr, diff },
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
+    ...(architectureDocs !== undefined ? { architectureDocs } : {}),
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     ...(concurrency !== undefined ? { concurrency } : {}),
     ...(opts.onLensComplete !== undefined ? { onLensComplete: opts.onLensComplete } : {}),
