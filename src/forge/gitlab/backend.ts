@@ -15,6 +15,7 @@ import type {
   PostReviewResult,
   PrMetadata,
   PrRef,
+  RepoFileOptions,
   ReviewEvent,
 } from "../types.ts";
 
@@ -285,6 +286,34 @@ export async function prDiff(ref: PrRef, fallbackHost: string = DEFAULT_GITLAB_H
   return stitchUnifiedDiff(changes);
 }
 
+function encodeFilePath(path: string): string {
+  return encodeURIComponent(path);
+}
+
+export async function repoFile(
+  ref: PrRef,
+  path: string,
+  opts: RepoFileOptions = {},
+  fallbackHost: string = DEFAULT_GITLAB_HOST,
+): Promise<string | null> {
+  const host = resolveHost(ref, fallbackHost);
+  const project = encodeProject(ref);
+  const refName = opts.refName ?? "HEAD";
+  const endpoint =
+    `/projects/${project}/repository/files/${encodeFilePath(path)}/raw` +
+    `?ref=${encodeURIComponent(refName)}`;
+  const out = await runGlab(
+    ["api", "--hostname", host, endpoint],
+    { allowNonZero: true },
+  );
+
+  if (out.exitCode === 0) return out.stdout;
+
+  const message = `${out.stderr}\n${out.stdout}`;
+  if (/404|not found/i.test(message)) return null;
+  throw new Error(`glab api ${endpoint} failed (exit ${out.exitCode}): ${message.trim()}`);
+}
+
 /**
  * Map a sage `ReviewEvent` to the sequence of GitLab API calls.
  *
@@ -524,6 +553,10 @@ export class GitLabBackend implements ForgeBackend {
 
   prDiff(ref: PrRef): Promise<string> {
     return prDiff(ref, this.defaultHost);
+  }
+
+  repoFile(ref: PrRef, path: string, opts?: RepoFileOptions): Promise<string | null> {
+    return repoFile(ref, path, opts, this.defaultHost);
   }
 
   postReview(input: PostReviewInput): Promise<PostReviewResult> {

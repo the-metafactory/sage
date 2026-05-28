@@ -18,6 +18,7 @@ import type {
   PostReviewInput,
   PostReviewResult,
   PrMetadata,
+  RepoFileOptions,
 } from "../src/forge/types.ts";
 import { createInMemoryReviewSource } from "../src/prior-findings/in-memory-source.ts";
 import type { ForgeReviewSource } from "../src/prior-findings/types.ts";
@@ -40,6 +41,7 @@ export interface MakeStubForgeOptions {
    * `ok` PriorFindings status without exercising prior-iteration logic.
    */
   reviewSource?: ForgeReviewSource;
+  repoFile?: (path: string, opts?: RepoFileOptions) => Promise<string | null>;
 }
 
 export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
@@ -60,6 +62,7 @@ export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
     },
     prView: async () => opts.pr as PrMetadata,
     prDiff: async () => opts.diff,
+    repoFile: async (_ref, path, fileOpts) => opts.repoFile?.(path, fileOpts) ?? null,
     postReview:
       opts.postReview ??
       (async () => ({ posted: "comment", downgraded: false })),

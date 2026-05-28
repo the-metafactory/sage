@@ -16,6 +16,7 @@ import type {
   PostReviewResult,
   PrMetadata,
   PrRef,
+  RepoFileOptions,
   ReviewEvent,
 } from "../types.ts";
 
@@ -101,6 +102,30 @@ export async function prView(ref: PrRef): Promise<PrMetadata> {
 export async function prDiff(ref: PrRef): Promise<string> {
   const out = await runGh(["pr", "diff", String(ref.number), "--repo", formatRepo(ref)]);
   return out.stdout;
+}
+
+function encodeRepoPath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+export async function repoFile(
+  ref: PrRef,
+  path: string,
+  opts: RepoFileOptions = {},
+): Promise<string | null> {
+  const encodedPath = encodeRepoPath(path);
+  const refQuery = opts.refName ? `?ref=${encodeURIComponent(opts.refName)}` : "";
+  const endpoint = `repos/${formatRepo(ref)}/contents/${encodedPath}${refQuery}`;
+  const out = await runGh(
+    ["api", "-H", "Accept: application/vnd.github.raw", endpoint],
+    { allowNonZero: true },
+  );
+
+  if (out.exitCode === 0) return out.stdout;
+
+  const message = `${out.stderr}\n${out.stdout}`;
+  if (/HTTP 404|Not Found/i.test(message)) return null;
+  throw new Error(`gh api ${endpoint} failed (exit ${out.exitCode}): ${message.trim()}`);
 }
 
 /**
@@ -326,6 +351,10 @@ export class GitHubBackend implements ForgeBackend {
 
   prDiff(ref: PrRef): Promise<string> {
     return prDiff(ref);
+  }
+
+  repoFile(ref: PrRef, path: string, opts?: RepoFileOptions): Promise<string | null> {
+    return repoFile(ref, path, opts);
   }
 
   postReview(input: PostReviewInput): Promise<PostReviewResult> {

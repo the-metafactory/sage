@@ -15,6 +15,7 @@
 
 import type { PriorReviewFinding } from "../forge/types.ts";
 import type { Substrate } from "../substrate/types.ts";
+import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
 import type { LensModule } from "./registry.ts";
@@ -33,6 +34,7 @@ export interface LensScheduleOptions {
   /** Inputs threaded to every applicable Lens.review(). */
   readonly substrate: Substrate;
   readonly priorFindings: readonly PriorReviewFinding[];
+  readonly architectureDocs?: ArchitectureDocsContext;
 
   /** Per-Lens substrate timeout. Falls back to substrate-specific default. */
   readonly timeoutMs?: number;
@@ -103,6 +105,7 @@ export async function runLenses(
     diff: opts.ctx.diff,
     substrate: opts.substrate,
     priorFindings: opts.priorFindings,
+    ...(opts.architectureDocs !== undefined ? { architectureDocs: opts.architectureDocs } : {}),
     ...timeout,
   };
 
