@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
+import packageJson from "../../package.json";
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
@@ -47,7 +48,7 @@ program
   .description(
     "Sage — botanical code-review agent on pi.dev, Claude Code, or Codex CLI, speaking Myelin envelopes",
   )
-  .version("0.1.0");
+  .version(packageJson.version);
 
 program
   .command("review")
