@@ -158,7 +158,7 @@ export function maintainabilityApplies(ctx: ApplicabilityContext): boolean {
 
 // ──────────────────────────── Honest Oracle ────────────────────────────
 
-const ORACLE_CLAIMS_DOC_RE = /\.(?:md|mdx|rst|txt|adoc)$/i;
+const ORACLE_CLAIMS_DOC_RE = /\.(?:md|mdx|rst|txt|adoc|asciidoc)$/i;
 
 export function honestOracleApplies(ctx: ApplicabilityContext): boolean {
   // The Oracle checks the gap between what is CLAIMED and what is shown, so it

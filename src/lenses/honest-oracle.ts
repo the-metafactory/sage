@@ -60,5 +60,12 @@ Rules of engagement:
   adversary, not the fixer.`;
 
 export async function reviewHonestOracle(input: LensRunInput): Promise<LensReport> {
-  return runLens({ name: "HonestOracle", focus: FOCUS }, input);
+  const report = await runLens({ name: "HonestOracle", focus: FOCUS }, input);
+  // The Oracle is the adversary, not the fixer — its output is the indictment,
+  // never the remedy. The focus prompt asks the model to omit `suggestion`, but
+  // strip it structurally too so the contract holds even when the model drifts.
+  return {
+    ...report,
+    findings: report.findings.map(({ suggestion: _drop, ...rest }) => rest),
+  };
 }
