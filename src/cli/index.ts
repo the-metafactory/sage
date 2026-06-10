@@ -13,7 +13,7 @@ import {
   reviewPr,
 } from "../lenses/workflow.ts";
 import { selectSubstrate } from "../substrate/select.ts";
-import { renderVerdict } from "../verdict/index.ts";
+import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -58,6 +58,11 @@ program
   .argument("<pr-ref>", "PR/MR URL or OWNER/REPO#N (GitHub) or GROUP/PROJ!N (GitLab)")
   .option("--post", "Post the review back to the PR/MR via the forge CLI", false)
   .option(
+    "--emit-verdict-block",
+    "Append the cortex structured verdict block (fenced ```json) as the terminal stdout artefact. cortex's pi-dev substrate parses it to recover the decision + findings counts.",
+    false,
+  )
+  .option(
     "--substrate <name>",
     "Coding harness Sage runs through ({pi|claude|codex}). Falls back to SAGE_SUBSTRATE / config / pi.",
   )
@@ -82,6 +87,7 @@ program
   .action(
     async (prRef: string, opts: {
       post: boolean;
+      emitVerdictBlock: boolean;
       timeout: number;
       substrate?: string;
       forge?: string;
@@ -120,7 +126,12 @@ program
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
       const body = renderVerdict(result.verdict, selection.substrate.displayName);
-      console.log(body);
+      // The verdict block MUST be the terminal artefact: cortex's
+      // extractVerdictBlock picks the LAST ```json fence in stdout.
+      const out = opts.emitVerdictBlock
+        ? `${body}\n\n${renderVerdictBlock(result.verdict, result.blockMeta)}`
+        : body;
+      console.log(out);
       console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
       if (result.verdict.decision === "changes-requested") {
         process.exit(1);

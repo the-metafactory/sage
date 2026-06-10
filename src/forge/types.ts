@@ -62,6 +62,13 @@ export const PrMetadataSchema = z.object({
   isDraft: z.boolean(),
   baseRefName: z.string(),
   headRefName: z.string(),
+  /**
+   * PR/MR head commit SHA. Sourced by the verdict block's `commit_id`
+   * (cortex review-pipeline contract). Defaults to "" so pre-existing
+   * `PrMetadata` fixtures that omit it stay schema-valid; the live github
+   * / gitlab backends always populate it.
+   */
+  headRefOid: z.string().default(""),
   author: z.object({ login: z.string() }),
   changedFiles: z.number().int(),
   additions: z.number().int(),
