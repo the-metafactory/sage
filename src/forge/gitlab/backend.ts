@@ -184,6 +184,7 @@ export function mapGlMrToPrMetadata(
     isDraft: mr.draft ?? mr.work_in_progress ?? false,
     baseRefName: mr.target_branch,
     headRefName: mr.source_branch,
+    headRefOid: mr.diff_refs?.head_sha ?? mr.sha,
     author: { login: mr.author.username },
     changedFiles: files.length,
     additions,

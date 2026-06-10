@@ -17,4 +17,6 @@
 export type { Verdict } from "./types.ts";
 export { decideVerdict, verdictToEvent } from "./decide.ts";
 export { renderVerdict } from "./render.ts";
+export { renderVerdictBlock, mapFindingsToBuckets } from "./block.ts";
+export type { VerdictBlockMeta, FindingsBuckets } from "./block.ts";
 export { persistVerdict, verdictFilePath } from "./persist.ts";

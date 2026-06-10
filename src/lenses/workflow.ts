@@ -16,6 +16,7 @@ import {
   persistVerdict,
   renderVerdict,
   type Verdict,
+  type VerdictBlockMeta,
   verdictFilePath,
   verdictToEvent,
 } from "../verdict/index.ts";
@@ -84,6 +85,13 @@ export interface ReviewResult {
    * `gh pr review --body-file`). Set when `persistVerdict` succeeded.
    */
   recoveryPath?: string;
+  /**
+   * Metadata for the cortex structured verdict block (sage#83). `commit_id`
+   * is the PR head SHA; the GitHub review id/url + `submitted_at` are
+   * link-less defaults in Tier 1 (id 0, url ""). The CLI emits the block only
+   * under `--emit-verdict-block`.
+   */
+  blockMeta: VerdictBlockMeta;
 }
 
 export interface PostError {
@@ -163,9 +171,23 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const { posted, postedEvent, downgraded, postError } = opts.post
     ? await attemptPost(opts.forge, opts.ref, verdict, body)
     : { posted: false };
+
+  // Tier 1: link-less defaults (contract-valid integer 0 / string ""). The
+  // real GitHub review id + url are a Tier-2 follow-up (forge-backend
+  // extension); `commit_id` is the PR head SHA so cortex's merge-freshness
+  // check has a real anchor today.
+  const blockMeta: VerdictBlockMeta = {
+    github_review_id: 0,
+    github_review_url: "",
+    submitted_at: new Date().toISOString(),
+    commit_id: pr.headRefOid,
+    inline_comments: 0,
+  };
+
   return {
     verdict,
     posted,
+    blockMeta,
     ...(recoveryPath !== undefined ? { recoveryPath } : {}),
     ...(postedEvent !== undefined ? { postedEvent } : {}),
     ...(downgraded !== undefined ? { downgraded } : {}),

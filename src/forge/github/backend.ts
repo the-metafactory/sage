@@ -65,7 +65,7 @@ export function formatRepo(ref: PrRef): string {
 }
 
 const PR_VIEW_FIELDS =
-  "number,title,body,state,isDraft,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url";
+  "number,title,body,state,isDraft,baseRefName,headRefName,headRefOid,author,changedFiles,additions,deletions,files,url";
 
 export async function prView(ref: PrRef): Promise<PrMetadata> {
   const out = await runGh([
