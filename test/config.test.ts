@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   resolvePrincipalFromConfig,
-  resolveDefaultOrg,
+  resolveDefaultPrincipal,
   cortexConfigPath,
 } from "../src/config.ts";
 
@@ -41,7 +41,7 @@ describe("resolvePrincipalFromConfig", () => {
   });
 });
 
-describe("resolveDefaultOrg precedence", () => {
+describe("resolveDefaultPrincipal precedence", () => {
   const priorOrg = process.env.SAGE_ORG;
   afterEach(() => {
     if (priorOrg === undefined) delete process.env.SAGE_ORG;
@@ -50,17 +50,17 @@ describe("resolveDefaultOrg precedence", () => {
 
   test("SAGE_ORG env wins over resolved principal", () => {
     process.env.SAGE_ORG = "fromenv";
-    expect(resolveDefaultOrg(() => "jc")).toBe("fromenv");
+    expect(resolveDefaultPrincipal(() => "jc")).toBe("fromenv");
   });
 
   test("resolved principal used when SAGE_ORG unset", () => {
     delete process.env.SAGE_ORG;
-    expect(resolveDefaultOrg(() => "jc")).toBe("jc");
+    expect(resolveDefaultPrincipal(() => "jc")).toBe("jc");
   });
 
   test("falls back to metafactory when neither present", () => {
     delete process.env.SAGE_ORG;
-    expect(resolveDefaultOrg(() => undefined)).toBe("metafactory");
+    expect(resolveDefaultPrincipal(() => undefined)).toBe("metafactory");
   });
 });
 

@@ -55,7 +55,7 @@ export function resolvePrincipalFromConfig(path: string = cortexConfigPath()): s
  * `resolvePrincipal` is injectable for tests; production uses
  * {@link resolvePrincipalFromConfig}.
  */
-export function resolveDefaultOrg(
+export function resolveDefaultPrincipal(
   resolvePrincipal: () => string | undefined = resolvePrincipalFromConfig,
 ): string {
   return process.env.SAGE_ORG ?? resolvePrincipal() ?? "metafactory";

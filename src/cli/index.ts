@@ -4,7 +4,7 @@ import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import packageJson from "../../package.json";
-import { resolveDefaultOrg } from "../config.ts";
+import { resolveDefaultPrincipal } from "../config.ts";
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
@@ -161,7 +161,7 @@ program
   .option(
     "--org <org>",
     "Org/principal segment of the publish subject (must match the cortex consumer's principal). Default: SAGE_ORG env → cortex.yaml principal.id → metafactory (sage#85).",
-    resolveDefaultOrg(),
+    resolveDefaultPrincipal(),
   )
   .option(
     "--source <src>",
