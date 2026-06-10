@@ -4,12 +4,14 @@ import { reviewArchitecture } from "./architecture.ts";
 import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
 import { reviewPerformance } from "./performance.ts";
 import { reviewMaintainability } from "./maintainability.ts";
+import { reviewHonestOracle } from "./honest-oracle.ts";
 import {
   securityApplies,
   architectureApplies,
   ecosystemComplianceApplies,
   performanceApplies,
   maintainabilityApplies,
+  honestOracleApplies,
   type ApplicabilityContext,
 } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
@@ -65,4 +67,8 @@ export const LENSES: readonly LensModule[] = [
     review: reviewMaintainability,
     applies: maintainabilityApplies,
   },
+  // The adversarial lens runs last — after the constructive passes have said
+  // what the code IS, the Oracle asks whether the PR's claims about it hold.
+  // Kept a distinct lens (never merged with a fixer) so it can't pull punches.
+  { name: "HonestOracle", review: reviewHonestOracle, applies: honestOracleApplies },
 ];

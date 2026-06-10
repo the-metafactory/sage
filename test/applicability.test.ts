@@ -5,17 +5,18 @@ import {
   ecosystemComplianceApplies,
   performanceApplies,
   maintainabilityApplies,
+  honestOracleApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
 
 type FileSpec = { path: string; additions?: number; deletions?: number };
 
-function pr(files: Array<FileSpec>): PrMetadata {
+function pr(files: Array<FileSpec>, body = ""): PrMetadata {
   return {
     number: 1,
     title: "t",
-    body: "",
+    body,
     state: "OPEN",
     isDraft: false,
     baseRefName: "main",
@@ -296,8 +297,24 @@ describe("maintainabilityApplies", () => {
   });
 });
 
+describe("honestOracleApplies", () => {
+  test("fires when the PR body carries substantial claims", () => {
+    const body = "This PR fully closes the sovereignty gap and is guaranteed to be the first complete fix.";
+    expect(honestOracleApplies({ pr: pr([{ path: "src/x.ts" }], body), diff: "" })).toBe(true);
+  });
+
+  test("fires when docs/markdown are touched", () => {
+    expect(honestOracleApplies({ pr: pr([{ path: "docs/design.md" }]), diff: "" })).toBe(true);
+    expect(honestOracleApplies({ pr: pr([{ path: "README.md" }]), diff: "" })).toBe(true);
+  });
+
+  test("does not fire on a bare dependency bump with no body or docs", () => {
+    expect(honestOracleApplies({ pr: pr([{ path: "bun.lock" }]), diff: "" })).toBe(false);
+  });
+});
+
 describe("evaluateApplicability", () => {
-  test("aggregates all five predicates", () => {
+  test("aggregates all six predicates", () => {
     const result = evaluateApplicability({
       pr: pr([{ path: "src/auth/login.ts" }]),
       diff: "",
@@ -307,6 +324,7 @@ describe("evaluateApplicability", () => {
     expect(result.ecosystemCompliance).toBe(false);
     expect(result.performance).toBe(false);
     expect(result.maintainability).toBe(false); // only 1 line under default helper
+    expect(result.honestOracle).toBe(false); // empty body, no docs
   });
 
   test("maintainability fires on substantial code PR", () => {

@@ -156,6 +156,20 @@ export function maintainabilityApplies(ctx: ApplicabilityContext): boolean {
   return totalLines >= MAINTAINABILITY_MIN_LINES;
 }
 
+// ──────────────────────────── Honest Oracle ────────────────────────────
+
+const ORACLE_CLAIMS_DOC_RE = /\.(?:md|mdx|rst|txt|adoc)$/i;
+
+export function honestOracleApplies(ctx: ApplicabilityContext): boolean {
+  // The Oracle checks the gap between what is CLAIMED and what is shown, so it
+  // fires when there are claims to check: a non-trivial PR description, or any
+  // docs/markdown in the diff (READMEs, design notes, changelogs — the places
+  // overclaim and surrogate-endpoint language live). A bare dependency bump
+  // with an empty body and no docs has nothing for it to attack.
+  if (ctx.pr.body.trim().length >= 80) return true;
+  return ctx.pr.files.some((f) => ORACLE_CLAIMS_DOC_RE.test(f.path));
+}
+
 // ───────────────────────────── Summary ─────────────────────────────
 
 export interface ApplicabilityResult {
@@ -164,6 +178,7 @@ export interface ApplicabilityResult {
   ecosystemCompliance: boolean;
   performance: boolean;
   maintainability: boolean;
+  honestOracle: boolean;
 }
 
 export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityResult {
@@ -173,5 +188,6 @@ export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityR
     ecosystemCompliance: ecosystemComplianceApplies(ctx),
     performance: performanceApplies(ctx),
     maintainability: maintainabilityApplies(ctx),
+    honestOracle: honestOracleApplies(ctx),
   };
 }
