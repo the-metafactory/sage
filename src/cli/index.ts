@@ -4,6 +4,7 @@ import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import packageJson from "../../package.json";
+import { resolveDefaultOrg } from "../config.ts";
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
@@ -157,7 +158,11 @@ program
   )
   .argument("<pr-ref>", "PR URL or OWNER/REPO#N")
   .option("--nats <url>", "NATS broker URL", process.env.NATS_URL ?? "nats://localhost:4222")
-  .option("--org <org>", "Org segment", process.env.SAGE_ORG ?? "metafactory")
+  .option(
+    "--org <org>",
+    "Org/principal segment of the publish subject (must match the cortex consumer's principal). Default: SAGE_ORG env → cortex.yaml principal.id → metafactory (sage#85).",
+    resolveDefaultOrg(),
+  )
   .option(
     "--source <src>",
     "Envelope source",
