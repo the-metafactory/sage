@@ -1,6 +1,6 @@
 {
   "name": "sage",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Sage — botanical-named code review agent on pi.dev, Claude Code, or Codex CLI substrate, speaks Myelin envelopes",
   "type": "module",
   "module": "src/cli/index.ts",

@@ -15,7 +15,7 @@
 
 schema: arc/v1
 name: sage
-version: 0.2.6
+version: 0.2.7
 type: agent
 targets: [cortex]
 description: >-
