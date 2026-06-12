@@ -9,13 +9,12 @@ import type { Verdict } from "./types.ts";
  */
 export function renderVerdict(verdict: Verdict, substrateLabel?: string): string {
   const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
-  const sections = verdict.lenses.map((lens) => {
+  const sections = verdict.lenses.flatMap((lens) => {
+    if (!lens.errored && lens.findings.length === 0) return [];
     const heading = lens.errored
       ? `### ${lens.lens} — DID NOT RUN`
       : `### ${lens.lens}`;
-    const intro = lens.errored
-      ? "> ⚠ Lens failed to execute. Verdict cannot rely on this lens's coverage; re-run before merging."
-      : lens.summary;
+    const intro = lens.errored ? "Coverage incomplete; re-run before merge.\n\n" : "";
     const body =
       lens.findings.length === 0
         ? "_No findings._"
@@ -23,15 +22,16 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
             .map((f) => {
               const lensTag =
                 f.sourceLenses && f.sourceLenses.length > 1
-                  ? `\n  Lenses: ${f.sourceLenses.join(", ")}`
+                  ? `\n  via: ${f.sourceLenses.join(", ")}`
                   : "";
               const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}`;
               if (!f.suggestion) return findingHead;
+              if (!f.suggestion.includes("\n")) return `${findingHead}\n  Fix: ${f.suggestion}`;
               const fence = pickFence(f.suggestion);
-              return `${findingHead}\n  \n  Suggestion:\n\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
+              return `${findingHead}\n  Fix:\n  ${fence}\n  ${f.suggestion.replace(/\n/g, "\n  ")}\n  ${fence}`;
             })
             .join("\n\n");
-    return `${heading}\n${intro}\n\n${body}`;
+    return [`${heading}\n\n${intro}${body}`];
   });
   const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._`;
   return [head, ...sections, footer].join("\n\n");
