@@ -32,15 +32,16 @@ function erroredLens(name: string, msg: string): LensReport {
   };
 }
 
-describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
-  test("clean lens renders with plain heading", () => {
+describe("renderVerdict compact review body", () => {
+  test("clean lenses are omitted from the rendered body", () => {
     const verdict: Verdict = {
       decision: "approved",
       summary: "No findings. Sage approves.",
       lenses: [cleanLens("CodeQuality")],
     };
     const body = renderVerdict(verdict, "pi.dev");
-    expect(body).toMatch(/### CodeQuality\n/);
+    expect(body).not.toMatch(/### CodeQuality\n/);
+    expect(body).not.toMatch(/_No findings\._/);
     expect(body).not.toMatch(/DID NOT RUN/);
     expect(body).not.toMatch(/Lens failed to execute/);
   });
@@ -55,19 +56,19 @@ describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
     expect(body).toMatch(/### Security — DID NOT RUN/);
   });
 
-  test("errored lens renders a callout above the findings", () => {
+  test("errored lens renders a compact coverage warning", () => {
     const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Security.",
       lenses: [erroredLens("Security", "pi unreachable")],
     };
     const body = renderVerdict(verdict, "pi.dev");
-    expect(body).toMatch(
-      /> ⚠ Lens failed to execute\. Verdict cannot rely on this lens's coverage/,
-    );
+    expect(body).toMatch(/Coverage incomplete; re-run before merge\./);
+    expect(body).not.toMatch(/Lens failed to execute\. Verdict cannot rely/);
+    expect(body).toMatch(/pi unreachable/);
   });
 
-  test("errored section does NOT render lens.summary line (no triple-redundancy)", () => {
+  test("errored section does NOT render lens.summary line", () => {
     // Holly round 3 finding #3: pre-fix the operator saw the failure
     // stated three times — heading, callout, AND lens.summary. The
     // renderer now drops the lens.summary line on errored sections.
@@ -83,13 +84,10 @@ describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
     expect(body).not.toMatch(
       /Lens "Security" failed to execute; verdict cannot rely on this lens\.|did not produce a usable verdict/,
     );
-    // But the callout (which says roughly the same thing in a more
-    // distinctive form) IS present — single source of truth in the
-    // body.
-    expect(body).toMatch(/Lens failed to execute/);
+    expect(body).toMatch(/### Security — DID NOT RUN/);
   });
 
-  test("mixed verdict — errored section marked, clean sections plain", () => {
+  test("mixed verdict renders only non-clean sections", () => {
     const verdict: Verdict = {
       decision: "changes-requested",
       summary: "1 lens(es) failed to run: Performance.",
@@ -100,12 +98,9 @@ describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
       ],
     };
     const body = renderVerdict(verdict, "pi.dev");
-    expect(body).toMatch(/### CodeQuality\n/);
+    expect(body).not.toMatch(/### CodeQuality\n/);
     expect(body).toMatch(/### Performance — DID NOT RUN/);
-    expect(body).toMatch(/### Maintainability\n/);
-    // Single callout — only the errored section has it.
-    const callouts = body.match(/Lens failed to execute/g) ?? [];
-    expect(callouts.length).toBe(1);
+    expect(body).not.toMatch(/### Maintainability\n/);
   });
 
   test("deduped cross-lens finding renders contributing lenses", () => {
@@ -133,7 +128,8 @@ describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
     };
 
     const body = renderVerdict(verdict, "codex");
-    expect(body).toMatch(/Lenses: Architecture, Maintainability/);
+    expect(body).toMatch(/via: Architecture, Maintainability/);
+    expect(body).not.toMatch(/### Maintainability\n/);
   });
 
   test("rendered finding headings round-trip through prior-review parser", () => {
@@ -167,5 +163,33 @@ describe("renderVerdict errored-lens visual marker (sage#27 round 2)", () => {
         title: "Prior findings can be spoofed",
       },
     ]);
+  });
+
+  test("single-line suggestions render inline", () => {
+    const verdict: Verdict = {
+      decision: "commented",
+      summary: "1 finding(s): 1 suggestion.",
+      lenses: [
+        {
+          lens: "Maintainability",
+          summary: "one issue",
+          findings: [
+            {
+              path: "src/a.ts",
+              line: 10,
+              severity: "suggestion",
+              title: "Extract helper",
+              rationale: "The diff repeats `parseRef()`.",
+              suggestion: "Move the shared parsing into `parseRef()`.",
+            },
+          ],
+          durationMs: 1,
+        },
+      ],
+    };
+
+    const body = renderVerdict(verdict, "codex");
+    expect(body).toMatch(/Fix: Move the shared parsing into `parseRef\(\)`\./);
+    expect(body).not.toMatch(/Suggestion:/);
   });
 });
