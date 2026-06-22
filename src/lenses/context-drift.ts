@@ -79,9 +79,6 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   };
 }
 
-const CONTEXT_SOURCE_PATH_RE =
-  /\b(CONTEXT\.md|docs\/architecture\.md|CONTEXT-MAP\.md)\b/gi;
-
 interface ContextSource {
   path: string;
   lineCount: number;
@@ -91,6 +88,12 @@ interface ContextSource {
 interface ContextSources {
   loaded: ContextSource[];
   unavailable: string[];
+}
+
+interface ContextCitation {
+  citedPath: string;
+  index: number;
+  length: number;
 }
 
 function buildContextSources(
@@ -121,8 +124,8 @@ function contextCitationValidation(
   contextSources: ContextSources,
 ): ContextCitationValidation {
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
-  for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
-    const sourcePath = match[1]!;
+  for (const citation of findContextCitations(text, contextSources)) {
+    const sourcePath = citation.citedPath;
     if (
       contextSources.unavailable.some((candidate) =>
         sameContextSource(candidate, sourcePath),
@@ -134,12 +137,50 @@ function contextCitationValidation(
       sameContextSource(candidate.path, sourcePath),
     );
     if (!source) continue;
-    const windowStart = Math.max(0, match.index! - 90);
-    const windowEnd = Math.min(text.length, match.index! + sourcePath.length + 90);
+    const windowStart = Math.max(0, citation.index - 90);
+    const windowEnd = Math.min(text.length, citation.index + citation.length + 90);
     const citationWindow = text.slice(windowStart, windowEnd);
     if (locatorExistsInDoc(citationWindow, source)) return "validated";
   }
   return "missing";
+}
+
+function findContextCitations(
+  text: string,
+  contextSources: ContextSources,
+): ContextCitation[] {
+  const aliases = [
+    ...contextSources.loaded.flatMap((source) => contextSourceAliases(source.path)),
+    ...contextSources.unavailable.flatMap(contextSourceAliases),
+  ];
+  const citations: ContextCitation[] = [];
+  const seen = new Set<string>();
+  for (const alias of aliases) {
+    const normalized = alias.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    const escaped = escapeRegExp(alias);
+    const pattern = new RegExp(`(^|[^A-Za-z0-9_/-])(${escaped})(?=$|[^A-Za-z0-9_/-])`, "gi");
+    for (const match of text.matchAll(pattern)) {
+      const prefix = match[1] ?? "";
+      const citedPath = match[2]!;
+      citations.push({
+        citedPath,
+        index: match.index! + prefix.length,
+        length: citedPath.length,
+      });
+    }
+  }
+  return citations.sort((a, b) => a.index - b.index || b.length - a.length);
+}
+
+function contextSourceAliases(path: string): string[] {
+  const basename = path.split("/").pop();
+  return basename && basename !== path ? [path, basename] : [path];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function sameContextSource(candidate: string, cited: string): boolean {

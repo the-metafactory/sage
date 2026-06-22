@@ -203,7 +203,7 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/lenses/code-quality.ts` | CodeQuality lens (always fires) |
 | `src/lenses/security.ts` | Security lens — fires on auth/input/secret/crypto signals |
 | `src/lenses/architecture.ts` | Architecture lens — fires on new modules / schema / dep changes |
-| `src/lenses/context-drift.ts` | ContextDrift lens — fires on `CONTEXT.md`, docs, or export syntax changes and validates context-doc citations |
+| `src/lenses/context-drift.ts` | ContextDrift lens — fires on `CONTEXT.md`, docs, or export syntax changes and requires resolvable context-doc citations when docs are loaded |
 | `src/lenses/ecosystem-compliance.ts` | EcosystemCompliance lens — fires on cortex.yaml / arc-manifest / hooks / SKILL.md |
 | `src/lenses/performance.ts` | Performance lens — fires on hot-path / sync-IO / N+1 signals |
 | `src/lenses/maintainability.ts` | Maintainability lens — fires on substantial source changes |
@@ -277,7 +277,7 @@ when the host cortex process inherits a noisy parent env.
 
 - **Phase 1:** standalone bus listener + GitHub posting. ✅ shipped.
 - **Phase 2 (sage#40):** in-process under cortex's `ReviewConsumer`; per-flavor `code-review.<flavor>` capabilities; signature verification via D1 inherited from cortex. ✅ this PR.
-- **Phase 3:** Broadcast/Direct/Delegate distribution modes and OTLP spans.
+- **Phase 3:** Offer/Direct/Delegate Dispatch modes and OTLP spans.
 
 ## License
 

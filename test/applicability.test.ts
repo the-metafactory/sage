@@ -170,36 +170,21 @@ describe("contextDriftApplies", () => {
   });
 
   test("fires for common exported declaration modifiers", () => {
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "scripts/runner.ts" }]),
-        diff: "+export async function sendEnvelope() {}",
-      }),
-    ).toBe(true);
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "scripts/runner.ts" }]),
-        diff: "+export default class ReviewCommand {}",
-      }),
-    ).toBe(true);
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "scripts/runner.ts" }]),
-        diff: "+export abstract class ReviewCommand {}",
-      }),
-    ).toBe(true);
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "scripts/runner.ts" }]),
-        diff: "+export declare function review(): void;",
-      }),
-    ).toBe(true);
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "scripts/runner.ts" }]),
-        diff: "+export namespace ReviewApi {}",
-      }),
-    ).toBe(true);
+    const exportedDeclarations = [
+      "+export async function sendEnvelope() {}",
+      "+export default class ReviewCommand {}",
+      "+export abstract class ReviewCommand {}",
+      "+export declare function review(): void;",
+      "+export namespace ReviewApi {}",
+    ];
+    for (const diff of exportedDeclarations) {
+      expect(
+        contextDriftApplies({
+          pr: pr([{ path: "scripts/runner.ts" }]),
+          diff,
+        }),
+      ).toBe(true);
+    }
   });
 
   test("ignores export syntax on unchanged context lines", () => {
