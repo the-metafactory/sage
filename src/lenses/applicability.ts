@@ -81,9 +81,6 @@ const CONTEXT_DRIFT_DOC_RE =
 const CONTEXT_DRIFT_EXPORT_RE =
   /\bexport\s+(?:interface|type|class|function|const|let|var|enum)\s+[A-Za-z0-9_]+|\bexport\s+\{/i;
 
-const CONTEXT_DRIFT_DOMAIN_TERM_RE =
-  /\b(command|subcommand|schema|field|event|subject|envelope|payload|identity|principal|originator|adapter|capability|policy)\b/i;
-
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
   return contextDriftLoadsArchitectureDocs(ctx);
 }
@@ -91,7 +88,6 @@ export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
 export function contextDriftLoadsArchitectureDocs(ctx: ApplicabilityContext): boolean {
   if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
   if (CONTEXT_DRIFT_EXPORT_RE.test(ctx.diff)) return true;
-  if (CONTEXT_DRIFT_DOMAIN_TERM_RE.test(ctx.diff)) return true;
   return false;
 }
 

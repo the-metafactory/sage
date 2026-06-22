@@ -182,6 +182,15 @@ describe("contextDriftApplies", () => {
       }),
     ).toBe(false);
   });
+
+  test("skips non-exported common domain words in implementation code", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }]),
+        diff: "+const field = event.payload;",
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("performanceApplies", () => {
