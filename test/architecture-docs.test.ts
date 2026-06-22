@@ -7,6 +7,8 @@ import {
 import { reviewArchitecture } from "../src/lenses/architecture.ts";
 import { reviewCodeQuality } from "../src/lenses/code-quality.ts";
 import { reviewContextDrift } from "../src/lenses/context-drift.ts";
+import type { LensModule } from "../src/lenses/registry.ts";
+import { runLenses } from "../src/lenses/scheduler.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 
 const stubPr = {
@@ -125,24 +127,27 @@ describe("architecture docs context", () => {
       ],
     };
 
-    await reviewCodeQuality({
-      pr: stubPr,
-      diff: stubDiff,
+    const reports = await runLenses({
+      lenses: [
+        { name: "CodeQuality", review: reviewCodeQuality },
+        {
+          name: "Architecture",
+          review: reviewArchitecture,
+          usesArchitectureDocs: true,
+        },
+        {
+          name: "ContextDrift",
+          review: reviewContextDrift,
+          usesArchitectureDocs: true,
+        },
+      ] satisfies readonly LensModule[],
+      ctx: { pr: stubPr, diff: stubDiff },
       substrate: stubSubstrate,
+      priorFindings: [],
       architectureDocs,
     });
-    const architectureReport = await reviewArchitecture({
-      pr: stubPr,
-      diff: stubDiff,
-      substrate: stubSubstrate,
-      architectureDocs,
-    });
-    const contextDriftReport = await reviewContextDrift({
-      pr: stubPr,
-      diff: stubDiff,
-      substrate: stubSubstrate,
-      architectureDocs,
-    });
+    const architectureReport = reports.find((report) => report.lens === "Architecture");
+    const contextDriftReport = reports.find((report) => report.lens === "ContextDrift");
 
     const codeQualityCall = substrateCalls.find((c) =>
       c.systemPrompt?.includes("running the CodeQuality lens"),
@@ -159,11 +164,11 @@ describe("architecture docs context", () => {
     expect(architectureCall?.stdin).toContain("--- CONTEXT.md ---");
     expect(architectureCall?.stdin).toContain("_Avoid_: sender");
     expect(architectureCall?.systemPrompt).toContain("CONTEXT.md");
-    expect(architectureReport.summary).toContain(architectureDocs.provenance);
+    expect(architectureReport?.summary).toContain(architectureDocs.provenance);
     expect(contextDriftCall?.stdin).toContain("Architecture context docs:");
     expect(contextDriftCall?.stdin).toContain("--- CONTEXT.md ---");
     expect(contextDriftCall?.stdin).toContain("_Avoid_: sender");
     expect(contextDriftCall?.systemPrompt).toContain("_Avoid_ alias");
-    expect(contextDriftReport.summary).toContain(architectureDocs.provenance);
+    expect(contextDriftReport?.summary).toContain(architectureDocs.provenance);
   });
 });

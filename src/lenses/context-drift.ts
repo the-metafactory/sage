@@ -40,5 +40,5 @@ line to your summary so operators can see whether CONTEXT.md informed the
 review.`;
 
 export async function reviewContextDrift(input: LensRunInput): Promise<LensReport> {
-  return runLens({ name: "ContextDrift", focus: FOCUS, usesArchitectureDocs: true }, input);
+  return runLens({ name: "ContextDrift", focus: FOCUS }, input);
 }

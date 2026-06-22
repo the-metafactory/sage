@@ -20,11 +20,6 @@ export interface LensSpec {
    * finding versus what's out of scope.
    */
   focus: string;
-  /**
-   * True when this lens needs target-repo architecture/context docs
-   * injected into stdin and surfaced in the final summary.
-   */
-  usesArchitectureDocs?: boolean;
 }
 
 export interface LensRunInput {
@@ -194,12 +189,11 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
-  const architectureDocs = spec.usesArchitectureDocs ? input.architectureDocs : undefined;
   const stdinContent = buildStdinContent(
     input.pr,
     input.diff,
     input.priorFindings,
-    architectureDocs,
+    input.architectureDocs,
   );
 
   let lensJson: RawLensOutput | undefined;
@@ -307,7 +301,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 
   return {
     lens: spec.name,
-    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", architectureDocs?.provenance),
+    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", input.architectureDocs?.provenance),
     findings,
     durationMs: Date.now() - started,
   };

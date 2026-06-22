@@ -44,7 +44,7 @@ export interface LensModule {
   applies?: (ctx: ApplicabilityContext) => boolean;
   /**
    * Preload target-repo architecture/context docs for this lens.
-   * Keep in sync with the LensSpec passed to runLens by the lens file.
+   * The scheduler passes those docs only to opted-in lens runners.
    */
   usesArchitectureDocs?: boolean;
 }

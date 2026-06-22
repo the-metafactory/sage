@@ -27,5 +27,5 @@ line to your summary so operators can see whether CONTEXT.md informed the
 review.`;
 
 export async function reviewArchitecture(input: LensRunInput): Promise<LensReport> {
-  return runLens({ name: "Architecture", focus: FOCUS, usesArchitectureDocs: true }, input);
+  return runLens({ name: "Architecture", focus: FOCUS }, input);
 }

@@ -105,7 +105,6 @@ export async function runLenses(
     diff: opts.ctx.diff,
     substrate: opts.substrate,
     priorFindings: opts.priorFindings,
-    ...(opts.architectureDocs !== undefined ? { architectureDocs: opts.architectureDocs } : {}),
     ...timeout,
   };
 
@@ -113,7 +112,11 @@ export async function runLenses(
     const startedAt = Date.now();
     let report: LensReport;
     try {
-      report = await lens.review(lensInputBase as LensRunInput);
+      const lensInput =
+        lens.usesArchitectureDocs && opts.architectureDocs !== undefined
+          ? { ...lensInputBase, architectureDocs: opts.architectureDocs }
+          : lensInputBase;
+      report = await lens.review(lensInput as LensRunInput);
     } catch (err) {
       // I3: Lens that throws → errored LensReport (defense in depth
       // — `runLens` (base.ts) already catches substrate errors, so
