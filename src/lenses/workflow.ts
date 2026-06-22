@@ -10,7 +10,6 @@ import type {
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { loadArchitectureDocs } from "./architecture-docs.ts";
-import { architectureApplies } from "./applicability.ts";
 import {
   decideVerdict,
   persistVerdict,
@@ -20,7 +19,7 @@ import {
   verdictFilePath,
   verdictToEvent,
 } from "../verdict/index.ts";
-import { LENSES } from "./registry.ts";
+import { LENSES, lensUsesArchitectureDocs } from "./registry.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -125,7 +124,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
-  const architectureDocs = architectureApplies({ pr, diff })
+  const applicabilityCtx = { pr, diff };
+  const applicableLenses = LENSES.filter(
+    (lens) => !lens.applies || lens.applies(applicabilityCtx),
+  );
+  const shouldLoadArchitectureDocs = applicableLenses.some((lens) =>
+    lensUsesArchitectureDocs(lens, applicabilityCtx),
+  );
+  const architectureDocs = shouldLoadArchitectureDocs
     ? await loadArchitectureDocs({
         forge: opts.forge,
         ref: opts.ref,
@@ -150,8 +156,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.lensConcurrency ?? readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
 
   const lensReports = await runLenses({
-    lenses: LENSES,
-    ctx: { pr, diff },
+    lenses: applicableLenses,
+    ctx: applicabilityCtx,
+    lensesAreApplicable: true,
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
     ...(architectureDocs !== undefined ? { architectureDocs } : {}),

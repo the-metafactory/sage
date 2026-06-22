@@ -6,6 +6,7 @@ import {
   performanceApplies,
   maintainabilityApplies,
   honestOracleApplies,
+  contextDriftApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
@@ -133,6 +134,88 @@ describe("ecosystemComplianceApplies", () => {
   test("plain source change does not trigger", () => {
     expect(
       ecosystemComplianceApplies({ pr: pr([{ path: "src/x.ts" }]), diff: "" }),
+    ).toBe(false);
+  });
+});
+
+describe("contextDriftApplies", () => {
+  test("fires when CONTEXT.md changes", () => {
+    expect(contextDriftApplies({ pr: pr([{ path: "CONTEXT.md" }]), diff: "" })).toBe(true);
+  });
+
+  test("fires when public docs change", () => {
+    expect(contextDriftApplies({ pr: pr([{ path: "docs/design.md" }]), diff: "" })).toBe(true);
+    expect(contextDriftApplies({ pr: pr([{ path: "README.md" }]), diff: "" })).toBe(true);
+  });
+
+  test("does not fire on PR body claims alone", () => {
+    const ctx = {
+      pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
+      diff: "",
+    };
+    expect(contextDriftApplies(ctx)).toBe(false);
+  });
+
+  test("fires for public surface terms even when architecture does not apply", () => {
+    const diff = `diff --git a/scripts/runner.ts b/scripts/runner.ts
+--- a/scripts/runner.ts
++++ b/scripts/runner.ts
++export interface MessageEnvelope {
++  sender: string;
++}`;
+    expect(
+      contextDriftApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
+    ).toBe(true);
+    expect(architectureApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff })).toBe(false);
+  });
+
+  test("fires for common exported declaration modifiers", () => {
+    const exportedDeclarations = [
+      "+export async function sendEnvelope() {}",
+      "+export default class ReviewCommand {}",
+      "+export abstract class ReviewCommand {}",
+      "+export declare function review(): void;",
+      "+export namespace ReviewApi {}",
+    ];
+    for (const diff of exportedDeclarations) {
+      expect(
+        contextDriftApplies({
+          pr: pr([{ path: "scripts/runner.ts" }]),
+          diff,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  test("ignores export syntax on unchanged context lines", () => {
+    const diff = `diff --git a/src/review.ts b/src/review.ts
+--- a/src/review.ts
++++ b/src/review.ts
+@@ -1,3 +1,3 @@
+ export interface ReviewEnvelope {
+-  oldName: string;
++  newName: string;
+ }`;
+    expect(
+      contextDriftApplies({ pr: pr([{ path: "src/review.ts" }]), diff }),
+    ).toBe(false);
+  });
+
+  test("skips trivial non-domain implementation edits", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }]),
+        diff: "+const count = value + 1;",
+      }),
+    ).toBe(false);
+  });
+
+  test("skips non-exported common domain words in implementation code", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }]),
+        diff: "+const field = event.payload;",
+      }),
     ).toBe(false);
   });
 });
@@ -314,13 +397,14 @@ describe("honestOracleApplies", () => {
 });
 
 describe("evaluateApplicability", () => {
-  test("aggregates all six predicates", () => {
+  test("aggregates all seven predicates", () => {
     const result = evaluateApplicability({
       pr: pr([{ path: "src/auth/login.ts" }]),
       diff: "",
     });
     expect(result.security).toBe(true);
     expect(result.architecture).toBe(false);
+    expect(result.contextDrift).toBe(false);
     expect(result.ecosystemCompliance).toBe(false);
     expect(result.performance).toBe(false);
     expect(result.maintainability).toBe(false); // only 1 line under default helper

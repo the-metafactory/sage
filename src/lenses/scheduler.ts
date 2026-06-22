@@ -18,7 +18,7 @@ import type { Substrate } from "../substrate/types.ts";
 import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
-import type { LensModule } from "./registry.ts";
+import { lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
 import { buildErroredLensReport, type LensReport } from "./types.ts";
 
 export interface LensScheduleOptions {
@@ -30,6 +30,12 @@ export interface LensScheduleOptions {
 
   /** Applicability input. Each Lens's `applies?.(ctx)` is evaluated once. */
   readonly ctx: ApplicabilityContext;
+  /**
+   * True when `lenses` has already been filtered by applicability.
+   * Workflow uses this so the same predicates can feed doc preload and
+   * execution without scanning large diffs twice.
+   */
+  readonly lensesAreApplicable?: boolean;
 
   /** Inputs threaded to every applicable Lens.review(). */
   readonly substrate: Substrate;
@@ -90,9 +96,9 @@ export async function runLenses(
 
   // Filter by applicability — preserves the registry's declared
   // order, which becomes the result-array order (I1).
-  const applicable = opts.lenses.filter(
-    (lens) => !lens.applies || lens.applies(opts.ctx),
-  );
+  const applicable = opts.lensesAreApplicable
+    ? opts.lenses
+    : opts.lenses.filter((lens) => !lens.applies || lens.applies(opts.ctx));
 
   const timeout: { timeoutMs?: number } =
     opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {};
@@ -105,7 +111,6 @@ export async function runLenses(
     diff: opts.ctx.diff,
     substrate: opts.substrate,
     priorFindings: opts.priorFindings,
-    ...(opts.architectureDocs !== undefined ? { architectureDocs: opts.architectureDocs } : {}),
     ...timeout,
   };
 
@@ -113,7 +118,15 @@ export async function runLenses(
     const startedAt = Date.now();
     let report: LensReport;
     try {
-      report = await lens.review(lensInputBase as LensRunInput);
+      const usesArchitectureDocs = lensUsesArchitectureDocs(lens, opts.ctx);
+      const lensInput = usesArchitectureDocs
+        ? {
+            ...lensInputBase,
+            acceptsArchitectureDocs: true,
+            ...(opts.architectureDocs ? { architectureDocs: opts.architectureDocs } : {}),
+          }
+        : lensInputBase;
+      report = await lens.review(lensInput as LensRunInput);
     } catch (err) {
       // I3: Lens that throws → errored LensReport (defense in depth
       // — `runLens` (base.ts) already catches substrate errors, so

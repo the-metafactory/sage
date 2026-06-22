@@ -1,6 +1,7 @@
 import { reviewCodeQuality } from "./code-quality.ts";
 import { reviewSecurity } from "./security.ts";
 import { reviewArchitecture } from "./architecture.ts";
+import { reviewContextDrift } from "./context-drift.ts";
 import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
 import { reviewPerformance } from "./performance.ts";
 import { reviewMaintainability } from "./maintainability.ts";
@@ -8,6 +9,7 @@ import { reviewHonestOracle } from "./honest-oracle.ts";
 import {
   securityApplies,
   architectureApplies,
+  contextDriftApplies,
   ecosystemComplianceApplies,
   performanceApplies,
   maintainabilityApplies,
@@ -23,10 +25,11 @@ import type { LensReport } from "./types.ts";
  * registry in declared order rather than hardcoding per-lens imports +
  * if-blocks.
  *
- * Adding lens #6 = append one entry here + a new lens file under
- * src/lenses/. No edits to workflow.ts. The compiler enforces the
- * `LensModule` shape so an entry with a missing runner or an
- * applicability predicate of the wrong type fails to typecheck.
+ * Adding a simple lens = append one entry here + a new lens file under
+ * src/lenses/. Lenses that need shared preloaded context may also extend
+ * workflow/base input plumbing. The compiler enforces the `LensModule`
+ * shape so an entry with a missing runner or an applicability predicate
+ * of the wrong type fails to typecheck.
  */
 export interface LensModule {
   /** Display name (also returned in LensReport.lens). */
@@ -39,12 +42,28 @@ export interface LensModule {
    * by the CodeQuality lens.
    */
   applies?: (ctx: ApplicabilityContext) => boolean;
+  /**
+   * Preload target-repo architecture/context docs for this lens.
+   * The scheduler passes those docs only to opted-in lens runners.
+   */
+  usesArchitectureDocs?: boolean | ((ctx: ApplicabilityContext) => boolean);
+}
+
+export function lensUsesArchitectureDocs(
+  lens: LensModule,
+  ctx: ApplicabilityContext,
+): boolean {
+  if (typeof lens.usesArchitectureDocs === "function") {
+    return lens.usesArchitectureDocs(ctx);
+  }
+  return lens.usesArchitectureDocs === true;
 }
 
 /**
- * Canonical lens order: CodeQuality first (always fires), then five
- * conditional lenses gated on their applicability predicates. Per
- * cortex/docs/design-pi-dev-review-agent.md §7.
+ * Canonical lens order: CodeQuality first (always fires), then the
+ * conditional lenses gated on their applicability predicates. The original
+ * five-lens shape came from cortex/docs/design-pi-dev-review-agent.md §7;
+ * Sage-local lenses extend that order here.
  *
  * Maintainability is ordered last so its findings (duplication, function
  * size, complexity) read after the substantive correctness / security /
@@ -55,7 +74,18 @@ export interface LensModule {
 export const LENSES: readonly LensModule[] = [
   { name: "CodeQuality", review: reviewCodeQuality },
   { name: "Security", review: reviewSecurity, applies: securityApplies },
-  { name: "Architecture", review: reviewArchitecture, applies: architectureApplies },
+  {
+    name: "Architecture",
+    review: reviewArchitecture,
+    applies: architectureApplies,
+    usesArchitectureDocs: true,
+  },
+  {
+    name: "ContextDrift",
+    review: reviewContextDrift,
+    applies: contextDriftApplies,
+    usesArchitectureDocs: true,
+  },
   {
     name: "EcosystemCompliance",
     review: reviewEcosystemCompliance,

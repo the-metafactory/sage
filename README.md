@@ -2,7 +2,7 @@
 
 > Botanical-named code review agent. Runs on pi.dev (default), Claude Code, or Codex CLI via the `--substrate` flag. Speaks Myelin envelopes. Posts via `gh` (GitHub) or `glab` (GitLab).
 
-Sage reviews GitHub pull requests and GitLab merge requests through composable lenses (CodeQuality first; Security, Architecture, EcosystemCompliance, Performance to follow) and publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render. The forge backend is selected per-review via `--forge`, `SAGE_FORGE` env, or URL shape (sage#43).
+Sage reviews GitHub pull requests and GitLab merge requests through composable lenses: CodeQuality always runs, and Security, Architecture, ContextDrift, EcosystemCompliance, Performance, Maintainability, and HonestOracle run when their applicability signals match the PR. It publishes verdicts as Myelin envelopes for the cortex dashboard, pilot loop, and any other consumer to render. The forge backend is selected per-review via `--forge`, `SAGE_FORGE` env, or URL shape (sage#43).
 
 **In-process inside cortex** (sage#40). Cortex's `ReviewConsumer` owns the NATS subscribe loop, queue-group, ack/nak, redelivery, signature verification (D1), and lifecycle envelope emission. Sage exposes its review pipeline (`reviewPr` in `src/lenses/workflow.ts`) as the `pipelineRunner` cortex injects into the consumer. One cortex process owns every reviewer agent (sage, fern, future); one PID, one log stream, one restart semantics.
 
@@ -160,9 +160,9 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
             │         │                                         │
             │         ▼                                         │
             │  ┌─────────────────────────────────────────────┐  │
-            │  │  CodeQuality lens  →  pi -p (JSON output)   │  │
+            │  │  Applicable lenses → selected Substrate JSON │  │
             │  └──────┬──────────────────────────────────────┘  │
-            │         │  (Security, Architecture, … to follow)  │
+            │         │  Architecture/ContextDrift get context docs
             │         ▼                                         │
             │  decideVerdict → gh pr review --comment/approve   │
             └────────────────────────┬──────────────────────────┘
@@ -196,12 +196,18 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/forge/gitlab/backend.ts` | `glab api` wrapper, GitLab backend (incl. approve/unapprove) |
 | `src/lenses/types.ts` | `Finding`, `LensReport`, `decideVerdict()` |
 | `src/lenses/base.ts` | Shared lens scaffolding (`runLens`, prompt template) |
+| `src/lenses/scheduler.ts` | Applicability filtering, bounded parallel lens execution, progress callbacks |
+| `src/lenses/registry.ts` | Lens registry and per-lens architecture-doc opt-in metadata |
 | `src/lenses/applicability.ts` | Trigger heuristics for conditional lenses |
+| `src/lenses/architecture-docs.ts` | Loads target-repo `CONTEXT.md`, `docs/architecture.md`, and `compass/ecosystem/CONTEXT-MAP.md` from the PR base branch |
 | `src/lenses/code-quality.ts` | CodeQuality lens (always fires) |
 | `src/lenses/security.ts` | Security lens — fires on auth/input/secret/crypto signals |
 | `src/lenses/architecture.ts` | Architecture lens — fires on new modules / schema / dep changes |
+| `src/lenses/context-drift.ts` | ContextDrift lens — fires on `CONTEXT.md`, docs, or export syntax changes and requires resolvable context-doc citations when docs are loaded |
 | `src/lenses/ecosystem-compliance.ts` | EcosystemCompliance lens — fires on cortex.yaml / arc-manifest / hooks / SKILL.md |
 | `src/lenses/performance.ts` | Performance lens — fires on hot-path / sync-IO / N+1 signals |
+| `src/lenses/maintainability.ts` | Maintainability lens — fires on substantial source changes |
+| `src/lenses/honest-oracle.ts` | HonestOracle lens — checks whether PR claims are supported by the diff |
 | `src/cli/dispatch.ts` | `sage dispatch` — bus-driven review trigger |
 | `src/lenses/workflow.ts` | Per-PR orchestration: fetch → lenses → verdict → optional post |
 | `persona.md` | Sage's reviewing voice and principles (root copy shipped by arc) |
@@ -271,7 +277,7 @@ when the host cortex process inherits a noisy parent env.
 
 - **Phase 1:** standalone bus listener + GitHub posting. ✅ shipped.
 - **Phase 2 (sage#40):** in-process under cortex's `ReviewConsumer`; per-flavor `code-review.<flavor>` capabilities; signature verification via D1 inherited from cortex. ✅ this PR.
-- **Phase 3:** Broadcast/Direct/Delegate distribution modes, OTLP spans, additional lenses (Security, Architecture, EcosystemCompliance, Performance).
+- **Phase 3:** Offer/Direct/Delegate Dispatch modes and OTLP spans.
 
 ## License
 

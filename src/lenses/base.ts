@@ -3,6 +3,7 @@ import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architecture-docs.ts";
 import { makeLensPipeline } from "./shape.ts";
+import { appendSummaryNote } from "./summary.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
 /**
@@ -51,10 +52,16 @@ export interface LensRunInput {
    */
   priorFindings?: readonly PriorReviewFinding[];
   /**
-   * Target-repo architecture context loaded by the workflow. The Lens
-   * kernel injects it only for the Architecture lens.
+   * Target-repo context docs selected by the scheduler for lenses that
+   * review repo language/shape contracts.
    */
   architectureDocs?: ArchitectureDocsContext;
+  /**
+   * Explicit scheduler/kernel opt-in for consuming architecture docs.
+   * Direct lens calls can pass architectureDocs for test setup or shared
+   * plumbing without accidentally injecting them into every prompt.
+   */
+  acceptsArchitectureDocs?: boolean;
 }
 
 interface RawLensOutput {
@@ -189,11 +196,14 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
+  const architectureDocs = input.acceptsArchitectureDocs
+    ? input.architectureDocs
+    : undefined;
   const stdinContent = buildStdinContent(
     input.pr,
     input.diff,
     input.priorFindings,
-    spec.name === "Architecture" ? input.architectureDocs : undefined,
+    architectureDocs,
   );
 
   let lensJson: RawLensOutput | undefined;
@@ -301,10 +311,16 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 
   return {
     lens: spec.name,
-    summary: lensJson.summary ?? "",
+    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", architectureDocs?.provenance),
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+function appendArchitectureDocsProvenance(summary: string, provenance: string | undefined): string {
+  if (!provenance) return summary;
+  if (summary.includes(provenance)) return summary;
+  return appendSummaryNote(summary, provenance);
 }
 
 function truncate(s: string, max: number): string {
