@@ -112,10 +112,14 @@ export async function runLenses(
     const startedAt = Date.now();
     let report: LensReport;
     try {
-      const lensInput =
-        lensUsesArchitectureDocs(lens, opts.ctx) && opts.architectureDocs !== undefined
-          ? { ...lensInputBase, architectureDocs: opts.architectureDocs }
-          : lensInputBase;
+      const usesArchitectureDocs = lensUsesArchitectureDocs(lens, opts.ctx);
+      const lensInput = usesArchitectureDocs
+        ? {
+            ...lensInputBase,
+            acceptsArchitectureDocs: true,
+            ...(opts.architectureDocs ? { architectureDocs: opts.architectureDocs } : {}),
+          }
+        : lensInputBase;
       report = await lens.review(lensInput as LensRunInput);
     } catch (err) {
       // I3: Lens that throws → errored LensReport (defense in depth

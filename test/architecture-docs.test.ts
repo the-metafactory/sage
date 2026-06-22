@@ -399,5 +399,8 @@ describe("architecture docs context", () => {
     expect(report.findings).toHaveLength(1);
     expect(report.findings[0]?.title).toBe("Potential drift against missing context");
     expect(report.summary).not.toContain("Dropped");
+    expect(report.summary).toContain(
+      "Preserved 1 ContextDrift finding(s) citing unavailable context docs; citations were not validated.",
+    );
   });
 });

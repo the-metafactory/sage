@@ -184,6 +184,20 @@ describe("contextDriftApplies", () => {
     ).toBe(true);
   });
 
+  test("ignores export syntax on unchanged context lines", () => {
+    const diff = `diff --git a/src/review.ts b/src/review.ts
+--- a/src/review.ts
++++ b/src/review.ts
+@@ -1,3 +1,3 @@
+ export interface ReviewEnvelope {
+-  oldName: string;
++  newName: string;
+ }`;
+    expect(
+      contextDriftApplies({ pr: pr([{ path: "src/review.ts" }]), diff }),
+    ).toBe(false);
+  });
+
   test("skips trivial non-domain implementation edits", () => {
     expect(
       contextDriftApplies({

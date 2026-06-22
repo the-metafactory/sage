@@ -56,15 +56,19 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
     };
   }
 
-  const findings = report.findings.filter((finding) =>
-    hasContextSourceCitation(finding, contextSources),
+  const citationStatuses = report.findings.map((finding) =>
+    contextCitationStatus(finding, contextSources),
+  );
+  const findings = report.findings.filter(
+    (_, index) => citationStatuses[index] !== "missing",
   );
   const dropped = report.findings.length - findings.length;
-  if (dropped === 0) return report;
+  const unavailable = citationStatuses.filter((status) => status === "unavailable").length;
+  if (dropped === 0 && unavailable === 0) return report;
 
   return {
     ...report,
-    summary: appendSummaryNote(report.summary, `Dropped ${dropped} uncited ContextDrift finding(s).`),
+    summary: appendContextCitationSummary(report.summary, { dropped, unavailable }),
     findings,
   };
 }
@@ -104,10 +108,12 @@ function buildContextSources(
   return { loaded, unavailable };
 }
 
-function hasContextSourceCitation(
+type ContextCitationStatus = "validated" | "unavailable" | "missing";
+
+function contextCitationStatus(
   finding: Finding,
   contextSources: ContextSources,
-): boolean {
+): ContextCitationStatus {
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
   for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
     const sourcePath = match[1]!;
@@ -116,7 +122,7 @@ function hasContextSourceCitation(
         sameContextSource(candidate, sourcePath),
       )
     ) {
-      return true;
+      return "unavailable";
     }
     const source = contextSources.loaded.find((candidate) =>
       sameContextSource(candidate.path, sourcePath),
@@ -125,9 +131,9 @@ function hasContextSourceCitation(
     const windowStart = Math.max(0, match.index! - 90);
     const windowEnd = Math.min(text.length, match.index! + sourcePath.length + 90);
     const citationWindow = text.slice(windowStart, windowEnd);
-    if (locatorExistsInDoc(citationWindow, source)) return true;
+    if (locatorExistsInDoc(citationWindow, source)) return "validated";
   }
-  return false;
+  return "missing";
 }
 
 function sameContextSource(candidate: string, cited: string): boolean {
@@ -184,4 +190,24 @@ function extractSectionLabels(content: string): ReadonlySet<string> {
 
 function appendSummaryNote(summary: string, note: string): string {
   return summary.trim() === "" ? note : `${summary} ${note}`;
+}
+
+function appendContextCitationSummary(
+  summary: string,
+  counts: { dropped: number; unavailable: number },
+): string {
+  let next = summary;
+  if (counts.dropped > 0) {
+    next = appendSummaryNote(
+      next,
+      `Dropped ${counts.dropped} uncited ContextDrift finding(s).`,
+    );
+  }
+  if (counts.unavailable > 0) {
+    next = appendSummaryNote(
+      next,
+      `Preserved ${counts.unavailable} ContextDrift finding(s) citing unavailable context docs; citations were not validated.`,
+    );
+  }
+  return next;
 }

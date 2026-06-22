@@ -55,6 +55,12 @@ export interface LensRunInput {
    * review repo language/shape contracts.
    */
   architectureDocs?: ArchitectureDocsContext;
+  /**
+   * Explicit scheduler/kernel opt-in for consuming architecture docs.
+   * Direct lens calls can pass architectureDocs for test setup or shared
+   * plumbing without accidentally injecting them into every prompt.
+   */
+  acceptsArchitectureDocs?: boolean;
 }
 
 interface RawLensOutput {
@@ -189,7 +195,7 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
-  const architectureDocs = acceptsArchitectureDocs(spec.name)
+  const architectureDocs = input.acceptsArchitectureDocs
     ? input.architectureDocs
     : undefined;
   const stdinContent = buildStdinContent(
@@ -308,10 +314,6 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     findings,
     durationMs: Date.now() - started,
   };
-}
-
-function acceptsArchitectureDocs(lensName: string): boolean {
-  return lensName === "Architecture" || lensName === "ContextDrift";
 }
 
 function appendArchitectureDocsProvenance(summary: string, provenance: string | undefined): string {
