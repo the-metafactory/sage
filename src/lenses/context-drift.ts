@@ -6,9 +6,9 @@ whether the diff keeps the repository's domain language aligned with its
 CONTEXT.md contract: canonical terms, _Avoid_ aliases, bounded-context names,
 responsibility words, and explicit "this is not..." exclusions.
 
-Apply the same contract as the code-review skill's ArchitectureDocs lens:
-- parse CONTEXT.md glossary entries as canonical terms plus _Avoid_ alias
-  lists;
+Apply Sage's context-drift contract:
+- treat CONTEXT.md glossary entries as canonical terms plus _Avoid_ alias
+  lists supplied in the target-repo context docs;
 - treat camelCase, PascalCase, snake_case, kebab-case, and dot.separated forms
   of an _Avoid_ alias as the same token sequence;
 - classify exact / plural / case-variant alias matches by symbol scope:

@@ -157,15 +157,17 @@ describe("contextDriftApplies", () => {
     ).toBe(true);
   });
 
-  test("fires for public surface terms on architecture-shaped changes", () => {
-    const diff = `--- /dev/null
-+++ b/src/envelope.ts
+  test("fires for public surface terms even when architecture does not apply", () => {
+    const diff = `diff --git a/scripts/runner.ts b/scripts/runner.ts
+--- a/scripts/runner.ts
++++ b/scripts/runner.ts
 +export interface MessageEnvelope {
 +  sender: string;
 +}`;
     expect(
-      contextDriftApplies({ pr: pr([{ path: "src/envelope.ts" }]), diff }),
+      contextDriftApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
     ).toBe(true);
+    expect(architectureApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff })).toBe(false);
   });
 
   test("skips trivial non-domain implementation edits", () => {

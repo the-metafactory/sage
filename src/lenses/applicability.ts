@@ -87,7 +87,7 @@ const CONTEXT_DRIFT_BODY_RE =
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
   if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
   if (CONTEXT_DRIFT_BODY_RE.test(ctx.pr.body)) return true;
-  if (architectureApplies(ctx) && CONTEXT_DRIFT_PUBLIC_SURFACE_RE.test(ctx.diff)) return true;
+  if (CONTEXT_DRIFT_PUBLIC_SURFACE_RE.test(ctx.diff)) return true;
   return false;
 }
 
