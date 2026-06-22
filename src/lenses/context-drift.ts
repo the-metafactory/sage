@@ -60,14 +60,16 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
     };
   }
 
-  const citationStatuses = report.findings.map((finding) =>
-    contextCitationStatus(finding, contextSources),
+  const citationValidations = report.findings.map((finding) =>
+    contextCitationValidation(finding, contextSources),
   );
   const findings = report.findings.filter(
-    (_, index) => citationStatuses[index] !== "missing",
+    (_, index) => citationValidations[index] !== "missing",
   );
   const dropped = report.findings.length - findings.length;
-  const unavailable = citationStatuses.filter((status) => status === "unavailable").length;
+  const unavailable = citationValidations.filter(
+    (validation) => validation === "unavailable",
+  ).length;
   if (dropped === 0 && unavailable === 0) return report;
 
   return {
@@ -112,12 +114,12 @@ function buildContextSources(
   return { loaded, unavailable };
 }
 
-type ContextCitationStatus = "validated" | "unavailable" | "missing";
+type ContextCitationValidation = "validated" | "unavailable" | "missing";
 
-function contextCitationStatus(
+function contextCitationValidation(
   finding: Finding,
   contextSources: ContextSources,
-): ContextCitationStatus {
+): ContextCitationValidation {
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
   for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
     const sourcePath = match[1]!;

@@ -182,6 +182,24 @@ describe("contextDriftApplies", () => {
         diff: "+export default class ReviewCommand {}",
       }),
     ).toBe(true);
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "scripts/runner.ts" }]),
+        diff: "+export abstract class ReviewCommand {}",
+      }),
+    ).toBe(true);
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "scripts/runner.ts" }]),
+        diff: "+export declare function review(): void;",
+      }),
+    ).toBe(true);
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "scripts/runner.ts" }]),
+        diff: "+export namespace ReviewApi {}",
+      }),
+    ).toBe(true);
   });
 
   test("ignores export syntax on unchanged context lines", () => {
