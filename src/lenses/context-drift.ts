@@ -43,7 +43,10 @@ documents. Sage appends architecture-docs provenance mechanically after the lens
 returns its report.`;
 
 export async function reviewContextDrift(input: LensRunInput): Promise<LensReport> {
-  const report = await runLens({ name: "ContextDrift", focus: FOCUS }, input);
+  const report = await runLens(
+    { name: "ContextDrift", focus: FOCUS },
+    { ...input, acceptsArchitectureDocs: true },
+  );
   if (report.errored) return report;
 
   const contextSources = buildContextSources(input.architectureDocs);
