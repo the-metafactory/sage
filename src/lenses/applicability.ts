@@ -73,6 +73,24 @@ export function architectureApplies(ctx: ApplicabilityContext): boolean {
   return false;
 }
 
+// ─────────────────────────── Context Drift ───────────────────────────
+
+const CONTEXT_DRIFT_DOC_RE =
+  /(?:^|\/)(?:CONTEXT\.md|README\.md|CHANGELOG\.md|docs\/.*\.(?:md|mdx|rst|adoc)|specs?\/.*\.(?:md|mdx|rst|adoc)|fixtures?\/.*\.(?:md|json|ya?ml|txt))$/i;
+
+const CONTEXT_DRIFT_PUBLIC_SURFACE_RE =
+  /\bexport\s+(?:interface|type|class|function|const|let|var|enum)\s+[A-Za-z0-9_]+|\bexport\s+\{|\b(command|subcommand|schema|field|event|subject|envelope|payload|identity|principal|originator|adapter|capability|policy)\b/i;
+
+const CONTEXT_DRIFT_BODY_RE =
+  /\b(?:CONTEXT\.md|glossary|terminology|vocabulary|canonical term|bounded context|rename|renamed|alias|drift)\b/i;
+
+export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
+  if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
+  if (CONTEXT_DRIFT_BODY_RE.test(ctx.pr.body)) return true;
+  if (architectureApplies(ctx) && CONTEXT_DRIFT_PUBLIC_SURFACE_RE.test(ctx.diff)) return true;
+  return false;
+}
+
 // ─────────────────── Ecosystem Compliance ──────────────────────────
 
 const ECOSYSTEM_PATH_PATTERNS = [
@@ -175,6 +193,7 @@ export function honestOracleApplies(ctx: ApplicabilityContext): boolean {
 export interface ApplicabilityResult {
   security: boolean;
   architecture: boolean;
+  contextDrift: boolean;
   ecosystemCompliance: boolean;
   performance: boolean;
   maintainability: boolean;
@@ -185,6 +204,7 @@ export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityR
   return {
     security: securityApplies(ctx),
     architecture: architectureApplies(ctx),
+    contextDrift: contextDriftApplies(ctx),
     ecosystemCompliance: ecosystemComplianceApplies(ctx),
     performance: performanceApplies(ctx),
     maintainability: maintainabilityApplies(ctx),

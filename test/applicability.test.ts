@@ -6,6 +6,7 @@ import {
   performanceApplies,
   maintainabilityApplies,
   honestOracleApplies,
+  contextDriftApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
@@ -133,6 +134,46 @@ describe("ecosystemComplianceApplies", () => {
   test("plain source change does not trigger", () => {
     expect(
       ecosystemComplianceApplies({ pr: pr([{ path: "src/x.ts" }]), diff: "" }),
+    ).toBe(false);
+  });
+});
+
+describe("contextDriftApplies", () => {
+  test("fires when CONTEXT.md changes", () => {
+    expect(contextDriftApplies({ pr: pr([{ path: "CONTEXT.md" }]), diff: "" })).toBe(true);
+  });
+
+  test("fires when public docs change", () => {
+    expect(contextDriftApplies({ pr: pr([{ path: "docs/design.md" }]), diff: "" })).toBe(true);
+    expect(contextDriftApplies({ pr: pr([{ path: "README.md" }]), diff: "" })).toBe(true);
+  });
+
+  test("fires when PR body claims terminology drift", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
+        diff: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires for public surface terms on architecture-shaped changes", () => {
+    const diff = `--- /dev/null
++++ b/src/envelope.ts
++export interface MessageEnvelope {
++  sender: string;
++}`;
+    expect(
+      contextDriftApplies({ pr: pr([{ path: "src/envelope.ts" }]), diff }),
+    ).toBe(true);
+  });
+
+  test("skips trivial non-domain implementation edits", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }]),
+        diff: "+const count = value + 1;",
+      }),
     ).toBe(false);
   });
 });
@@ -314,13 +355,14 @@ describe("honestOracleApplies", () => {
 });
 
 describe("evaluateApplicability", () => {
-  test("aggregates all six predicates", () => {
+  test("aggregates all seven predicates", () => {
     const result = evaluateApplicability({
       pr: pr([{ path: "src/auth/login.ts" }]),
       diff: "",
     });
     expect(result.security).toBe(true);
     expect(result.architecture).toBe(false);
+    expect(result.contextDrift).toBe(false);
     expect(result.ecosystemCompliance).toBe(false);
     expect(result.performance).toBe(false);
     expect(result.maintainability).toBe(false); // only 1 line under default helper

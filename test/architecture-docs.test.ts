@@ -6,6 +6,7 @@ import {
 } from "../src/lenses/architecture-docs.ts";
 import { reviewArchitecture } from "../src/lenses/architecture.ts";
 import { reviewCodeQuality } from "../src/lenses/code-quality.ts";
+import { reviewContextDrift } from "../src/lenses/context-drift.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 
 const stubPr = {
@@ -97,7 +98,7 @@ describe("architecture docs context", () => {
     );
   });
 
-  test("injects architecture docs into Architecture lens stdin only", async () => {
+  test("injects architecture docs into architecture/context-drift stdin only", async () => {
     const architectureDocs: ArchitectureDocsContext = {
       hasLoadedDocs: true,
       provenance:
@@ -136,6 +137,12 @@ describe("architecture docs context", () => {
       substrate: stubSubstrate,
       architectureDocs,
     });
+    await reviewContextDrift({
+      pr: stubPr,
+      diff: stubDiff,
+      substrate: stubSubstrate,
+      architectureDocs,
+    });
 
     const codeQualityCall = substrateCalls.find((c) =>
       c.systemPrompt?.includes("running the CodeQuality lens"),
@@ -143,11 +150,18 @@ describe("architecture docs context", () => {
     const architectureCall = substrateCalls.find((c) =>
       c.systemPrompt?.includes("running the Architecture lens"),
     );
+    const contextDriftCall = substrateCalls.find((c) =>
+      c.systemPrompt?.includes("running the ContextDrift lens"),
+    );
 
     expect(codeQualityCall?.stdin).not.toContain("Architecture context docs:");
     expect(architectureCall?.stdin).toContain("Architecture context docs:");
     expect(architectureCall?.stdin).toContain("--- CONTEXT.md ---");
     expect(architectureCall?.stdin).toContain("_Avoid_: sender");
     expect(architectureCall?.systemPrompt).toContain("CONTEXT.md");
+    expect(contextDriftCall?.stdin).toContain("Architecture context docs:");
+    expect(contextDriftCall?.stdin).toContain("--- CONTEXT.md ---");
+    expect(contextDriftCall?.stdin).toContain("_Avoid_: sender");
+    expect(contextDriftCall?.systemPrompt).toContain("_Avoid_ alias");
   });
 });

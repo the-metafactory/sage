@@ -51,8 +51,8 @@ export interface LensRunInput {
    */
   priorFindings?: readonly PriorReviewFinding[];
   /**
-   * Target-repo architecture context loaded by the workflow. The Lens
-   * kernel injects it only for the Architecture lens.
+   * Target-repo context docs loaded by the workflow. The Lens kernel
+   * injects them only for lenses that review repo language/shape contracts.
    */
   architectureDocs?: ArchitectureDocsContext;
 }
@@ -193,7 +193,9 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     input.pr,
     input.diff,
     input.priorFindings,
-    spec.name === "Architecture" ? input.architectureDocs : undefined,
+    spec.name === "Architecture" || spec.name === "ContextDrift"
+      ? input.architectureDocs
+      : undefined,
   );
 
   let lensJson: RawLensOutput | undefined;

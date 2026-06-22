@@ -1,6 +1,7 @@
 import { reviewCodeQuality } from "./code-quality.ts";
 import { reviewSecurity } from "./security.ts";
 import { reviewArchitecture } from "./architecture.ts";
+import { reviewContextDrift } from "./context-drift.ts";
 import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
 import { reviewPerformance } from "./performance.ts";
 import { reviewMaintainability } from "./maintainability.ts";
@@ -8,6 +9,7 @@ import { reviewHonestOracle } from "./honest-oracle.ts";
 import {
   securityApplies,
   architectureApplies,
+  contextDriftApplies,
   ecosystemComplianceApplies,
   performanceApplies,
   maintainabilityApplies,
@@ -23,7 +25,7 @@ import type { LensReport } from "./types.ts";
  * registry in declared order rather than hardcoding per-lens imports +
  * if-blocks.
  *
- * Adding lens #6 = append one entry here + a new lens file under
+ * Adding a lens = append one entry here + a new lens file under
  * src/lenses/. No edits to workflow.ts. The compiler enforces the
  * `LensModule` shape so an entry with a missing runner or an
  * applicability predicate of the wrong type fails to typecheck.
@@ -42,7 +44,7 @@ export interface LensModule {
 }
 
 /**
- * Canonical lens order: CodeQuality first (always fires), then five
+ * Canonical lens order: CodeQuality first (always fires), then the
  * conditional lenses gated on their applicability predicates. Per
  * cortex/docs/design-pi-dev-review-agent.md §7.
  *
@@ -56,6 +58,7 @@ export const LENSES: readonly LensModule[] = [
   { name: "CodeQuality", review: reviewCodeQuality },
   { name: "Security", review: reviewSecurity, applies: securityApplies },
   { name: "Architecture", review: reviewArchitecture, applies: architectureApplies },
+  { name: "ContextDrift", review: reviewContextDrift, applies: contextDriftApplies },
   {
     name: "EcosystemCompliance",
     review: reviewEcosystemCompliance,

@@ -10,7 +10,7 @@ import type {
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { loadArchitectureDocs } from "./architecture-docs.ts";
-import { architectureApplies } from "./applicability.ts";
+import { architectureApplies, contextDriftApplies } from "./applicability.ts";
 import {
   decideVerdict,
   persistVerdict,
@@ -125,7 +125,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
-  const architectureDocs = architectureApplies({ pr, diff })
+  const shouldLoadArchitectureDocs =
+    architectureApplies({ pr, diff }) || contextDriftApplies({ pr, diff });
+  const architectureDocs = shouldLoadArchitectureDocs
     ? await loadArchitectureDocs({
         forge: opts.forge,
         ref: opts.ref,
