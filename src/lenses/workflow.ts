@@ -125,10 +125,11 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     priorFindingsModule.collect(opts.ref),
   ]);
   const applicabilityCtx = { pr, diff };
-  const shouldLoadArchitectureDocs = LENSES.some(
-    (lens) =>
-      lensUsesArchitectureDocs(lens, applicabilityCtx) &&
-      (!lens.applies || lens.applies(applicabilityCtx)),
+  const applicableLenses = LENSES.filter(
+    (lens) => !lens.applies || lens.applies(applicabilityCtx),
+  );
+  const shouldLoadArchitectureDocs = applicableLenses.some((lens) =>
+    lensUsesArchitectureDocs(lens, applicabilityCtx),
   );
   const architectureDocs = shouldLoadArchitectureDocs
     ? await loadArchitectureDocs({
@@ -155,8 +156,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.lensConcurrency ?? readConcurrencyEnv("SAGE_LENS_CONCURRENCY");
 
   const lensReports = await runLenses({
-    lenses: LENSES,
+    lenses: applicableLenses,
     ctx: applicabilityCtx,
+    lensesAreApplicable: true,
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
     ...(architectureDocs !== undefined ? { architectureDocs } : {}),

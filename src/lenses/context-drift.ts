@@ -106,7 +106,7 @@ function buildContextSources(
     }
     loaded.push({
       path: doc.path,
-      lineCount: doc.content.split("\n").length,
+      lineCount: countSourceLines(doc.content),
       normalizedSectionLabels: extractSectionLabels(doc.content),
     });
   }
@@ -179,6 +179,11 @@ function extractSectionLocator(citationWindow: string): string | undefined {
 
 function normalizeSourceText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function countSourceLines(content: string): number {
+  const normalized = content.endsWith("\n") ? content.slice(0, -1) : content;
+  return normalized.split("\n").length;
 }
 
 function extractSectionLabels(content: string): ReadonlySet<string> {

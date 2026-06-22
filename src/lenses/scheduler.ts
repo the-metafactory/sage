@@ -30,6 +30,12 @@ export interface LensScheduleOptions {
 
   /** Applicability input. Each Lens's `applies?.(ctx)` is evaluated once. */
   readonly ctx: ApplicabilityContext;
+  /**
+   * True when `lenses` has already been filtered by applicability.
+   * Workflow uses this so the same predicates can feed doc preload and
+   * execution without scanning large diffs twice.
+   */
+  readonly lensesAreApplicable?: boolean;
 
   /** Inputs threaded to every applicable Lens.review(). */
   readonly substrate: Substrate;
@@ -90,9 +96,9 @@ export async function runLenses(
 
   // Filter by applicability — preserves the registry's declared
   // order, which becomes the result-array order (I1).
-  const applicable = opts.lenses.filter(
-    (lens) => !lens.applies || lens.applies(opts.ctx),
-  );
+  const applicable = opts.lensesAreApplicable
+    ? opts.lenses
+    : opts.lenses.filter((lens) => !lens.applies || lens.applies(opts.ctx));
 
   const timeout: { timeoutMs?: number } =
     opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {};
