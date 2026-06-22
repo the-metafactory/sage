@@ -51,8 +51,8 @@ export interface LensRunInput {
    */
   priorFindings?: readonly PriorReviewFinding[];
   /**
-   * Target-repo context docs loaded by the workflow. The Lens kernel
-   * injects them only for lenses that review repo language/shape contracts.
+   * Target-repo context docs selected by the scheduler for lenses that
+   * review repo language/shape contracts.
    */
   architectureDocs?: ArchitectureDocsContext;
 }
