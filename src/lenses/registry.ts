@@ -84,7 +84,7 @@ export const LENSES: readonly LensModule[] = [
     name: "ContextDrift",
     review: reviewContextDrift,
     applies: contextDriftApplies,
-    usesArchitectureDocs: contextDriftApplies,
+    usesArchitectureDocs: true,
   },
   {
     name: "EcosystemCompliance",

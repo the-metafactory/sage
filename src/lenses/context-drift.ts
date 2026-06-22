@@ -91,7 +91,7 @@ function sameContextSource(candidate: string, cited: string): boolean {
 }
 
 function locatorExistsInDoc(citationWindow: string, content: string): boolean {
-  const numberedLine = citationWindow.match(/\b(?:line\s+|L)(\d+)\b|:(\d+)\b/i);
+  const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b|:(\d+)\b/i);
   if (numberedLine) {
     const n = Number(numberedLine[1] ?? numberedLine[2]);
     return Number.isInteger(n) && n >= 1 && n <= content.split("\n").length;
