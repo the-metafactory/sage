@@ -51,7 +51,7 @@ One of `blocker`, `important`, `suggestion`, `nit`. Earned, not assumed: only `b
 _Avoid_: priority, level, impact
 
 **Applicability**:
-The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or TypeScript exported declarations for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability).
+The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability).
 _Avoid_: trigger, condition, gate, filter
 
 **Always-on Lens**:

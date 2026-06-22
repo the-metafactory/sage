@@ -189,11 +189,14 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
+  const architectureDocs = acceptsArchitectureDocs(spec.name)
+    ? input.architectureDocs
+    : undefined;
   const stdinContent = buildStdinContent(
     input.pr,
     input.diff,
     input.priorFindings,
-    input.architectureDocs,
+    architectureDocs,
   );
 
   let lensJson: RawLensOutput | undefined;
@@ -301,10 +304,14 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 
   return {
     lens: spec.name,
-    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", input.architectureDocs?.provenance),
+    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", architectureDocs?.provenance),
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+function acceptsArchitectureDocs(lensName: string): boolean {
+  return lensName === "Architecture" || lensName === "ContextDrift";
 }
 
 function appendArchitectureDocsProvenance(summary: string, provenance: string | undefined): string {

@@ -45,8 +45,9 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   const report = await runLens({ name: "ContextDrift", focus: FOCUS }, input);
   if (report.errored) return report;
 
+  const contextSources = buildContextSources(input.architectureDocs);
   const findings = report.findings.filter((finding) =>
-    hasContextSourceCitation(finding, input.architectureDocs),
+    hasContextSourceCitation(finding, contextSources),
   );
   const dropped = report.findings.length - findings.length;
   if (dropped === 0) return report;
@@ -64,22 +65,40 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
 const CONTEXT_SOURCE_PATH_RE =
   /\b(CONTEXT\.md|docs\/architecture\.md|CONTEXT-MAP\.md)\b/gi;
 
+interface ContextSource {
+  path: string;
+  lineCount: number;
+  normalizedContent: string;
+}
+
+function buildContextSources(
+  architectureDocs: ArchitectureDocsContext | undefined,
+): ContextSource[] {
+  return (architectureDocs?.docs ?? [])
+    .filter((doc) => doc.status === "loaded")
+    .map((doc) => ({
+      path: doc.path,
+      lineCount: doc.content.split("\n").length,
+      normalizedContent: normalizeSourceText(doc.content),
+    }));
+}
+
 function hasContextSourceCitation(
   finding: Finding,
-  architectureDocs: ArchitectureDocsContext | undefined,
+  contextSources: readonly ContextSource[],
 ): boolean {
-  if (!architectureDocs) return false;
+  if (contextSources.length === 0) return false;
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
   for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
     const sourcePath = match[1]!;
-    const doc = architectureDocs.docs.find(
-      (candidate) => candidate.status === "loaded" && sameContextSource(candidate.path, sourcePath),
+    const source = contextSources.find((candidate) =>
+      sameContextSource(candidate.path, sourcePath),
     );
-    if (!doc) continue;
+    if (!source) continue;
     const windowStart = Math.max(0, match.index! - 90);
     const windowEnd = Math.min(text.length, match.index! + sourcePath.length + 90);
     const citationWindow = text.slice(windowStart, windowEnd);
-    if (locatorExistsInDoc(citationWindow, doc.content)) return true;
+    if (locatorExistsInDoc(citationWindow, source)) return true;
   }
   return false;
 }
@@ -90,11 +109,11 @@ function sameContextSource(candidate: string, cited: string): boolean {
   return candidateLower === citedLower || candidateLower.endsWith(`/${citedLower}`);
 }
 
-function locatorExistsInDoc(citationWindow: string, content: string): boolean {
-  const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b|:(\d+)\b/i);
+function locatorExistsInDoc(citationWindow: string, source: ContextSource): boolean {
+  const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b/i);
   if (numberedLine) {
-    const n = Number(numberedLine[1] ?? numberedLine[2]);
-    return Number.isInteger(n) && n >= 1 && n <= content.split("\n").length;
+    const n = Number(numberedLine[1]);
+    return Number.isInteger(n) && n >= 1 && n <= source.lineCount;
   }
 
   const section = citationWindow.match(
@@ -102,7 +121,7 @@ function locatorExistsInDoc(citationWindow: string, content: string): boolean {
   );
   const rawSection = section?.[1] ?? section?.[2] ?? section?.[3];
   if (!rawSection) return false;
-  return normalizeSourceText(content).includes(normalizeSourceText(rawSection));
+  return source.normalizedContent.includes(normalizeSourceText(rawSection));
 }
 
 function normalizeSourceText(value: string): string {
