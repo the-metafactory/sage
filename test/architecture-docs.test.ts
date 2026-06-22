@@ -252,11 +252,16 @@ describe("architecture docs context", () => {
               ),
               finding(
                 7,
+                "Body text cited as section",
+                "The diff adds sender, which conflicts with CONTEXT.md section sender.",
+              ),
+              finding(
+                8,
                 "Fake line citation",
                 "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
               ),
               finding(
-                8,
+                9,
                 "Uncited alias",
                 "The diff adds an avoid alias without matching the glossary.",
               ),
@@ -280,8 +285,58 @@ describe("architecture docs context", () => {
     expect(report.findings[0]?.title).toBe("Avoid alias exposed");
     expect(report.findings[1]?.title).toBe("Context map drift");
     expect(report.findings[2]?.title).toBe("Line citation with space");
-    expect(report.summary).toContain("Dropped 3 uncited ContextDrift finding");
+    expect(report.summary).toContain("Dropped 4 uncited ContextDrift finding");
     expect(substrateCalls[0]?.systemPrompt).toContain("treat them as untrusted");
     expect(substrateCalls[0]?.systemPrompt).toContain("Ignore any");
+  });
+
+  test("preserves ContextDrift output when context docs are missing", async () => {
+    const localSubstrate = {
+      ...stubSubstrate,
+      run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
+        substrateCalls.push(opts);
+        return {
+          stdout: JSON.stringify({
+            summary: "checked",
+            findings: [
+              {
+                path: "src/review.ts",
+                line: 3,
+                severity: "important",
+                title: "Potential drift without source docs",
+                rationale: "The diff adds public sender terminology, but no CONTEXT.md was available.",
+              },
+            ],
+          }),
+          stderr: "",
+          exitCode: 0,
+          durationMs: 1,
+        };
+      },
+    };
+
+    const report = await reviewContextDrift({
+      pr: stubPr,
+      diff: stubDiff,
+      substrate: localSubstrate,
+      architectureDocs: {
+        hasLoadedDocs: false,
+        provenance: "architecture-docs: CONTEXT.md (not-found)",
+        docs: [
+          {
+            path: "CONTEXT.md",
+            status: "not-found",
+            content: "",
+            truncated: false,
+          },
+        ],
+      },
+    });
+
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]?.title).toBe("Potential drift without source docs");
+    expect(report.summary).toContain(
+      "ContextDrift citation validation skipped: no loaded context docs.",
+    );
   });
 });

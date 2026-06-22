@@ -46,6 +46,16 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   if (report.errored) return report;
 
   const contextSources = buildContextSources(input.architectureDocs);
+  if (contextSources.length === 0) {
+    return {
+      ...report,
+      summary: appendSummaryNote(
+        report.summary,
+        "ContextDrift citation validation skipped: no loaded context docs.",
+      ),
+    };
+  }
+
   const findings = report.findings.filter((finding) =>
     hasContextSourceCitation(finding, contextSources),
   );
@@ -54,10 +64,7 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
 
   return {
     ...report,
-    summary:
-      report.summary.trim() === ""
-        ? `Dropped ${dropped} uncited ContextDrift finding(s).`
-        : `${report.summary} Dropped ${dropped} uncited ContextDrift finding(s).`,
+    summary: appendSummaryNote(report.summary, `Dropped ${dropped} uncited ContextDrift finding(s).`),
     findings,
   };
 }
@@ -68,7 +75,7 @@ const CONTEXT_SOURCE_PATH_RE =
 interface ContextSource {
   path: string;
   lineCount: number;
-  normalizedContent: string;
+  normalizedSectionLabels: ReadonlySet<string>;
 }
 
 function buildContextSources(
@@ -79,7 +86,7 @@ function buildContextSources(
     .map((doc) => ({
       path: doc.path,
       lineCount: doc.content.split("\n").length,
-      normalizedContent: normalizeSourceText(doc.content),
+      normalizedSectionLabels: extractSectionLabels(doc.content),
     }));
 }
 
@@ -87,7 +94,6 @@ function hasContextSourceCitation(
   finding: Finding,
   contextSources: readonly ContextSource[],
 ): boolean {
-  if (contextSources.length === 0) return false;
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
   for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
     const sourcePath = match[1]!;
@@ -121,9 +127,26 @@ function locatorExistsInDoc(citationWindow: string, source: ContextSource): bool
   );
   const rawSection = section?.[1] ?? section?.[2] ?? section?.[3];
   if (!rawSection) return false;
-  return source.normalizedContent.includes(normalizeSourceText(rawSection));
+  return source.normalizedSectionLabels.has(normalizeSourceText(rawSection));
 }
 
 function normalizeSourceText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function extractSectionLabels(content: string): ReadonlySet<string> {
+  const labels = new Set<string>();
+  for (const line of content.split("\n")) {
+    const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/);
+    const glossaryLabel = line.match(/^\*\*([^*\n]+)\*\*:/);
+    const rawLabel = heading?.[1] ?? glossaryLabel?.[1];
+    if (!rawLabel) continue;
+    const normalized = normalizeSourceText(rawLabel);
+    if (normalized) labels.add(normalized);
+  }
+  return labels;
+}
+
+function appendSummaryNote(summary: string, note: string): string {
+  return summary.trim() === "" ? note : `${summary} ${note}`;
 }
