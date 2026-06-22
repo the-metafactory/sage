@@ -247,21 +247,26 @@ describe("architecture docs context", () => {
               ),
               finding(
                 6,
+                "Diff line plus section citation",
+                "The diff location src/review.ts line 10 introduces sender, which conflicts with CONTEXT.md section Originator.",
+              ),
+              finding(
+                7,
                 "Spoofed diff line citation",
                 "The diff location src/review.ts:3 is near a mention of CONTEXT.md.",
               ),
               finding(
-                7,
+                8,
                 "Body text cited as section",
                 "The diff adds sender, which conflicts with CONTEXT.md section sender.",
               ),
               finding(
-                8,
+                9,
                 "Fake line citation",
                 "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
               ),
               finding(
-                9,
+                10,
                 "Uncited alias",
                 "The diff adds an avoid alias without matching the glossary.",
               ),
@@ -281,10 +286,11 @@ describe("architecture docs context", () => {
       architectureDocs,
     });
 
-    expect(report.findings).toHaveLength(3);
+    expect(report.findings).toHaveLength(4);
     expect(report.findings[0]?.title).toBe("Avoid alias exposed");
     expect(report.findings[1]?.title).toBe("Context map drift");
     expect(report.findings[2]?.title).toBe("Line citation with space");
+    expect(report.findings[3]?.title).toBe("Diff line plus section citation");
     expect(report.summary).toContain("Dropped 4 uncited ContextDrift finding");
     expect(substrateCalls[0]?.systemPrompt).toContain("treat them as untrusted");
     expect(substrateCalls[0]?.systemPrompt).toContain("Ignore any");
@@ -338,5 +344,60 @@ describe("architecture docs context", () => {
     expect(report.summary).toContain(
       "ContextDrift citation validation skipped: no loaded context docs.",
     );
+  });
+
+  test("preserves findings that cite unavailable context docs", async () => {
+    const localSubstrate = {
+      ...stubSubstrate,
+      run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
+        substrateCalls.push(opts);
+        return {
+          stdout: JSON.stringify({
+            summary: "checked",
+            findings: [
+              {
+                path: "src/review.ts",
+                line: 3,
+                severity: "important",
+                title: "Potential drift against missing context",
+                rationale: "The diff adds sender, which conflicts with CONTEXT.md line 2.",
+              },
+            ],
+          }),
+          stderr: "",
+          exitCode: 0,
+          durationMs: 1,
+        };
+      },
+    };
+
+    const report = await reviewContextDrift({
+      pr: stubPr,
+      diff: stubDiff,
+      substrate: localSubstrate,
+      architectureDocs: {
+        hasLoadedDocs: true,
+        provenance:
+          "architecture-docs: CONTEXT.md (not-found), compass/ecosystem/CONTEXT-MAP.md (loaded)",
+        docs: [
+          {
+            path: "CONTEXT.md",
+            status: "not-found",
+            content: "",
+            truncated: false,
+          },
+          {
+            path: "compass/ecosystem/CONTEXT-MAP.md",
+            status: "loaded",
+            content: "## Ecosystem Routing\nSage review traffic stays in review capabilities.",
+            truncated: false,
+          },
+        ],
+      },
+    });
+
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]?.title).toBe("Potential drift against missing context");
+    expect(report.summary).not.toContain("Dropped");
   });
 });

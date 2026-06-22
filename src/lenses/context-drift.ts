@@ -46,7 +46,7 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   if (report.errored) return report;
 
   const contextSources = buildContextSources(input.architectureDocs);
-  if (contextSources.length === 0) {
+  if (contextSources.loaded.length === 0) {
     return {
       ...report,
       summary: appendSummaryNote(
@@ -78,26 +78,47 @@ interface ContextSource {
   normalizedSectionLabels: ReadonlySet<string>;
 }
 
+interface ContextSources {
+  loaded: ContextSource[];
+  unavailable: string[];
+}
+
 function buildContextSources(
   architectureDocs: ArchitectureDocsContext | undefined,
-): ContextSource[] {
-  return (architectureDocs?.docs ?? [])
-    .filter((doc) => doc.status === "loaded")
-    .map((doc) => ({
+): ContextSources {
+  const loaded: ContextSource[] = [];
+  const unavailable: string[] = [];
+
+  for (const doc of architectureDocs?.docs ?? []) {
+    if (doc.status !== "loaded") {
+      unavailable.push(doc.path);
+      continue;
+    }
+    loaded.push({
       path: doc.path,
       lineCount: doc.content.split("\n").length,
       normalizedSectionLabels: extractSectionLabels(doc.content),
-    }));
+    });
+  }
+
+  return { loaded, unavailable };
 }
 
 function hasContextSourceCitation(
   finding: Finding,
-  contextSources: readonly ContextSource[],
+  contextSources: ContextSources,
 ): boolean {
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
   for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
     const sourcePath = match[1]!;
-    const source = contextSources.find((candidate) =>
+    if (
+      contextSources.unavailable.some((candidate) =>
+        sameContextSource(candidate, sourcePath),
+      )
+    ) {
+      return true;
+    }
+    const source = contextSources.loaded.find((candidate) =>
       sameContextSource(candidate.path, sourcePath),
     );
     if (!source) continue;
@@ -119,15 +140,29 @@ function locatorExistsInDoc(citationWindow: string, source: ContextSource): bool
   const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b/i);
   if (numberedLine) {
     const n = Number(numberedLine[1]);
-    return Number.isInteger(n) && n >= 1 && n <= source.lineCount;
+    if (Number.isInteger(n) && n >= 1 && n <= source.lineCount) {
+      return true;
+    }
   }
 
-  const section = citationWindow.match(
-    /\bsection\s+([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)|§\s*([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)|#([A-Za-z0-9_-]+)/i,
-  );
-  const rawSection = section?.[1] ?? section?.[2] ?? section?.[3];
+  const rawSection = extractSectionLocator(citationWindow);
   if (!rawSection) return false;
   return source.normalizedSectionLabels.has(normalizeSourceText(rawSection));
+}
+
+function extractSectionLocator(citationWindow: string): string | undefined {
+  const section = citationWindow.match(
+    /\bsection\s+([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)/i,
+  );
+  if (section?.[1]) return section[1];
+
+  const sectionSymbol = citationWindow.match(
+    /§\s*([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)/i,
+  );
+  if (sectionSymbol?.[1]) return sectionSymbol[1];
+
+  const headingAnchor = citationWindow.match(/#([A-Za-z0-9_-]+)/i);
+  return headingAnchor?.[1];
 }
 
 function normalizeSourceText(value: string): string {
