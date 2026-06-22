@@ -85,7 +85,9 @@ function hasContextSourceCitation(
 }
 
 function sameContextSource(candidate: string, cited: string): boolean {
-  return candidate.toLowerCase() === cited.toLowerCase();
+  const candidateLower = candidate.toLowerCase();
+  const citedLower = cited.toLowerCase();
+  return candidateLower === citedLower || candidateLower.endsWith(`/${citedLower}`);
 }
 
 function locatorExistsInDoc(citationWindow: string, content: string): boolean {

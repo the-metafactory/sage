@@ -7,7 +7,6 @@ import {
   maintainabilityApplies,
   honestOracleApplies,
   contextDriftApplies,
-  contextDriftLoadsArchitectureDocs,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
@@ -155,7 +154,6 @@ describe("contextDriftApplies", () => {
       diff: "",
     };
     expect(contextDriftApplies(ctx)).toBe(false);
-    expect(contextDriftLoadsArchitectureDocs(ctx)).toBe(false);
   });
 
   test("fires for public surface terms even when architecture does not apply", () => {
@@ -168,10 +166,22 @@ describe("contextDriftApplies", () => {
     expect(
       contextDriftApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
     ).toBe(true);
-    expect(
-      contextDriftLoadsArchitectureDocs({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
-    ).toBe(true);
     expect(architectureApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff })).toBe(false);
+  });
+
+  test("fires for common exported declaration modifiers", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "scripts/runner.ts" }]),
+        diff: "+export async function sendEnvelope() {}",
+      }),
+    ).toBe(true);
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "scripts/runner.ts" }]),
+        diff: "+export default class ReviewCommand {}",
+      }),
+    ).toBe(true);
   });
 
   test("skips trivial non-domain implementation edits", () => {

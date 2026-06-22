@@ -14,7 +14,6 @@ import {
   performanceApplies,
   maintainabilityApplies,
   honestOracleApplies,
-  contextDriftLoadsArchitectureDocs,
   type ApplicabilityContext,
 } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
@@ -85,7 +84,7 @@ export const LENSES: readonly LensModule[] = [
     name: "ContextDrift",
     review: reviewContextDrift,
     applies: contextDriftApplies,
-    usesArchitectureDocs: contextDriftLoadsArchitectureDocs,
+    usesArchitectureDocs: contextDriftApplies,
   },
   {
     name: "EcosystemCompliance",

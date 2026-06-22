@@ -79,13 +79,9 @@ const CONTEXT_DRIFT_DOC_RE =
   /(?:^|\/)(?:CONTEXT\.md|README\.md|CHANGELOG\.md|docs\/.*\.(?:md|mdx|rst|adoc)|specs?\/.*\.(?:md|mdx|rst|adoc)|fixtures?\/.*\.(?:md|json|ya?ml|txt))$/i;
 
 const CONTEXT_DRIFT_EXPORT_RE =
-  /\bexport\s+(?:interface|type|class|function|const|let|var|enum)\s+[A-Za-z0-9_]+|\bexport\s+\{/i;
+  /\bexport\s+(?:default\s+)?(?:async\s+)?(?:interface|type|class|function|const|let|var|enum)\s+[A-Za-z0-9_]+|\bexport\s+\{/i;
 
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
-  return contextDriftLoadsArchitectureDocs(ctx);
-}
-
-export function contextDriftLoadsArchitectureDocs(ctx: ApplicabilityContext): boolean {
   if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
   if (CONTEXT_DRIFT_EXPORT_RE.test(ctx.diff)) return true;
   return false;
