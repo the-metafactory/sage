@@ -84,13 +84,8 @@ const CONTEXT_DRIFT_EXPORT_RE =
 const CONTEXT_DRIFT_DOMAIN_TERM_RE =
   /\b(command|subcommand|schema|field|event|subject|envelope|payload|identity|principal|originator|adapter|capability|policy)\b/i;
 
-const CONTEXT_DRIFT_BODY_RE =
-  /\b(?:CONTEXT\.md|glossary|terminology|vocabulary|canonical term|bounded context|rename|renamed|alias|drift)\b/i;
-
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
-  if (contextDriftLoadsArchitectureDocs(ctx)) return true;
-  if (CONTEXT_DRIFT_BODY_RE.test(ctx.pr.body)) return true;
-  return false;
+  return contextDriftLoadsArchitectureDocs(ctx);
 }
 
 export function contextDriftLoadsArchitectureDocs(ctx: ApplicabilityContext): boolean {

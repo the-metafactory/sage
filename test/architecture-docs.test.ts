@@ -9,7 +9,6 @@ import { reviewCodeQuality } from "../src/lenses/code-quality.ts";
 import { reviewContextDrift } from "../src/lenses/context-drift.ts";
 import type { LensModule } from "../src/lenses/registry.ts";
 import { runLenses } from "../src/lenses/scheduler.ts";
-import { contextDriftLoadsArchitectureDocs } from "../src/lenses/applicability.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 
 const stubPr = {
@@ -171,42 +170,6 @@ describe("architecture docs context", () => {
     expect(contextDriftCall?.stdin).toContain("_Avoid_: sender");
     expect(contextDriftCall?.systemPrompt).toContain("_Avoid_ alias");
     expect(contextDriftReport?.summary).toContain(architectureDocs.provenance);
-  });
-
-  test("does not inject architecture docs when only the PR body triggers ContextDrift", async () => {
-    const architectureDocs: ArchitectureDocsContext = {
-      hasLoadedDocs: true,
-      provenance: "architecture-docs: CONTEXT.md (loaded)",
-      docs: [
-        {
-          path: "CONTEXT.md",
-          status: "loaded",
-          content: "**Originator**: canonical source\n_Avoid_: sender",
-          truncated: false,
-        },
-      ],
-    };
-    const bodyOnlyPr = {
-      ...stubPr,
-      body: "This intentionally renames a canonical term.",
-      files: [{ path: "src/internal.ts", additions: 1, deletions: 0 }],
-    };
-
-    await runLenses({
-      lenses: [
-        {
-          name: "ContextDrift",
-          review: reviewContextDrift,
-          usesArchitectureDocs: contextDriftLoadsArchitectureDocs,
-        },
-      ] satisfies readonly LensModule[],
-      ctx: { pr: bodyOnlyPr, diff: "+const count = value + 1;" },
-      substrate: stubSubstrate,
-      priorFindings: [],
-      architectureDocs,
-    });
-
-    expect(substrateCalls[0]?.stdin).not.toContain("Architecture context docs:");
   });
 
   test("drops ContextDrift findings that lack a context source citation", async () => {

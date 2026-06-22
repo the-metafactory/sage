@@ -149,12 +149,12 @@ describe("contextDriftApplies", () => {
     expect(contextDriftApplies({ pr: pr([{ path: "README.md" }]), diff: "" })).toBe(true);
   });
 
-  test("fires when PR body claims terminology drift", () => {
+  test("does not fire on PR body claims alone", () => {
     const ctx = {
       pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
       diff: "",
     };
-    expect(contextDriftApplies(ctx)).toBe(true);
+    expect(contextDriftApplies(ctx)).toBe(false);
     expect(contextDriftLoadsArchitectureDocs(ctx)).toBe(false);
   });
 
