@@ -31,7 +31,7 @@ _Avoid_: ReviewEvent, review action, review type
 ### Lenses
 
 **Lens**:
-A *concern category* — `CodeQuality`, `Security`, `Architecture`, `EcosystemCompliance`, `Performance`, `Maintainability`. Static: name + prompt + Applicability rule + Finding parser. Lenses are registered, not instantiated per Review. Substrate-independent: a Lens's prompts and parser are the same regardless of which Substrate runs them.
+A *concern category* — `CodeQuality`, `Security`, `Architecture`, `ContextDrift`, `EcosystemCompliance`, `Performance`, `Maintainability`. Static: name + prompt + Applicability rule + Finding parser. Lenses are registered, not instantiated per Review. Substrate-independent: a Lens's prompts and parser are the same regardless of which Substrate runs them.
 _Avoid_: reviewer, checker, rule, linter, dimension
 
 **Lens run**:
@@ -51,7 +51,7 @@ One of `blocker`, `important`, `suggestion`, `nit`. Earned, not assumed: only `b
 _Avoid_: priority, level, impact
 
 **Applicability**:
-The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability).
+The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, domain terms, or public surface vocabulary for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability).
 _Avoid_: trigger, condition, gate, filter
 
 **Always-on Lens**:
@@ -150,6 +150,7 @@ _Avoid_: direct subject, named subject
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review.
+- **ContextDrift** consumes target-repo architecture context docs, especially `CONTEXT.md`, to check whether new vocabulary or public surfaces drift from canonical bounded-context language.
 - A **Task envelope** triggers a Review; the Review emits a **Verdict envelope**; cortex's `ReviewConsumer` emits the **Lifecycle envelopes** around them.
 
 ## Example dialogue

@@ -25,10 +25,11 @@ import type { LensReport } from "./types.ts";
  * registry in declared order rather than hardcoding per-lens imports +
  * if-blocks.
  *
- * Adding a lens = append one entry here + a new lens file under
- * src/lenses/. No edits to workflow.ts. The compiler enforces the
- * `LensModule` shape so an entry with a missing runner or an
- * applicability predicate of the wrong type fails to typecheck.
+ * Adding a simple lens = append one entry here + a new lens file under
+ * src/lenses/. Lenses that need shared preloaded context may also extend
+ * workflow/base input plumbing. The compiler enforces the `LensModule`
+ * shape so an entry with a missing runner or an applicability predicate
+ * of the wrong type fails to typecheck.
  */
 export interface LensModule {
   /** Display name (also returned in LensReport.lens). */
