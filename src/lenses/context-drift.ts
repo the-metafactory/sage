@@ -1,5 +1,6 @@
 import { runLens, type LensRunInput } from "./base.ts";
 import type { ArchitectureDocsContext } from "./architecture-docs.ts";
+import { appendSummaryNote } from "./summary.ts";
 import type { Finding, LensReport } from "./types.ts";
 
 const FOCUS = `Look at this PR through a context-drift lens. You care about
@@ -186,10 +187,6 @@ function extractSectionLabels(content: string): ReadonlySet<string> {
     if (normalized) labels.add(normalized);
   }
   return labels;
-}
-
-function appendSummaryNote(summary: string, note: string): string {
-  return summary.trim() === "" ? note : `${summary} ${note}`;
 }
 
 function appendContextCitationSummary(

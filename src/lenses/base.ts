@@ -3,6 +3,7 @@ import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architecture-docs.ts";
 import { makeLensPipeline } from "./shape.ts";
+import { appendSummaryNote } from "./summary.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
 
 /**
@@ -319,7 +320,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 function appendArchitectureDocsProvenance(summary: string, provenance: string | undefined): string {
   if (!provenance) return summary;
   if (summary.includes(provenance)) return summary;
-  return summary.trim() === "" ? provenance : `${summary} ${provenance}`;
+  return appendSummaryNote(summary, provenance);
 }
 
 function truncate(s: string, max: number): string {

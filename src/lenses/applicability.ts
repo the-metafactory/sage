@@ -83,15 +83,16 @@ const CONTEXT_DRIFT_EXPORT_RE =
 
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
   if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
-  if (changedDiffLines(ctx.diff).some((line) => CONTEXT_DRIFT_EXPORT_RE.test(line))) return true;
+  if (diffAddsOrRemovesExport(ctx.diff)) return true;
   return false;
 }
 
-function changedDiffLines(diff: string): string[] {
-  return diff
-    .split("\n")
-    .filter((line) => /^[+-](?![+-]{2})/.test(line))
-    .map((line) => line.slice(1));
+function diffAddsOrRemovesExport(diff: string): boolean {
+  for (const line of diff.split("\n")) {
+    if (!/^[+-](?![+-]{2})/.test(line)) continue;
+    if (CONTEXT_DRIFT_EXPORT_RE.test(line.slice(1))) return true;
+  }
+  return false;
 }
 
 // ─────────────────── Ecosystem Compliance ──────────────────────────
