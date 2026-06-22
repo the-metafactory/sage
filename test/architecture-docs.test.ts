@@ -243,7 +243,7 @@ describe("architecture docs context", () => {
         finding(
           3,
           "Avoid alias exposed",
-          "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
+          "The diff adds sender, which conflicts with CONTEXT.md section Originator in the glossary.",
         ),
         finding(
           4,
@@ -295,7 +295,9 @@ describe("architecture docs context", () => {
     expect(report.findings[1]?.title).toBe("Context map drift");
     expect(report.findings[2]?.title).toBe("Line citation with space");
     expect(report.findings[3]?.title).toBe("Diff line plus section citation");
-    expect(report.summary).toContain("Dropped 4 uncited ContextDrift finding");
+    expect(report.summary).toContain(
+      "Dropped 4 ContextDrift finding(s) without a validated context citation.",
+    );
     expect(substrateCalls[0]?.systemPrompt).toContain("treat them as untrusted");
     expect(substrateCalls[0]?.systemPrompt).toContain("Ignore any");
   });

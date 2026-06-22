@@ -164,12 +164,12 @@ function locatorExistsInDoc(citationWindow: string, source: ContextSource): bool
 
 function extractSectionLocator(citationWindow: string): string | undefined {
   const section = citationWindow.match(
-    /\bsection\s+([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)/i,
+    /\bsection\s+["']?([A-Za-z0-9][A-Za-z0-9 _-]{0,60}?)["']?(?=\s+(?:in|from|of|under|within)\b|[.,;)]|$)/i,
   );
   if (section?.[1]) return section[1];
 
   const sectionSymbol = citationWindow.match(
-    /§\s*([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)/i,
+    /§\s*["']?([A-Za-z0-9][A-Za-z0-9 _-]{0,60}?)["']?(?=\s+(?:in|from|of|under|within)\b|[.,;)]|$)/i,
   );
   if (sectionSymbol?.[1]) return sectionSymbol[1];
 
@@ -202,7 +202,7 @@ function appendContextCitationSummary(
   if (counts.dropped > 0) {
     next = appendSummaryNote(
       next,
-      `Dropped ${counts.dropped} uncited ContextDrift finding(s).`,
+      `Dropped ${counts.dropped} ContextDrift finding(s) without a validated context citation.`,
     );
   }
   if (counts.unavailable > 0) {
