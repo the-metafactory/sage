@@ -199,7 +199,7 @@ Either `pr_url` or `(owner, repo, number)` is required. `post` defaults to `cfg.
 | `src/lenses/scheduler.ts` | Applicability filtering, bounded parallel lens execution, progress callbacks |
 | `src/lenses/registry.ts` | Lens registry and per-lens architecture-doc opt-in metadata |
 | `src/lenses/applicability.ts` | Trigger heuristics for conditional lenses |
-| `src/lenses/architecture-docs.ts` | Loads target-repo `CONTEXT.md`, `docs/architecture.md`, and `CONTEXT-MAP.md` from the PR base branch |
+| `src/lenses/architecture-docs.ts` | Loads target-repo `CONTEXT.md`, `docs/architecture.md`, and `compass/ecosystem/CONTEXT-MAP.md` from the PR base branch |
 | `src/lenses/code-quality.ts` | CodeQuality lens (always fires) |
 | `src/lenses/security.ts` | Security lens — fires on auth/input/secret/crypto signals |
 | `src/lenses/architecture.ts` | Architecture lens — fires on new modules / schema / dep changes |

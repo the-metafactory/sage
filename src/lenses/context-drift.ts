@@ -140,7 +140,7 @@ function contextCitationValidation(
     const windowStart = Math.max(0, citation.index - 90);
     const windowEnd = Math.min(text.length, citation.index + citation.length + 90);
     const citationWindow = text.slice(windowStart, windowEnd);
-    if (locatorExistsInDoc(citationWindow, source)) return "validated";
+    if (locatorExistsInDoc(citationWindow, source, citation)) return "validated";
   }
   return "missing";
 }
@@ -189,7 +189,21 @@ function sameContextSource(candidate: string, cited: string): boolean {
   return candidateLower === citedLower || candidateLower.endsWith(`/${citedLower}`);
 }
 
-function locatorExistsInDoc(citationWindow: string, source: ContextSource): boolean {
+function locatorExistsInDoc(
+  citationWindow: string,
+  source: ContextSource,
+  citation: ContextCitation,
+): boolean {
+  const pathLine = citationWindow.match(
+    new RegExp(`${escapeRegExp(citation.citedPath)}:(\\d+)`, "i"),
+  );
+  if (pathLine) {
+    const n = Number(pathLine[1]);
+    if (Number.isInteger(n) && n >= 1 && n <= source.lineCount) {
+      return true;
+    }
+  }
+
   const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b/i);
   if (numberedLine) {
     const n = Number(numberedLine[1]);

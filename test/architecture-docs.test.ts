@@ -262,21 +262,26 @@ describe("architecture docs context", () => {
         ),
         finding(
           7,
+          "Path line citation",
+          "The diff adds sender, which conflicts with CONTEXT.md:2.",
+        ),
+        finding(
+          8,
           "Spoofed diff line citation",
           "The diff location src/review.ts:3 is near a mention of CONTEXT.md.",
         ),
         finding(
-          8,
+          9,
           "Body text cited as section",
           "The diff adds sender, which conflicts with CONTEXT.md section sender.",
         ),
         finding(
-          9,
+          10,
           "Fake line citation",
           "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
         ),
         finding(
-          10,
+          11,
           "Uncited alias",
           "The diff adds an avoid alias without matching the glossary.",
         ),
@@ -290,11 +295,12 @@ describe("architecture docs context", () => {
       architectureDocs,
     });
 
-    expect(report.findings).toHaveLength(4);
+    expect(report.findings).toHaveLength(5);
     expect(report.findings[0]?.title).toBe("Avoid alias exposed");
     expect(report.findings[1]?.title).toBe("Context map drift");
     expect(report.findings[2]?.title).toBe("Line citation with space");
     expect(report.findings[3]?.title).toBe("Diff line plus section citation");
+    expect(report.findings[4]?.title).toBe("Path line citation");
     expect(report.summary).toContain(
       "Dropped 4 ContextDrift finding(s) without a validated context citation.",
     );
