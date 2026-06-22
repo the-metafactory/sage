@@ -10,8 +10,8 @@ responsibility words, and explicit "this is not..." exclusions.
 Apply Sage's context-drift contract:
 - treat CONTEXT.md glossary entries as canonical terms plus _Avoid_ alias
   lists supplied in the target-repo context docs;
-- treat camelCase, PascalCase, snake_case, kebab-case, and dot.separated forms
-  of an _Avoid_ alias as the same token sequence;
+- consider obvious casing and delimiter variants of _Avoid_ aliases when they
+  appear as public symbols or user-facing terms;
 - classify exact / plural / case-variant alias matches by symbol scope:
   public API symbols are important findings, internal symbols are nits, prose
   is informational and should usually be skipped;

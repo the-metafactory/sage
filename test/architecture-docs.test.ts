@@ -51,6 +51,21 @@ const stubSubstrate = {
   },
 };
 
+function substrateReturningJson(output: unknown): typeof stubSubstrate {
+  return {
+    ...stubSubstrate,
+    run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
+      substrateCalls.push(opts);
+      return {
+        stdout: JSON.stringify(output),
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
+      };
+    },
+  };
+}
+
 let substrateCalls: Array<{ systemPrompt?: string; prompt: string; stdin?: string }> = [];
 
 beforeEach(() => {
@@ -222,62 +237,51 @@ describe("architecture docs context", () => {
         },
       ],
     };
-    const localSubstrate = {
-      ...stubSubstrate,
-      run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
-        substrateCalls.push(opts);
-        return {
-          stdout: JSON.stringify({
-            summary: "checked",
-            findings: [
-              finding(
-                3,
-                "Avoid alias exposed",
-                "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
-              ),
-              finding(
-                4,
-                "Context map drift",
-                "The diff changes review routing, which conflicts with CONTEXT-MAP.md section Ecosystem Routing.",
-              ),
-              finding(
-                5,
-                "Line citation with space",
-                "The diff adds sender, which conflicts with CONTEXT.md L 2.",
-              ),
-              finding(
-                6,
-                "Diff line plus section citation",
-                "The diff location src/review.ts line 10 introduces sender, which conflicts with CONTEXT.md section Originator.",
-              ),
-              finding(
-                7,
-                "Spoofed diff line citation",
-                "The diff location src/review.ts:3 is near a mention of CONTEXT.md.",
-              ),
-              finding(
-                8,
-                "Body text cited as section",
-                "The diff adds sender, which conflicts with CONTEXT.md section sender.",
-              ),
-              finding(
-                9,
-                "Fake line citation",
-                "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
-              ),
-              finding(
-                10,
-                "Uncited alias",
-                "The diff adds an avoid alias without matching the glossary.",
-              ),
-            ],
-          }),
-          stderr: "",
-          exitCode: 0,
-          durationMs: 1,
-        };
-      },
-    };
+    const localSubstrate = substrateReturningJson({
+      summary: "checked",
+      findings: [
+        finding(
+          3,
+          "Avoid alias exposed",
+          "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
+        ),
+        finding(
+          4,
+          "Context map drift",
+          "The diff changes review routing, which conflicts with CONTEXT-MAP.md section Ecosystem Routing.",
+        ),
+        finding(
+          5,
+          "Line citation with space",
+          "The diff adds sender, which conflicts with CONTEXT.md L 2.",
+        ),
+        finding(
+          6,
+          "Diff line plus section citation",
+          "The diff location src/review.ts line 10 introduces sender, which conflicts with CONTEXT.md section Originator.",
+        ),
+        finding(
+          7,
+          "Spoofed diff line citation",
+          "The diff location src/review.ts:3 is near a mention of CONTEXT.md.",
+        ),
+        finding(
+          8,
+          "Body text cited as section",
+          "The diff adds sender, which conflicts with CONTEXT.md section sender.",
+        ),
+        finding(
+          9,
+          "Fake line citation",
+          "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
+        ),
+        finding(
+          10,
+          "Uncited alias",
+          "The diff adds an avoid alias without matching the glossary.",
+        ),
+      ],
+    });
 
     const report = await reviewContextDrift({
       pr: stubPr,
@@ -297,29 +301,18 @@ describe("architecture docs context", () => {
   });
 
   test("preserves ContextDrift output when context docs are missing", async () => {
-    const localSubstrate = {
-      ...stubSubstrate,
-      run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
-        substrateCalls.push(opts);
-        return {
-          stdout: JSON.stringify({
-            summary: "checked",
-            findings: [
-              {
-                path: "src/review.ts",
-                line: 3,
-                severity: "important",
-                title: "Potential drift without source docs",
-                rationale: "The diff adds public sender terminology, but no CONTEXT.md was available.",
-              },
-            ],
-          }),
-          stderr: "",
-          exitCode: 0,
-          durationMs: 1,
-        };
-      },
-    };
+    const localSubstrate = substrateReturningJson({
+      summary: "checked",
+      findings: [
+        {
+          path: "src/review.ts",
+          line: 3,
+          severity: "important",
+          title: "Potential drift without source docs",
+          rationale: "The diff adds public sender terminology, but no CONTEXT.md was available.",
+        },
+      ],
+    });
 
     const report = await reviewContextDrift({
       pr: stubPr,
@@ -347,29 +340,18 @@ describe("architecture docs context", () => {
   });
 
   test("preserves findings that cite unavailable context docs", async () => {
-    const localSubstrate = {
-      ...stubSubstrate,
-      run: async (opts: { systemPrompt?: string; prompt: string; stdin?: string }) => {
-        substrateCalls.push(opts);
-        return {
-          stdout: JSON.stringify({
-            summary: "checked",
-            findings: [
-              {
-                path: "src/review.ts",
-                line: 3,
-                severity: "important",
-                title: "Potential drift against missing context",
-                rationale: "The diff adds sender, which conflicts with CONTEXT.md line 2.",
-              },
-            ],
-          }),
-          stderr: "",
-          exitCode: 0,
-          durationMs: 1,
-        };
-      },
-    };
+    const localSubstrate = substrateReturningJson({
+      summary: "checked",
+      findings: [
+        {
+          path: "src/review.ts",
+          line: 3,
+          severity: "important",
+          title: "Potential drift against missing context",
+          rationale: "The diff adds sender, which conflicts with CONTEXT.md line 2.",
+        },
+      ],
+    });
 
     const report = await reviewContextDrift({
       pr: stubPr,
