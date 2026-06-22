@@ -173,6 +173,13 @@ describe("architecture docs context", () => {
   });
 
   test("drops ContextDrift findings that lack a context source citation", async () => {
+    const finding = (line: number, title: string, rationale: string) => ({
+      path: "src/review.ts",
+      line,
+      severity: "important",
+      title,
+      rationale,
+    });
     const architectureDocs: ArchitectureDocsContext = {
       hasLoadedDocs: true,
       provenance: "architecture-docs: CONTEXT.md (loaded)",
@@ -199,43 +206,31 @@ describe("architecture docs context", () => {
           stdout: JSON.stringify({
             summary: "checked",
             findings: [
-              {
-                path: "src/review.ts",
-                line: 3,
-                severity: "important",
-                title: "Avoid alias exposed",
-                rationale:
-                  "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
-              },
-              {
-                path: "src/review.ts",
-                line: 4,
-                severity: "important",
-                title: "Context map drift",
-                rationale:
-                  "The diff changes review routing, which conflicts with CONTEXT-MAP.md section Ecosystem Routing.",
-              },
-              {
-                path: "src/review.ts",
-                line: 5,
-                severity: "important",
-                title: "Line citation with space",
-                rationale: "The diff adds sender, which conflicts with CONTEXT.md L 2.",
-              },
-              {
-                path: "src/review.ts",
-                line: 6,
-                severity: "important",
-                title: "Fake line citation",
-                rationale: "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
-              },
-              {
-                path: "src/review.ts",
-                line: 7,
-                severity: "important",
-                title: "Uncited alias",
-                rationale: "The diff adds an avoid alias without matching the glossary.",
-              },
+              finding(
+                3,
+                "Avoid alias exposed",
+                "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
+              ),
+              finding(
+                4,
+                "Context map drift",
+                "The diff changes review routing, which conflicts with CONTEXT-MAP.md section Ecosystem Routing.",
+              ),
+              finding(
+                5,
+                "Line citation with space",
+                "The diff adds sender, which conflicts with CONTEXT.md L 2.",
+              ),
+              finding(
+                6,
+                "Fake line citation",
+                "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
+              ),
+              finding(
+                7,
+                "Uncited alias",
+                "The diff adds an avoid alias without matching the glossary.",
+              ),
             ],
           }),
           stderr: "",
