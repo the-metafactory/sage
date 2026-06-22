@@ -18,7 +18,7 @@ import type { Substrate } from "../substrate/types.ts";
 import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
-import type { LensModule } from "./registry.ts";
+import { lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
 import { buildErroredLensReport, type LensReport } from "./types.ts";
 
 export interface LensScheduleOptions {
@@ -113,7 +113,7 @@ export async function runLenses(
     let report: LensReport;
     try {
       const lensInput =
-        lens.usesArchitectureDocs && opts.architectureDocs !== undefined
+        lensUsesArchitectureDocs(lens, opts.ctx) && opts.architectureDocs !== undefined
           ? { ...lensInputBase, architectureDocs: opts.architectureDocs }
           : lensInputBase;
       report = await lens.review(lensInput as LensRunInput);

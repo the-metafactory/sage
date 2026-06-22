@@ -14,6 +14,7 @@ import {
   performanceApplies,
   maintainabilityApplies,
   honestOracleApplies,
+  contextDriftLoadsArchitectureDocs,
   type ApplicabilityContext,
 } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
@@ -46,7 +47,17 @@ export interface LensModule {
    * Preload target-repo architecture/context docs for this lens.
    * The scheduler passes those docs only to opted-in lens runners.
    */
-  usesArchitectureDocs?: boolean;
+  usesArchitectureDocs?: boolean | ((ctx: ApplicabilityContext) => boolean);
+}
+
+export function lensUsesArchitectureDocs(
+  lens: LensModule,
+  ctx: ApplicabilityContext,
+): boolean {
+  if (typeof lens.usesArchitectureDocs === "function") {
+    return lens.usesArchitectureDocs(ctx);
+  }
+  return lens.usesArchitectureDocs === true;
 }
 
 /**
@@ -74,7 +85,7 @@ export const LENSES: readonly LensModule[] = [
     name: "ContextDrift",
     review: reviewContextDrift,
     applies: contextDriftApplies,
-    usesArchitectureDocs: true,
+    usesArchitectureDocs: contextDriftLoadsArchitectureDocs,
   },
   {
     name: "EcosystemCompliance",

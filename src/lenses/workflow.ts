@@ -19,7 +19,7 @@ import {
   verdictFilePath,
   verdictToEvent,
 } from "../verdict/index.ts";
-import { LENSES } from "./registry.ts";
+import { LENSES, lensUsesArchitectureDocs } from "./registry.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -127,7 +127,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const applicabilityCtx = { pr, diff };
   const shouldLoadArchitectureDocs = LENSES.some(
     (lens) =>
-      lens.usesArchitectureDocs &&
+      lensUsesArchitectureDocs(lens, applicabilityCtx) &&
       (!lens.applies || lens.applies(applicabilityCtx)),
   );
   const architectureDocs = shouldLoadArchitectureDocs

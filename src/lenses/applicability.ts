@@ -88,8 +88,13 @@ const CONTEXT_DRIFT_BODY_RE =
   /\b(?:CONTEXT\.md|glossary|terminology|vocabulary|canonical term|bounded context|rename|renamed|alias|drift)\b/i;
 
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
-  if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
+  if (contextDriftLoadsArchitectureDocs(ctx)) return true;
   if (CONTEXT_DRIFT_BODY_RE.test(ctx.pr.body)) return true;
+  return false;
+}
+
+export function contextDriftLoadsArchitectureDocs(ctx: ApplicabilityContext): boolean {
+  if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
   if (CONTEXT_DRIFT_EXPORT_RE.test(ctx.diff)) return true;
   if (CONTEXT_DRIFT_DOMAIN_TERM_RE.test(ctx.diff)) return true;
   return false;

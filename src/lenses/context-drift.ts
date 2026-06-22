@@ -1,5 +1,5 @@
 import { runLens, type LensRunInput } from "./base.ts";
-import type { LensReport } from "./types.ts";
+import type { Finding, LensReport } from "./types.ts";
 
 const FOCUS = `Look at this PR through a context-drift lens. You care about
 whether the diff keeps the repository's domain language aligned with its
@@ -40,5 +40,27 @@ line to your summary so operators can see whether CONTEXT.md informed the
 review.`;
 
 export async function reviewContextDrift(input: LensRunInput): Promise<LensReport> {
-  return runLens({ name: "ContextDrift", focus: FOCUS }, input);
+  const report = await runLens({ name: "ContextDrift", focus: FOCUS }, input);
+  if (report.errored) return report;
+
+  const findings = report.findings.filter(hasContextSourceCitation);
+  const dropped = report.findings.length - findings.length;
+  if (dropped === 0) return report;
+
+  return {
+    ...report,
+    summary:
+      report.summary.trim() === ""
+        ? `Dropped ${dropped} uncited ContextDrift finding(s).`
+        : `${report.summary} Dropped ${dropped} uncited ContextDrift finding(s).`,
+    findings,
+  };
+}
+
+const CONTEXT_SOURCE_CITATION_RE =
+  /\b(?:CONTEXT\.md|docs\/architecture\.md|CONTEXT-MAP\.md)\b[^\n]*(?:line|section|§|#[A-Za-z0-9_-]+|:[0-9]+|\bL[0-9]+)/i;
+
+function hasContextSourceCitation(finding: Finding): boolean {
+  const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
+  return CONTEXT_SOURCE_CITATION_RE.test(text);
 }

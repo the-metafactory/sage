@@ -7,6 +7,7 @@ import {
   maintainabilityApplies,
   honestOracleApplies,
   contextDriftApplies,
+  contextDriftLoadsArchitectureDocs,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
@@ -149,12 +150,12 @@ describe("contextDriftApplies", () => {
   });
 
   test("fires when PR body claims terminology drift", () => {
-    expect(
-      contextDriftApplies({
-        pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
-        diff: "",
-      }),
-    ).toBe(true);
+    const ctx = {
+      pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
+      diff: "",
+    };
+    expect(contextDriftApplies(ctx)).toBe(true);
+    expect(contextDriftLoadsArchitectureDocs(ctx)).toBe(false);
   });
 
   test("fires for public surface terms even when architecture does not apply", () => {
@@ -166,6 +167,9 @@ describe("contextDriftApplies", () => {
 +}`;
     expect(
       contextDriftApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
+    ).toBe(true);
+    expect(
+      contextDriftLoadsArchitectureDocs({ pr: pr([{ path: "scripts/runner.ts" }]), diff }),
     ).toBe(true);
     expect(architectureApplies({ pr: pr([{ path: "scripts/runner.ts" }]), diff })).toBe(false);
   });
