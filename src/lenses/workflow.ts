@@ -10,7 +10,6 @@ import type {
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { loadArchitectureDocs } from "./architecture-docs.ts";
-import { architectureApplies, contextDriftApplies } from "./applicability.ts";
 import {
   decideVerdict,
   persistVerdict,
@@ -125,8 +124,12 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
-  const shouldLoadArchitectureDocs =
-    architectureApplies({ pr, diff }) || contextDriftApplies({ pr, diff });
+  const applicabilityCtx = { pr, diff };
+  const shouldLoadArchitectureDocs = LENSES.some(
+    (lens) =>
+      lens.usesArchitectureDocs &&
+      (!lens.applies || lens.applies(applicabilityCtx)),
+  );
   const architectureDocs = shouldLoadArchitectureDocs
     ? await loadArchitectureDocs({
         forge: opts.forge,
@@ -153,7 +156,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const lensReports = await runLenses({
     lenses: LENSES,
-    ctx: { pr, diff },
+    ctx: applicabilityCtx,
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
     ...(architectureDocs !== undefined ? { architectureDocs } : {}),

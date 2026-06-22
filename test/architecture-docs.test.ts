@@ -131,13 +131,13 @@ describe("architecture docs context", () => {
       substrate: stubSubstrate,
       architectureDocs,
     });
-    await reviewArchitecture({
+    const architectureReport = await reviewArchitecture({
       pr: stubPr,
       diff: stubDiff,
       substrate: stubSubstrate,
       architectureDocs,
     });
-    await reviewContextDrift({
+    const contextDriftReport = await reviewContextDrift({
       pr: stubPr,
       diff: stubDiff,
       substrate: stubSubstrate,
@@ -159,9 +159,11 @@ describe("architecture docs context", () => {
     expect(architectureCall?.stdin).toContain("--- CONTEXT.md ---");
     expect(architectureCall?.stdin).toContain("_Avoid_: sender");
     expect(architectureCall?.systemPrompt).toContain("CONTEXT.md");
+    expect(architectureReport.summary).toContain(architectureDocs.provenance);
     expect(contextDriftCall?.stdin).toContain("Architecture context docs:");
     expect(contextDriftCall?.stdin).toContain("--- CONTEXT.md ---");
     expect(contextDriftCall?.stdin).toContain("_Avoid_: sender");
     expect(contextDriftCall?.systemPrompt).toContain("_Avoid_ alias");
+    expect(contextDriftReport.summary).toContain(architectureDocs.provenance);
   });
 });

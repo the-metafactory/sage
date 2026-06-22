@@ -20,6 +20,11 @@ export interface LensSpec {
    * finding versus what's out of scope.
    */
   focus: string;
+  /**
+   * True when this lens needs target-repo architecture/context docs
+   * injected into stdin and surfaced in the final summary.
+   */
+  usesArchitectureDocs?: boolean;
 }
 
 export interface LensRunInput {
@@ -189,13 +194,12 @@ ${diff}`;
  */
 export async function runLens(spec: LensSpec, input: LensRunInput): Promise<LensReport> {
   const started = Date.now();
+  const architectureDocs = spec.usesArchitectureDocs ? input.architectureDocs : undefined;
   const stdinContent = buildStdinContent(
     input.pr,
     input.diff,
     input.priorFindings,
-    spec.name === "Architecture" || spec.name === "ContextDrift"
-      ? input.architectureDocs
-      : undefined,
+    architectureDocs,
   );
 
   let lensJson: RawLensOutput | undefined;
@@ -303,10 +307,16 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 
   return {
     lens: spec.name,
-    summary: lensJson.summary ?? "",
+    summary: appendArchitectureDocsProvenance(lensJson.summary ?? "", architectureDocs?.provenance),
     findings,
     durationMs: Date.now() - started,
   };
+}
+
+function appendArchitectureDocsProvenance(summary: string, provenance: string | undefined): string {
+  if (!provenance) return summary;
+  if (summary.includes(provenance)) return summary;
+  return summary.trim() === "" ? provenance : `${summary} ${provenance}`;
 }
 
 function truncate(s: string, max: number): string {

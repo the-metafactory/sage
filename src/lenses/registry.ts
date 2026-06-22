@@ -42,12 +42,18 @@ export interface LensModule {
    * by the CodeQuality lens.
    */
   applies?: (ctx: ApplicabilityContext) => boolean;
+  /**
+   * Preload target-repo architecture/context docs for this lens.
+   * Keep in sync with the LensSpec passed to runLens by the lens file.
+   */
+  usesArchitectureDocs?: boolean;
 }
 
 /**
  * Canonical lens order: CodeQuality first (always fires), then the
- * conditional lenses gated on their applicability predicates. Per
- * cortex/docs/design-pi-dev-review-agent.md §7.
+ * conditional lenses gated on their applicability predicates. The original
+ * five-lens shape came from cortex/docs/design-pi-dev-review-agent.md §7;
+ * Sage-local lenses extend that order here.
  *
  * Maintainability is ordered last so its findings (duplication, function
  * size, complexity) read after the substantive correctness / security /
@@ -58,8 +64,18 @@ export interface LensModule {
 export const LENSES: readonly LensModule[] = [
   { name: "CodeQuality", review: reviewCodeQuality },
   { name: "Security", review: reviewSecurity, applies: securityApplies },
-  { name: "Architecture", review: reviewArchitecture, applies: architectureApplies },
-  { name: "ContextDrift", review: reviewContextDrift, applies: contextDriftApplies },
+  {
+    name: "Architecture",
+    review: reviewArchitecture,
+    applies: architectureApplies,
+    usesArchitectureDocs: true,
+  },
+  {
+    name: "ContextDrift",
+    review: reviewContextDrift,
+    applies: contextDriftApplies,
+    usesArchitectureDocs: true,
+  },
   {
     name: "EcosystemCompliance",
     review: reviewEcosystemCompliance,
