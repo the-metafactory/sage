@@ -197,20 +197,10 @@ function locatorExistsInDoc(
   const pathLine = citationWindow.match(
     new RegExp(`${escapeRegExp(citation.citedPath)}:(\\d+)`, "i"),
   );
-  if (pathLine) {
-    const n = Number(pathLine[1]);
-    if (Number.isInteger(n) && n >= 1 && n <= source.lineCount) {
-      return true;
-    }
-  }
+  if (lineNumberExists(pathLine, source.lineCount)) return true;
 
   const numberedLine = citationWindow.match(/\b(?:line\s*:?\s*|L\s*)(\d+)\b/i);
-  if (numberedLine) {
-    const n = Number(numberedLine[1]);
-    if (Number.isInteger(n) && n >= 1 && n <= source.lineCount) {
-      return true;
-    }
-  }
+  if (lineNumberExists(numberedLine, source.lineCount)) return true;
 
   const rawSection = extractSectionLocator(citationWindow);
   if (!rawSection) return false;
@@ -230,6 +220,15 @@ function extractSectionLocator(citationWindow: string): string | undefined {
 
   const headingAnchor = citationWindow.match(/#([A-Za-z0-9_-]+)/i);
   return headingAnchor?.[1];
+}
+
+function lineNumberExists(
+  match: RegExpMatchArray | null,
+  lineCount: number,
+): boolean {
+  if (!match?.[1]) return false;
+  const n = Number(match[1]);
+  return Number.isInteger(n) && n >= 1 && n <= lineCount;
 }
 
 function normalizeSourceText(value: string): string {
