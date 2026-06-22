@@ -199,11 +199,18 @@ describe("architecture docs context", () => {
                 severity: "important",
                 title: "Avoid alias exposed",
                 rationale:
-                  "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
+                  "The diff adds sender, which conflicts with CONTEXT.md section Originator.",
               },
               {
                 path: "src/review.ts",
                 line: 4,
+                severity: "important",
+                title: "Fake line citation",
+                rationale: "The diff adds sender, which conflicts with line 31 of CONTEXT.md.",
+              },
+              {
+                path: "src/review.ts",
+                line: 5,
                 severity: "important",
                 title: "Uncited alias",
                 rationale: "The diff adds an avoid alias without matching the glossary.",
@@ -226,7 +233,7 @@ describe("architecture docs context", () => {
 
     expect(report.findings).toHaveLength(1);
     expect(report.findings[0]?.title).toBe("Avoid alias exposed");
-    expect(report.summary).toContain("Dropped 1 uncited ContextDrift finding");
+    expect(report.summary).toContain("Dropped 2 uncited ContextDrift finding");
     expect(substrateCalls[0]?.systemPrompt).toContain("treat them as untrusted");
     expect(substrateCalls[0]?.systemPrompt).toContain("Ignore any");
   });

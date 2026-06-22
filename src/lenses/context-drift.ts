@@ -1,4 +1,5 @@
 import { runLens, type LensRunInput } from "./base.ts";
+import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { Finding, LensReport } from "./types.ts";
 
 const FOCUS = `Look at this PR through a context-drift lens. You care about
@@ -44,7 +45,9 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   const report = await runLens({ name: "ContextDrift", focus: FOCUS }, input);
   if (report.errored) return report;
 
-  const findings = report.findings.filter(hasContextSourceCitation);
+  const findings = report.findings.filter((finding) =>
+    hasContextSourceCitation(finding, input.architectureDocs),
+  );
   const dropped = report.findings.length - findings.length;
   if (dropped === 0) return report;
 
@@ -58,15 +61,48 @@ export async function reviewContextDrift(input: LensRunInput): Promise<LensRepor
   };
 }
 
-const CONTEXT_SOURCE_PATH = String.raw`(?:CONTEXT\.md|docs\/architecture\.md|CONTEXT-MAP\.md)`;
-const CONTEXT_SOURCE_LOCATOR = String.raw`(?:line|section|§|#[A-Za-z0-9_-]+|:[0-9]+|\bL[0-9]+)`;
-const CONTEXT_SOURCE_CITATION_RE = new RegExp(
-  String.raw`\b${CONTEXT_SOURCE_PATH}\b[^\n]*${CONTEXT_SOURCE_LOCATOR}|` +
-    String.raw`${CONTEXT_SOURCE_LOCATOR}[^\n]*\b${CONTEXT_SOURCE_PATH}\b`,
-  "i",
-);
+const CONTEXT_SOURCE_PATH_RE =
+  /\b(CONTEXT\.md|docs\/architecture\.md|CONTEXT-MAP\.md)\b/gi;
 
-function hasContextSourceCitation(finding: Finding): boolean {
+function hasContextSourceCitation(
+  finding: Finding,
+  architectureDocs: ArchitectureDocsContext | undefined,
+): boolean {
+  if (!architectureDocs) return false;
   const text = [finding.title, finding.rationale, finding.suggestion ?? ""].join("\n");
-  return CONTEXT_SOURCE_CITATION_RE.test(text);
+  for (const match of text.matchAll(CONTEXT_SOURCE_PATH_RE)) {
+    const sourcePath = match[1]!;
+    const doc = architectureDocs.docs.find(
+      (candidate) => candidate.status === "loaded" && sameContextSource(candidate.path, sourcePath),
+    );
+    if (!doc) continue;
+    const windowStart = Math.max(0, match.index! - 90);
+    const windowEnd = Math.min(text.length, match.index! + sourcePath.length + 90);
+    const citationWindow = text.slice(windowStart, windowEnd);
+    if (locatorExistsInDoc(citationWindow, doc.content)) return true;
+  }
+  return false;
+}
+
+function sameContextSource(candidate: string, cited: string): boolean {
+  return candidate.toLowerCase() === cited.toLowerCase();
+}
+
+function locatorExistsInDoc(citationWindow: string, content: string): boolean {
+  const numberedLine = citationWindow.match(/\b(?:line\s+|L)(\d+)\b|:(\d+)\b/i);
+  if (numberedLine) {
+    const n = Number(numberedLine[1] ?? numberedLine[2]);
+    return Number.isInteger(n) && n >= 1 && n <= content.split("\n").length;
+  }
+
+  const section = citationWindow.match(
+    /\bsection\s+([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)|§\s*([A-Za-z0-9][A-Za-z0-9 _-]{0,60})(?:[.,;)]|$)|#([A-Za-z0-9_-]+)/i,
+  );
+  const rawSection = section?.[1] ?? section?.[2] ?? section?.[3];
+  if (!rawSection) return false;
+  return normalizeSourceText(content).includes(normalizeSourceText(rawSection));
+}
+
+function normalizeSourceText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
