@@ -18,6 +18,7 @@ import type { Substrate } from "../substrate/types.ts";
 import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
+import type { GlossaryContext } from "./glossary.ts";
 import { lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
 import { buildErroredLensReport, type LensReport } from "./types.ts";
 
@@ -41,6 +42,12 @@ export interface LensScheduleOptions {
   readonly substrate: Substrate;
   readonly priorFindings: readonly PriorReviewFinding[];
   readonly architectureDocs?: ArchitectureDocsContext;
+  /**
+   * compass#98 F7: diff-relevant CONTEXT.md glossary excerpt. Threaded
+   * into EVERY lens's input unconditionally — unlike `architectureDocs`,
+   * this is not gated on `usesArchitectureDocs`.
+   */
+  readonly glossaryContext?: GlossaryContext;
 
   /** Per-Lens substrate timeout. Falls back to substrate-specific default. */
   readonly timeoutMs?: number;
@@ -111,6 +118,9 @@ export async function runLenses(
     diff: opts.ctx.diff,
     substrate: opts.substrate,
     priorFindings: opts.priorFindings,
+    // compass#98 F7: unconditional — every lens gets the glossary excerpt,
+    // not just usesArchitectureDocs lenses (see architectureDocs below).
+    ...(opts.glossaryContext ? { glossaryContext: opts.glossaryContext } : {}),
     ...timeout,
   };
 
