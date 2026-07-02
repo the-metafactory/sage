@@ -2,6 +2,7 @@ import type { PrMetadata, PriorReviewFinding } from "../forge/types.ts";
 import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architecture-docs.ts";
+import type { GlossaryContext } from "./glossary.ts";
 import { makeLensPipeline } from "./shape.ts";
 import { appendSummaryNote } from "./summary.ts";
 import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
@@ -62,6 +63,16 @@ export interface LensRunInput {
    * plumbing without accidentally injecting them into every prompt.
    */
   acceptsArchitectureDocs?: boolean;
+  /**
+   * Diff-relevant CONTEXT.md glossary excerpt (compass#98 F7). Unlike
+   * `architectureDocs`, this is threaded into stdin for EVERY lens,
+   * including CodeQuality — the always-on lens has no
+   * `usesArchitectureDocs` opt-in and would otherwise never see the
+   * repo's canonical-term/`_Avoid_`-alias contract. Deliberately compact
+   * (term + avoid list + citation, diff-filtered) — never the full
+   * CONTEXT.md.
+   */
+  glossaryContext?: GlossaryContext;
 }
 
 interface RawLensOutput {
@@ -156,6 +167,7 @@ function buildStdinContent(
   diff: string,
   priorFindings: readonly PriorReviewFinding[] = [],
   architectureDocs?: ArchitectureDocsContext,
+  glossaryContext?: GlossaryContext,
 ): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)
@@ -171,6 +183,9 @@ ${priorFindings
   const architectureSection = architectureDocs
     ? `\n${renderArchitectureDocs(architectureDocs)}\n`
     : "";
+  // compass#98 F7: injected for EVERY lens (not gated on
+  // acceptsArchitectureDocs) — this is the always-on-path glossary fix.
+  const glossarySection = glossaryContext?.hasEntries ? `\n${glossaryContext.excerpt}\n` : "";
 
   return `PR #${pr.number}: ${pr.title}
 Author: ${pr.author.login}
@@ -182,7 +197,7 @@ Description:
 ${pr.body || "(no description)"}
 
 ${priorSection}
-${architectureSection}
+${architectureSection}${glossarySection}
 
 ---
 Unified diff:
@@ -204,6 +219,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     input.diff,
     input.priorFindings,
     architectureDocs,
+    input.glossaryContext,
   );
 
   let lensJson: RawLensOutput | undefined;

@@ -11,6 +11,12 @@ import type {
 import type { Substrate } from "../substrate/types.ts";
 import { loadArchitectureDocs } from "./architecture-docs.ts";
 import {
+  buildGlossaryContext,
+  buildGlossaryLensReport,
+  findGlossaryViolations,
+  parseGlossary,
+} from "./glossary.ts";
+import {
   decideVerdict,
   persistVerdict,
   renderVerdict,
@@ -19,7 +25,7 @@ import {
   verdictFilePath,
   verdictToEvent,
 } from "../verdict/index.ts";
-import { LENSES, lensUsesArchitectureDocs } from "./registry.ts";
+import { LENSES } from "./registry.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -128,16 +134,25 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const applicableLenses = LENSES.filter(
     (lens) => !lens.applies || lens.applies(applicabilityCtx),
   );
-  const shouldLoadArchitectureDocs = applicableLenses.some((lens) =>
-    lensUsesArchitectureDocs(lens, applicabilityCtx),
-  );
-  const architectureDocs = shouldLoadArchitectureDocs
-    ? await loadArchitectureDocs({
-        forge: opts.forge,
-        ref: opts.ref,
-        baseRefName: pr.baseRefName,
-      })
-    : undefined;
+  // compass#98 F7: load unconditionally. Previously gated on
+  // `applicableLenses.some(usesArchitectureDocs)` — the always-on
+  // CodeQuality lens needs CONTEXT.md for the diff-aware glossary
+  // excerpt below even when no Architecture/ContextDrift lens applies.
+  const architectureDocs = await loadArchitectureDocs({
+    forge: opts.forge,
+    ref: opts.ref,
+    baseRefName: pr.baseRefName,
+  });
+
+  // compass#98 F7: parse the glossary once per review (deterministic,
+  // no model call) so every lens gets a diff-relevant excerpt on stdin
+  // and exact `_Avoid_`-alias hits on added lines become findings
+  // regardless of which lenses are applicable to this PR.
+  const contextMdDoc = architectureDocs.docs.find((d) => d.path === "CONTEXT.md");
+  const glossaryEntries =
+    contextMdDoc?.status === "loaded" ? parseGlossary(contextMdDoc.content) : [];
+  const glossaryContext = buildGlossaryContext(glossaryEntries, diff);
+  const glossaryFindings = findGlossaryViolations(glossaryEntries, diff);
 
   if (priorResult.status !== "ok") {
     const reason = priorResult.reason ?? "";
@@ -162,12 +177,34 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
     ...(architectureDocs !== undefined ? { architectureDocs } : {}),
+    ...(glossaryContext.hasEntries ? { glossaryContext } : {}),
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     ...(concurrency !== undefined ? { concurrency } : {}),
     ...(opts.onLensComplete !== undefined ? { onLensComplete: opts.onLensComplete } : {}),
   });
 
-  const verdict = decideVerdict(lensReports);
+  // compass#98 F7: fold the deterministic glossary findings in as their
+  // own code-synthesized LensReport (not model-authored) so they feed
+  // `decideVerdict`'s severity gate exactly like any other lens's
+  // findings, regardless of which model-backed lenses ran. Omitted
+  // entirely when there are zero hits, so a PR with no violations (the
+  // overwhelming majority) gets a byte-identical LensReport[] to
+  // pre-F7 behavior.
+  const allLensReports =
+    glossaryFindings.length > 0
+      ? [...lensReports, buildGlossaryLensReport(glossaryFindings)]
+      : lensReports;
+  if (glossaryFindings.length > 0) {
+    const glossaryReport = allLensReports[allLensReports.length - 1]!;
+    try {
+      await opts.onLensComplete?.(glossaryReport);
+    } catch (cbErr) {
+      const m = cbErr instanceof Error ? cbErr.message : String(cbErr);
+      console.error(`[workflow] onLensComplete (Glossary) failed: ${m}`);
+    }
+  }
+
+  const verdict = decideVerdict(allLensReports);
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
