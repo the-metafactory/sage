@@ -7,6 +7,7 @@ import {
   maintainabilityApplies,
   honestOracleApplies,
   contextDriftApplies,
+  federationGrammarApplies,
   evaluateApplicability,
 } from "../src/lenses/applicability.ts";
 import type { PrMetadata } from "../src/forge/types.ts";
@@ -396,8 +397,82 @@ describe("honestOracleApplies", () => {
   });
 });
 
+describe("federationGrammarApplies", () => {
+  test("fires on a diff touching deriveNatsSubject", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/myelin/subjects.ts" }]),
+        diff: "+export function deriveNatsSubject(source: string) {}",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on a diff touching federated.* subjects", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/dispatch-handler.ts" }]),
+        diff: '+const subject = `federated.${principal}.${stack}.tasks.review`;',
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on a diff touching originator", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/runner/review-consumer.ts" }]),
+        diff: "+const requester = decode(envelope.originator.identity);",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on a diff touching selectLink", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/nats/leaf.ts" }]),
+        diff: "+const link = selectLink(peers, targetPrincipal);",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on a diff touching peers[] routing", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/config.ts" }]),
+        diff: "+if (!config.policy.federated.networks[0].peers[i].id) return;",
+      }),
+    ).toBe(true);
+  });
+
+  test("fires on a path signal even with a quiet diff", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/originator.ts" }]),
+        diff: "+// no-op",
+      }),
+    ).toBe(true);
+  });
+
+  test("stays silent on an unrelated diff", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/runner/prompt-builder.ts" }]),
+        diff: "+const greeting = `Hello, ${name}!`;",
+      }),
+    ).toBe(false);
+  });
+
+  test("stays silent on ordinary local.* bus code", () => {
+    expect(
+      federationGrammarApplies({
+        pr: pr([{ path: "src/bus/local-router.ts" }]),
+        diff: '+const subject = `local.${stack}.tasks.review`;',
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("evaluateApplicability", () => {
-  test("aggregates all seven predicates", () => {
+  test("aggregates all eight predicates", () => {
     const result = evaluateApplicability({
       pr: pr([{ path: "src/auth/login.ts" }]),
       diff: "",
@@ -409,6 +484,7 @@ describe("evaluateApplicability", () => {
     expect(result.performance).toBe(false);
     expect(result.maintainability).toBe(false); // only 1 line under default helper
     expect(result.honestOracle).toBe(false); // empty body, no docs
+    expect(result.federationGrammar).toBe(false); // no wire-protocol signal
   });
 
   test("maintainability fires on substantial code PR", () => {
