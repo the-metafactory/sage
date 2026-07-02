@@ -393,6 +393,22 @@ export async function postReview(
   input: PostReviewInput,
   fallbackHost: string = DEFAULT_GITLAB_HOST,
 ): Promise<PostReviewResult> {
+  // Interim (compass#99 F15): `PostReviewInput.comments` is a
+  // forge-neutral field — the GitHub backend threads it into
+  // line-anchored inline comments, but GitLab's equivalent (the
+  // discussions API, `POST /projects/{id}/merge_requests/{iid}/discussions`
+  // with a `position` object anchoring the note to a diff line) is a
+  // separate follow-up (sage#43 Phase 3 tracks full GitLab parity).
+  // Findings still reach the reviewee — they stay in the human-readable
+  // top-level note body via `renderVerdict` — just not as separate
+  // inline discussions yet. Log so the degradation is visible, not silent.
+  if (input.comments && input.comments.length > 0) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[sage] GitLab backend does not yet post inline comments (${input.comments.length} finding(s) stayed in the top-level note body only) — sage#43 Phase 3 follow-up`,
+    );
+  }
+
   const host = resolveHost(input.ref, fallbackHost);
   const project = encodeProject(input.ref);
 

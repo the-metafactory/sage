@@ -1,5 +1,6 @@
 import type {
   ForgeBackend,
+  InlineComment,
   PrRef,
   ReviewEvent,
 } from "../forge/types.ts";
@@ -12,6 +13,7 @@ import type { Substrate } from "../substrate/types.ts";
 import { loadArchitectureDocs } from "./architecture-docs.ts";
 import {
   decideVerdict,
+  extractInlineComments,
   persistVerdict,
   renderVerdict,
   type Verdict,
@@ -175,20 +177,33 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const persisted = persistVerdict(opts.ref, verdict, body);
   const recoveryPath = persisted ? verdictFilePath(opts.ref, "md") : undefined;
 
+  // compass#99 F15: line-anchored findings (real diff line, non-errored
+  // lens) become inline PR comments alongside the top-level review body.
+  // Computed unconditionally (cheap, pure) so `blockMeta.inline_comments`
+  // below can report the honest count regardless of `opts.post`.
+  const inlineComments = extractInlineComments(verdict);
+
   const { posted, postedEvent, downgraded, postError } = opts.post
-    ? await attemptPost(opts.forge, opts.ref, verdict, body)
+    ? await attemptPost(opts.forge, opts.ref, verdict, body, inlineComments)
     : { posted: false };
 
   // Tier 1: link-less defaults (contract-valid integer 0 / string ""). The
   // real GitHub review id + url are a Tier-2 follow-up (forge-backend
   // extension); `commit_id` is the PR head SHA so cortex's merge-freshness
   // check has a real anchor today.
+  //
+  // `inline_comments` (compass#99 F15): the REAL count of inline comments
+  // sage attempted to post — `inlineComments.length` when the post
+  // succeeded, `0` when nothing was posted (post skipped, or the post
+  // attempt failed and `postError` is set). Previously hardcoded to `0`
+  // regardless of outcome; now means the same thing as the skill path's
+  // count (drift-5).
   const blockMeta: VerdictBlockMeta = {
     github_review_id: 0,
     github_review_url: "",
     submitted_at: new Date().toISOString(),
     commit_id: pr.headRefOid,
-    inline_comments: 0,
+    inline_comments: posted ? inlineComments.length : 0,
   };
 
   return {
@@ -221,16 +236,20 @@ async function attemptPost(
   ref: PrRef,
   verdict: Verdict,
   body: string,
+  comments: InlineComment[],
 ): Promise<AttemptPostResult> {
   const target = `${ref.owner}/${ref.repo}#${ref.number}`;
   // eslint-disable-next-line no-console
-  console.error(`[workflow] post: attempting ${target} (decision=${verdict.decision})`);
+  console.error(
+    `[workflow] post: attempting ${target} (decision=${verdict.decision}, inline_comments=${comments.length})`,
+  );
 
   try {
     const result = await forge.postReview({
       ref,
       event: verdictToEvent(verdict.decision),
       body,
+      ...(comments.length > 0 ? { comments } : {}),
     });
     // eslint-disable-next-line no-console
     console.error(

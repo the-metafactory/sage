@@ -93,10 +93,39 @@ export type PrMetadata = z.infer<typeof PrMetadataSchema>;
 
 export type ReviewEvent = "comment" | "approve" | "request-changes";
 
+/**
+ * A single line-anchored inline review comment (compass#99 F15).
+ *
+ * `path`/`line` identify a location in the PR's new revision — the
+ * same shape `Finding` already carries (`src/lenses/types.ts`), so
+ * lens findings thread straight through without translation. `line`
+ * must be `> 0` (a real diff-anchored line); file-level findings
+ * (`line: 0`) do not qualify and stay in the top-level review body
+ * only.
+ */
+export interface InlineComment {
+  path: string;
+  line: number;
+  body: string;
+}
+
 export interface PostReviewInput {
   ref: PrRef;
   event: ReviewEvent;
   body: string;
+  /**
+   * Optional line-anchored findings to post as inline PR comments
+   * alongside the top-level review body (compass#99 F15). Omitted or
+   * empty ⇒ a plain top-level-only review, identical to pre-F15
+   * behavior — existing callers are unaffected.
+   *
+   * GitHub backend: posts via `POST /pulls/{n}/reviews`'s `comments[]`
+   * array (single atomic review, same call that posts the summary).
+   * GitLab backend: interim — accepted by the type for forge-agnostic
+   * callers, but not yet threaded into GitLab's discussions API
+   * (sage#43 Phase 3 follow-up); findings stay in the note body only.
+   */
+  comments?: InlineComment[];
 }
 
 export interface PostReviewResult {
