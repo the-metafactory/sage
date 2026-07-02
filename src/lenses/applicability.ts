@@ -192,6 +192,30 @@ export function honestOracleApplies(ctx: ApplicabilityContext): boolean {
   return ctx.pr.files.some((f) => ORACLE_CLAIMS_DOC_RE.test(f.path));
 }
 
+// ────────────────────────── Federation Grammar ──────────────────────────
+
+/**
+ * Federated-signal predicate for the FederationGrammar lens (compass#99
+ * F8, porting sops/federation-wire-protocol.md checks 1-5). Fires ONLY
+ * when the diff or a changed path carries a wire-protocol token — the
+ * lens is otherwise silent so it never comments on ordinary application
+ * or non-federated bus code.
+ */
+const FEDERATION_GRAMMAR_TOKEN_PATTERNS = [
+  /federated\.[a-zA-Z0-9_.@{}$-]+/, // federated.* subject literal (incl. template interpolation)
+  /\boriginator\b/,
+  /\bderiveNatsSubject\b/,
+  /\bselectLink\b/,
+  /\bpeers\s*\[/, // peers[] routing/config array
+];
+
+export function federationGrammarApplies(ctx: ApplicabilityContext): boolean {
+  if (ctx.pr.files.some((f) => FEDERATION_GRAMMAR_TOKEN_PATTERNS.some((re) => re.test(f.path)))) {
+    return true;
+  }
+  return FEDERATION_GRAMMAR_TOKEN_PATTERNS.some((re) => re.test(ctx.diff));
+}
+
 // ───────────────────────────── Summary ─────────────────────────────
 
 export interface ApplicabilityResult {
@@ -202,6 +226,7 @@ export interface ApplicabilityResult {
   performance: boolean;
   maintainability: boolean;
   honestOracle: boolean;
+  federationGrammar: boolean;
 }
 
 export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityResult {
@@ -213,5 +238,6 @@ export function evaluateApplicability(ctx: ApplicabilityContext): ApplicabilityR
     performance: performanceApplies(ctx),
     maintainability: maintainabilityApplies(ctx),
     honestOracle: honestOracleApplies(ctx),
+    federationGrammar: federationGrammarApplies(ctx),
   };
 }

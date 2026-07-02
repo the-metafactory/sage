@@ -6,6 +6,7 @@ import { reviewEcosystemCompliance } from "./ecosystem-compliance.ts";
 import { reviewPerformance } from "./performance.ts";
 import { reviewMaintainability } from "./maintainability.ts";
 import { reviewHonestOracle } from "./honest-oracle.ts";
+import { reviewFederationGrammar } from "./federation-grammar.ts";
 import {
   securityApplies,
   architectureApplies,
@@ -14,6 +15,7 @@ import {
   performanceApplies,
   maintainabilityApplies,
   honestOracleApplies,
+  federationGrammarApplies,
   type ApplicabilityContext,
 } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
@@ -101,4 +103,15 @@ export const LENSES: readonly LensModule[] = [
   // what the code IS, the Oracle asks whether the PR's claims about it hold.
   // Kept a distinct lens (never merged with a fixer) so it can't pull punches.
   { name: "HonestOracle", review: reviewHonestOracle, applies: honestOracleApplies },
+  // FederationGrammar ports compass sops/federation-wire-protocol.md checks
+  // 1-5 (compass#99 F8) — there is no skill file for this, the SOP itself
+  // is the authoritative source. Fires only on federated.*-touching diffs
+  // (federationGrammarApplies); needs CONTEXT.md/CONTEXT-MAP.md for
+  // §Network/§Dispatch terminology grounding.
+  {
+    name: "FederationGrammar",
+    review: reviewFederationGrammar,
+    applies: federationGrammarApplies,
+    usesArchitectureDocs: true,
+  },
 ];
