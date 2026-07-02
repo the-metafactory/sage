@@ -12,6 +12,7 @@ import type {
   AuthStatusResult,
   ForgeBackend,
   ForgeReviewSource,
+  InlineComment,
   PostReviewInput,
   PostReviewResult,
   PrMetadata,
@@ -183,7 +184,103 @@ export async function postReviewWithFallback(
   }
 }
 
+/**
+ * Map sage's `ReviewEvent` to the GitHub REST `event` enum
+ * (`POST /pulls/{n}/reviews` — distinct casing from the `gh pr
+ * review` CLI flags used by the no-comments path below).
+ */
+const REVIEW_EVENT_API: Record<ReviewEvent, "APPROVE" | "REQUEST_CHANGES" | "COMMENT"> = {
+  approve: "APPROVE",
+  "request-changes": "REQUEST_CHANGES",
+  comment: "COMMENT",
+};
+
+/**
+ * Post a review WITH line-anchored inline comments via the GitHub REST
+ * API (`POST /repos/{o}/{r}/pulls/{n}/reviews`) rather than the `gh pr
+ * review` CLI subcommand, which has no `comments[]` parameter. One
+ * atomic call posts the summary body and every inline comment together
+ * — the same all-or-nothing semantics `gh pr review` gives the
+ * no-comments path.
+ *
+ * `--input <file>` (not `-f`/`-F`) because the payload includes a
+ * nested `comments` array; `gh api`'s flat `-f`/`-F` key=value form
+ * can't express that shape. Payload rides a temp file for the same
+ * ARG_MAX reason `postReview` uses `--body-file` below.
+ */
+async function postReviewApi(
+  ref: PrRef,
+  event: ReviewEvent,
+  body: string,
+  comments: InlineComment[],
+): Promise<RunGhResult> {
+  const tmpDir = mkdtempSync(join(tmpdir(), "sage-review-api-"));
+  const payloadPath = join(tmpDir, "payload.json");
+  const payload = {
+    event: REVIEW_EVENT_API[event],
+    body,
+    comments: comments.map((c) => ({ path: c.path, line: c.line, body: c.body })),
+  };
+  writeFileSync(payloadPath, JSON.stringify(payload));
+
+  try {
+    return await runGh(
+      [
+        "api",
+        "-X",
+        "POST",
+        `repos/${formatRepo(ref)}/pulls/${ref.number}/reviews`,
+        "--input",
+        payloadPath,
+      ],
+      { timeoutMs: 60_000 },
+    );
+  } finally {
+    try {
+      unlinkSync(payloadPath);
+    } catch {
+      // Best-effort cleanup; tempdir is in OS-managed /tmp anyway.
+    }
+    try {
+      rmdirSync(tmpDir);
+    } catch {
+      // Empty-directory cleanup is best-effort.
+    }
+  }
+}
+
+/**
+ * Post-with-inline-comments variant of `postReview`, dispatched when
+ * `input.comments` is non-empty (compass#99 F15). Reuses the same
+ * self-review fallback policy (`postReviewWithFallback`) and transient
+ * retry wrapping as the plain path — only the transport (REST API vs
+ * `gh pr review` CLI) differs.
+ */
+async function postReviewWithInlineComments(input: PostReviewInput): Promise<PostReviewResult> {
+  const comments = input.comments ?? [];
+
+  const attempt = (event: ReviewEvent) =>
+    retryTransient(() => postReviewApi(input.ref, event, input.body, comments), {
+      maxAttempts: 6,
+      baseDelayMs: 1000,
+      maxDelayMs: 30_000,
+      onRetry: (attemptNum, delayMs, err) => {
+        const m = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-console
+        console.error(
+          `[sage] gh api pulls/reviews (${event}) attempt ${attemptNum} failed transient; retrying in ${delayMs}ms: ${m.split("\n")[0]}`,
+        );
+      },
+    });
+
+  return postReviewWithFallback(input.event, attempt);
+}
+
 export async function postReview(input: PostReviewInput): Promise<PostReviewResult> {
+  if (input.comments && input.comments.length > 0) {
+    return postReviewWithInlineComments(input);
+  }
+
   // Use --body-file with a temp file rather than --body in argv. A review
   // body with many findings + fenced suggestions easily exceeds macOS
   // ARG_MAX (~256 KB). Temp file path is short; the body itself is read

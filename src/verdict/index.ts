@@ -20,3 +20,4 @@ export { renderVerdict } from "./render.ts";
 export { renderVerdictBlock, mapFindingsToBuckets } from "./block.ts";
 export type { VerdictBlockMeta, FindingsBuckets } from "./block.ts";
 export { persistVerdict, verdictFilePath } from "./persist.ts";
+export { extractInlineComments } from "./inline-comments.ts";
