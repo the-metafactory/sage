@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  broadcastTaskSubject,
+  offerTaskSubject,
   deriveLifecycleSubject,
   deriveLifecycleWildcard,
   subjectMatchesPattern,
@@ -26,17 +26,17 @@ const ORG = "metafactory";
  * semantics, not literal equality.
  */
 describe("cross-stack isolation against myelin helpers", () => {
-  test("broadcastTaskSubject — research traffic does not reach default daemons", () => {
-    const defaultBroadcast = broadcastTaskSubject(ORG, "code-review", "default");
-    const researchBroadcast = broadcastTaskSubject(ORG, "code-review", "research");
+  test("offerTaskSubject — research traffic does not reach default daemons", () => {
+    const defaultOffer = offerTaskSubject(ORG, "code-review", "default");
+    const researchOffer = offerTaskSubject(ORG, "code-review", "research");
     const defaultTask = taskSubject(ORG, "code-review.typescript", "default");
     const researchTask = taskSubject(ORG, "code-review.typescript", "research");
 
-    expect(subjectMatchesPattern(defaultTask, defaultBroadcast)).toBe(true);
-    expect(subjectMatchesPattern(researchTask, researchBroadcast)).toBe(true);
+    expect(subjectMatchesPattern(defaultTask, defaultOffer)).toBe(true);
+    expect(subjectMatchesPattern(researchTask, researchOffer)).toBe(true);
 
-    expect(subjectMatchesPattern(researchTask, defaultBroadcast)).toBe(false);
-    expect(subjectMatchesPattern(defaultTask, researchBroadcast)).toBe(false);
+    expect(subjectMatchesPattern(researchTask, defaultOffer)).toBe(false);
+    expect(subjectMatchesPattern(defaultTask, researchOffer)).toBe(false);
   });
 
   test("deriveLifecycleWildcard — cross-stack lifecycle traffic is isolated", () => {
