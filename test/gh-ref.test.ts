@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parsePrRef, formatRepo } from "../src/forge/github/backend.ts";
+import { parsePrRef, formatRepo, runGh } from "../src/forge/github/backend.ts";
 
 describe("parsePrRef", () => {
   test("parses GitHub URL", () => {
@@ -49,4 +49,16 @@ describe("formatRepo", () => {
       "the-metafactory/sage",
     );
   });
+});
+
+test("GH_BIN=rtk prefixes GitHub subcommands for the RTK transport", async () => {
+  const original = process.env.GH_BIN;
+  process.env.GH_BIN = "rtk";
+  try {
+    const result = await runGh(["--version"]);
+    expect(result.exitCode).toBe(0);
+  } finally {
+    if (original === undefined) delete process.env.GH_BIN;
+    else process.env.GH_BIN = original;
+  }
 });

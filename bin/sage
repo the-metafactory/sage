@@ -43,6 +43,12 @@ if [[ -f "$SAGE_ENV_FILE" ]]; then
   set +a
 fi
 
+# This workstation routes authenticated GitHub access through RTK. Operators
+# can override this (for example GH_BIN=gh on a host with direct GitHub DNS).
+if [[ -z "${GH_BIN:-}" ]] && command -v rtk >/dev/null 2>&1; then
+  export GH_BIN=rtk
+fi
+
 # Guard the retired `serve` subcommand explicitly so an operator with
 # muscle memory from the pre-sage#40 shape gets a clear pointer rather
 # than commander's generic "unknown command".

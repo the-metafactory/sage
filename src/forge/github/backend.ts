@@ -376,11 +376,15 @@ export async function runGh(
   opts: { allowNonZero?: boolean; timeoutMs?: number } = {},
 ): Promise<RunGhResult> {
   const bin = process.env.GH_BIN ?? "gh";
+  // RTK owns the authenticated/network-enabled GitHub path in this operator
+  // environment. `GH_BIN=rtk` is an explicit, portable opt-in that preserves
+  // normal raw-gh behavior everywhere else.
+  const commandArgs = bin === "rtk" ? ["gh", ...args] : args;
   const childEnv = buildGhEnv();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS;
 
   return new Promise<RunGhResult>((resolve, reject) => {
-    const child = spawn(bin, args, { env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(bin, commandArgs, { env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
