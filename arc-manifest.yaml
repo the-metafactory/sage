@@ -86,7 +86,7 @@ provides:
   # `sage review` / `sage dispatch` commands unreachable.)
   files:
     - source: sage.md
-      target: ~/.config/cortex/agents.d/sage.md
+      target: "{cortex-config}/agents.d/sage.md"
   binary: bin/sage
 
 scripts:
