@@ -16,7 +16,12 @@ import { summarizeConvergence } from "./convergence.ts";
 export function decideVerdict(lenses: LensReport[]): Verdict {
   const dedupedLenses = capPreviousRoundProse(dedupeLensFindings(lenses));
   const all = dedupedLenses.flatMap((l) => l.findings);
-  const hasBlocker = all.some((f) => f.severity === "blocker");
+  // Two populations, deliberately separated: what Sage found in the PR, and
+  // what Sage found wrong with itself. Only the former is a code finding
+  // (sage#104 — a broken lens reported as "6 important" reads as a quality
+  // problem, and nobody looks for a hook denial behind a quality problem).
+  const code = all.filter((f) => !f.infrastructure);
+  const hasBlocker = code.some((f) => f.severity === "blocker");
   // sage#107 — the merge gate reads Finding impact, not severity alone. An
   // `important` Finding blocks only when addressing it would change runtime
   // behavior or a check's ability to fail. One that changes only wording does
@@ -25,7 +30,7 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
   // `important` alone was enough to return changes-requested.
   //
   // `blocker` is deliberately NOT impact-gated — see `blocksAtImpact`.
-  const hasBlockingImportant = all.some(
+  const hasBlockingImportant = code.some(
     (f) => f.severity === "important" && blocksAtImpact(f),
   );
   // A lens that errored before producing findings is itself a merge-
@@ -33,6 +38,12 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
   // verdict must not approve. Per Holly review of sage#27 (findings #1
   // and #2): a silently-crashed Security lens should not render as a
   // mergable "commented" verdict next to five clean reports.
+  //
+  // This survives the count change on purpose. Excluding infrastructure
+  // findings from the counts must not become a path to approving a PR whose
+  // lenses never ran — the block is the honest consequence of incomplete
+  // coverage. What changes is the *reason* the operator is shown: "2 lens(es)
+  // failed to run", not two phantom important findings.
   const erroredLenses = lenses.filter((l) => l.errored);
   const hasLensError = erroredLenses.length > 0;
 
@@ -42,11 +53,11 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
   const decision: Verdict["decision"] =
     hasBlocker || hasBlockingImportant || hasLensError
       ? "changes-requested"
-      : all.length === 0
+      : code.length === 0
         ? "approved"
         : "commented";
 
-  const summary = buildVerdictSummary(all, erroredLenses);
+  const summary = buildVerdictSummary(code, erroredLenses);
 
   return {
     decision,
@@ -154,6 +165,8 @@ const PROSE_CAP_SEVERITIES: ReadonlySet<Severity> = new Set<Severity>([
  *     reads at full Severity on previous-round surface.
  *   - An unclassified impact is untouched, for the same reason `blocksAtImpact`
  *     treats it as blocking.
+ *   - Infrastructure Findings are untouched — they are Sage's own plumbing
+ *     diagnostics, not something the reviewee wrote (sage#104).
  *
  * When the prior-round comparison could not be fetched, no Finding carries
  * `previousRoundSurface` and the cap simply does not fire — the fail-closed
@@ -163,6 +176,7 @@ function capPreviousRoundProse(lenses: LensReport[]): LensReport[] {
   return lenses.map((lens) => ({
     ...lens,
     findings: lens.findings.map((finding) => {
+      if (finding.infrastructure) return finding;
       if (!finding.previousRoundSurface) return finding;
       if (finding.impactFallback || finding.impact !== "prose") return finding;
       if (!PROSE_CAP_SEVERITIES.has(finding.severity)) return finding;

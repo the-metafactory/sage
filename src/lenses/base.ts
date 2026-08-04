@@ -249,6 +249,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
 
   let lensJson: RawLensOutput | undefined;
   let extractionError = "";
+  let refusedBySubstrate = false;
 
   try {
     // Pure platform call — substrate captures stdout/stderr; JSON
@@ -307,9 +308,21 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     // composed into the Pipeline at this call site rather than baked
     // into a Substrate-side Pipeline constant).
     if (!outcome.matchedPreferredShape) {
+      // Ask the Substrate first: a harness that refused the call returns a
+      // well-formed envelope that is simply not an answer, and calling that a
+      // contract deviation blames a model that never ran (sage#104).
+      const refusal = input.substrate.describeRefusal?.(outcome.result);
+      if (refusal !== undefined) {
+        refusedBySubstrate = true;
+        throw new Error(refusal);
+      }
       throw new Error(
         `${input.substrate.name} extraction recovered JSON but it is not lens-shaped ` +
-          `(no \`summary\` or \`findings\` field) — extractor=${outcome.extractor}`,
+          `(no \`summary\` or \`findings\` field) — extractor=${outcome.extractor}` +
+          // The recovered payload is the whole diagnosis and used to be dropped
+          // on the floor, which is why this took months to trace: the operator
+          // saw "deviated from JSON contract" and never the reason underneath.
+          `\n--- recovered payload ---\n${truncate(JSON.stringify(outcome.result), 2000)}`,
       );
     }
     lensJson = outcome.result;
@@ -337,7 +350,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       lens: spec.name,
       rationale: truncate(extractionError, 4000),
       durationMs: Date.now() - started,
-      source: "output",
+      source: refusedBySubstrate ? "refused" : "output",
     });
   }
 
