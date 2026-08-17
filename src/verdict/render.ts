@@ -1,5 +1,14 @@
 import type { Verdict } from "./types.ts";
-import { summarizeConvergence } from "./convergence.ts";
+import { summarizeConvergence, type ConvergenceSummary } from "./convergence.ts";
+
+export function formatConvergenceLine(convergence: ConvergenceSummary): string {
+  const counts = `Round impact: behavior ${convergence.behavior}, checks ${convergence.check}, prose ${convergence.prose}`;
+  const provenance = `unclassified impact ${convergence.unclassifiedImpact}; prior-round surface ${convergence.previousRoundSurface}.`;
+  const stopSignal = convergence.status === "prose-only"
+    ? " No behavior or check change is requested; an autonomous loop may stop."
+    : "";
+  return `${counts}; ${provenance}${stopSignal}`;
+}
 
 /**
  * Render a Verdict to the markdown body posted to the Forge (the
@@ -13,7 +22,7 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
   const label = convergence.status === "prose-only"
     ? `${verdict.decision} (prose only)`
     : verdict.decision;
-  const convergenceLine = `Round impact: behavior ${convergence.behavior}, checks ${convergence.check}, prose ${convergence.prose}; prior-round surface ${convergence.previousRoundSurface}. ${convergence.status === "prose-only" ? "No behavior or check change is requested; an autonomous loop may stop." : ""}`;
+  const convergenceLine = formatConvergenceLine(convergence);
   const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n`;
   const sections = verdict.lenses.flatMap((lens) => {
     if (!lens.errored && lens.findings.length === 0) return [];

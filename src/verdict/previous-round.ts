@@ -12,7 +12,7 @@ export function addedLinesByPath(diff: string): Map<string, Set<number>> {
       continue;
     }
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (hunk?.[1]) {
+    if (hunk) {
       newLine = Number(hunk[1]);
       continue;
     }

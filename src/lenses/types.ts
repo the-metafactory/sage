@@ -12,6 +12,8 @@ export interface Finding {
   severity: Severity;
   /** The kind of change needed to address this finding (sage#107). */
   impact?: FindingImpact;
+  /** True when Sage conservatively defaulted a missing or invalid impact. */
+  impactFallback?: true;
   title: string;
   rationale: string;
   /** Optional suggested patch (small inline replacement). */

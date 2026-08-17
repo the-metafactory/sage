@@ -4,6 +4,8 @@ export interface ConvergenceSummary {
   behavior: number;
   check: number;
   prose: number;
+  /** Findings conservatively counted as behavior because impact was absent or invalid. */
+  unclassifiedImpact: number;
   previousRoundSurface: number;
   coverageFailed: boolean;
   /** An automation-safe stopping signal: no behavior or check change remains. */
@@ -14,16 +16,23 @@ export interface ConvergenceSummary {
  * Classify the result of one review round by the work it asks for, not by
  * severity. Older lenses did not emit an impact; treating that output as
  * behavior preserves the conservative historical gate until every substrate
- * has learned the new JSON field.
+ * has learned the new JSON field. `unclassifiedImpact` keeps that fallback
+ * visible to consumers, so it cannot masquerade as a genuine behavior count.
  */
 export function summarizeConvergence(lenses: readonly LensReport[]): ConvergenceSummary {
   const counts: Record<FindingImpact, number> = { behavior: 0, check: 0, prose: 0 };
+  let unclassifiedImpact = 0;
   let previousRoundSurface = 0;
   let coverageFailed = false;
   for (const lens of lenses) {
     if (lens.errored) coverageFailed = true;
     for (const finding of lens.findings) {
-      counts[finding.impact ?? "behavior"] += 1;
+      if (finding.impactFallback || !finding.impact) {
+        counts.behavior += 1;
+        unclassifiedImpact++;
+      } else {
+        counts[finding.impact] += 1;
+      }
       if (finding.previousRoundSurface) previousRoundSurface++;
     }
   }
@@ -32,5 +41,5 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
     : counts.prose > 0
       ? "prose-only"
       : "clean";
-  return { ...counts, previousRoundSurface, coverageFailed, status };
+  return { ...counts, unclassifiedImpact, previousRoundSurface, coverageFailed, status };
 }

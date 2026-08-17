@@ -163,13 +163,18 @@ function normalizeSeverity(raw: unknown): Finding["severity"] {
   return "suggestion";
 }
 
-function normalizeImpact(raw: unknown): FindingImpact {
-  if (typeof raw !== "string") return "behavior";
+interface NormalizedImpact {
+  impact: FindingImpact;
+  fallback: boolean;
+}
+
+function normalizeImpact(raw: unknown): NormalizedImpact {
+  if (typeof raw !== "string") return { impact: "behavior", fallback: true };
   const lower = raw.trim().toLowerCase();
-  if (IMPACT_SET.has(lower)) return lower as FindingImpact;
+  if (IMPACT_SET.has(lower)) return { impact: lower as FindingImpact, fallback: false };
   // eslint-disable-next-line no-console
   console.error(`[sage] unknown finding impact from LLM: "${raw}" — defaulting to "behavior"`);
-  return "behavior";
+  return { impact: "behavior", fallback: true };
 }
 
 function normalizeLine(raw: number | string | undefined): number {
@@ -334,15 +339,19 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     });
   }
 
-  const findings = (lensJson.findings ?? []).map<Finding>((f) => ({
-    path: f.path,
-    line: normalizeLine(f.line),
-    severity: normalizeSeverity(f.severity),
-    impact: normalizeImpact(f.impact),
-    title: f.title,
-    rationale: f.rationale ?? "",
-    ...(f.suggestion ? { suggestion: f.suggestion } : {}),
-  }));
+  const findings = (lensJson.findings ?? []).map<Finding>((f) => {
+    const normalizedImpact = normalizeImpact(f.impact);
+    return {
+      path: f.path,
+      line: normalizeLine(f.line),
+      severity: normalizeSeverity(f.severity),
+      impact: normalizedImpact.impact,
+      ...(normalizedImpact.fallback ? { impactFallback: true } : {}),
+      title: f.title,
+      rationale: f.rationale ?? "",
+      ...(f.suggestion ? { suggestion: f.suggestion } : {}),
+    };
+  });
 
   return {
     lens: spec.name,

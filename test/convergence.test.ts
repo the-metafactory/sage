@@ -23,6 +23,7 @@ describe("sage#107 convergence signal", () => {
       behavior: 0,
       check: 0,
       prose: 1,
+      unclassifiedImpact: 0,
       previousRoundSurface: 0,
       coverageFailed: false,
       status: "prose-only",
@@ -36,6 +37,8 @@ describe("sage#107 convergence signal", () => {
       lens([{ path: "src/a.ts", line: 2, severity: "suggestion", title: "Legacy", rationale: "No impact field." }]),
     ]);
     expect(legacy.convergence?.status).toBe("actionable");
+    expect(legacy.convergence?.unclassifiedImpact).toBe(1);
+    expect(renderVerdict(legacy)).toContain("unclassified impact 1");
 
     const errored: LensReport = { lens: "Security", summary: "", findings: [], durationMs: 0, errored: true };
     expect(decideVerdict([errored]).convergence?.status).toBe("actionable");
