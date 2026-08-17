@@ -208,6 +208,8 @@ export interface ForgeReviewBody {
    * unchanged — no empty-string sentinel in the Module's contract.
    */
   readonly postedAt?: string;
+  /** Commit the forge recorded for this review, when it exposes one. */
+  readonly commitId?: string;
 }
 
 /**
@@ -244,6 +246,9 @@ export interface ForgeBackend {
 
   /** Fetch the unified diff for the PR/MR. */
   prDiff(ref: PrRef): Promise<string>;
+
+  /** Optional comparison diff for the self-surface convergence signal. */
+  diffBetween?(ref: PrRef, fromCommit: string, toCommit: string): Promise<string>;
 
   /**
    * Fetch a repository file as UTF-8 text. Missing files return null;

@@ -5,7 +5,7 @@ import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architec
 import type { GlossaryContext } from "./glossary.ts";
 import { makeLensPipeline } from "./shape.ts";
 import { appendSummaryNote } from "./summary.ts";
-import { buildErroredLensReport, type Finding, type LensReport } from "./types.ts";
+import { buildErroredLensReport, type Finding, type FindingImpact, type LensReport } from "./types.ts";
 
 /**
  * Shared scaffolding for all lenses. Each concrete lens supplies a name,
@@ -100,6 +100,7 @@ JSON shape:
       "path": "<file path>",
       "line": <int>,
       "severity": "blocker" | "important" | "suggestion" | "nit",
+      "impact": "behavior" | "check" | "prose",
       "title": "<short headline>",
       "rationale": "<why this matters for THIS lens, 1-3 sentences>",
       "suggestion": "<optional concrete fix>"
@@ -112,6 +113,12 @@ Severity rules:
 - important:  the change works but degrades quality in a way that warrants change before merge.
 - suggestion: optional improvement.
 - nit:        cosmetic.
+
+Impact rules:
+- behavior: addressing it changes runtime behavior, a public contract, or data.
+- check: addressing it changes whether a test, probe, or guard can fail.
+- prose: addressing it changes only comments, documentation, or wording.
+Choose exactly one impact for every finding; severity and impact are independent.
 
 Calibration: across a typical PR with findings, expect at most 1 blocker and
 at most 2 important findings. Important requires concrete, demonstrable harm
@@ -144,6 +151,8 @@ PR data follows on stdin.`;
 
 const SEVERITY_VALUES = ["blocker", "important", "suggestion", "nit"] as const;
 const SEVERITY_SET = new Set<string>(SEVERITY_VALUES);
+const IMPACT_VALUES = ["behavior", "check", "prose"] as const;
+const IMPACT_SET = new Set<string>(IMPACT_VALUES);
 
 function normalizeSeverity(raw: unknown): Finding["severity"] {
   if (typeof raw !== "string") return "suggestion";
@@ -152,6 +161,15 @@ function normalizeSeverity(raw: unknown): Finding["severity"] {
   // eslint-disable-next-line no-console
   console.error(`[sage] unknown severity from LLM: "${raw}" — defaulting to "suggestion"`);
   return "suggestion";
+}
+
+function normalizeImpact(raw: unknown): FindingImpact {
+  if (typeof raw !== "string") return "behavior";
+  const lower = raw.trim().toLowerCase();
+  if (IMPACT_SET.has(lower)) return lower as FindingImpact;
+  // eslint-disable-next-line no-console
+  console.error(`[sage] unknown finding impact from LLM: "${raw}" — defaulting to "behavior"`);
+  return "behavior";
 }
 
 function normalizeLine(raw: number | string | undefined): number {
@@ -320,6 +338,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     path: f.path,
     line: normalizeLine(f.line),
     severity: normalizeSeverity(f.severity),
+    impact: normalizeImpact(f.impact),
     title: f.title,
     rationale: f.rationale ?? "",
     ...(f.suggestion ? { suggestion: f.suggestion } : {}),

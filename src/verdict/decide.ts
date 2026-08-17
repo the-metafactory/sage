@@ -1,6 +1,7 @@
 import type { ReviewEvent } from "../forge/types.ts";
 import type { Finding, LensReport, Severity } from "../lenses/types.ts";
 import type { Verdict } from "./types.ts";
+import { summarizeConvergence } from "./convergence.ts";
 
 /**
  * Decide a Verdict from a set of LensReports. Owns:
@@ -36,7 +37,12 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
 
   const summary = buildVerdictSummary(all, erroredLenses);
 
-  return { decision, summary, lenses: dedupedLenses };
+  return {
+    decision,
+    summary,
+    lenses: dedupedLenses,
+    convergence: summarizeConvergence(dedupedLenses),
+  };
 }
 
 /**

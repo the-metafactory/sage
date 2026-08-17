@@ -1,4 +1,5 @@
 import type { Verdict } from "./types.ts";
+import { summarizeConvergence } from "./convergence.ts";
 
 /**
  * Render a Verdict to the markdown body posted to the Forge (the
@@ -8,7 +9,12 @@ import type { Verdict } from "./types.ts";
  * `sage review` (cli/index.ts) for stdout display.
  */
 export function renderVerdict(verdict: Verdict, substrateLabel?: string): string {
-  const head = `## Sage code review — ${verdict.decision}\n\n${verdict.summary}\n`;
+  const convergence = verdict.convergence ?? summarizeConvergence(verdict.lenses);
+  const label = convergence.status === "prose-only"
+    ? `${verdict.decision} (prose only)`
+    : verdict.decision;
+  const convergenceLine = `Round impact: behavior ${convergence.behavior}, checks ${convergence.check}, prose ${convergence.prose}; prior-round surface ${convergence.previousRoundSurface}. ${convergence.status === "prose-only" ? "No behavior or check change is requested; an autonomous loop may stop." : ""}`;
+  const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n`;
   const sections = verdict.lenses.flatMap((lens) => {
     if (!lens.errored && lens.findings.length === 0) return [];
     const heading = lens.errored
@@ -24,7 +30,10 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
                 f.sourceLenses && f.sourceLenses.length > 1
                   ? `\n  via: ${f.sourceLenses.join(", ")}`
                   : "";
-              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}`;
+              const priorRoundTag = f.previousRoundSurface
+                ? "\n  _Subject was added after Sage's previous review._"
+                : "";
+              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}${priorRoundTag}`;
               if (!f.suggestion) return findingHead;
               if (!f.suggestion.includes("\n")) return `${findingHead}\n  Fix: ${f.suggestion}`;
               const fence = pickFence(f.suggestion);
