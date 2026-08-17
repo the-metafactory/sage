@@ -39,7 +39,7 @@ The *per-PR execution* of one Lens. Input: PrMetadata + diff + Prior Findings. O
 _Avoid_: lens invocation, lens pass, lens-call
 
 **Finding**:
-A single issue raised in one Lens run. Carries Severity, a diff-quoted location (mandatory — anchors the Finding in the change), and source-Lens attribution. Cross-Lens duplicates collapse at Verdict-render time with source-Lens attribution preserved.
+A single issue raised in one Lens run. Carries Severity, Finding impact, a diff-quoted location (mandatory — anchors the Finding in the change), and source-Lens attribution. Cross-Lens duplicates collapse at Verdict-render time with source-Lens attribution preserved.
 _Avoid_: issue, comment, remark, note
 
 **LensReport**:
@@ -48,7 +48,11 @@ _Avoid_: lens output, lens result
 
 **Severity**:
 One of `blocker`, `important`, `suggestion`, `nit`. Earned, not assumed: only `blocker` flips the Verdict to `changes-requested`. `important` and below are comment-only. Severity is calibrated against Prior Findings — repeating a `nit` across iterations is not a `blocker`.
-_Avoid_: priority, level, impact
+_Avoid_: priority, level
+
+**Finding impact**:
+The kind of work needed to address a Finding: `behavior`, `check`, or `prose`. Independent from Severity. A Review's convergence summary reports the per-round split; `prose-only` means no behavior or check change is requested, so an autonomous review loop may stop.
+_Avoid_: severity, priority
 
 **Applicability**:
 The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability; substantial PR claims or docs/markdown changes for HonestOracle).
@@ -146,6 +150,7 @@ _Avoid_: direct subject, named subject
 
 - A **Review** runs zero or more applicable **Lens runs** in parallel; each Lens run produces a **LensReport** of **Findings** or skips.
 - **Severity** of a Finding determines the **Verdict**: any `blocker` ⇒ `changes-requested`; otherwise `commented` or `approved` per config.
+- **Finding impact** produces an additive convergence summary; it does not alter the stable Verdict-envelope vocabulary.
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.

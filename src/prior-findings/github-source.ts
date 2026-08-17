@@ -33,6 +33,7 @@ const ReviewSchema = z.object({
   body: z.string().nullable().transform((s) => s ?? ""),
   user: z.object({ login: z.string() }),
   submitted_at: z.string().nullable().optional(),
+  commit_id: z.string().nullable().optional(),
 });
 
 /** `gh api --paginate --slurp` returns an array-of-pages. */
@@ -100,6 +101,7 @@ export function createGitHubReviewSource(
         authorLogin: r.user.login,
         body: r.body,
         ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
+        ...(r.commit_id != null ? { commitId: r.commit_id } : {}),
       }));
 
       return { bodies, sageLogin };

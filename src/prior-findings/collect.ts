@@ -55,8 +55,10 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const sageLogin = raw.sageLogin;
       const seen = new Set<string>();
       const findings: PriorReviewFinding[] = [];
+      let latestReviewCommitId: string | undefined;
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
+        if (review.commitId) latestReviewCommitId = review.commitId;
         for (const finding of parseSageReviewFindings(review.body)) {
           const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
           if (seen.has(key)) continue;
@@ -72,6 +74,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         status: "ok",
         findings,
         identity: { login: sageLogin },
+        ...(latestReviewCommitId !== undefined ? { latestReviewCommitId } : {}),
       };
     },
   };

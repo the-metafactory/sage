@@ -105,6 +105,18 @@ export async function prDiff(ref: PrRef): Promise<string> {
   return out.stdout;
 }
 
+/** Diff from a prior review's commit to the current head (sage#107). */
+export async function diffBetween(ref: PrRef, fromCommit: string, toCommit: string): Promise<string> {
+  const endpoint = `repos/${formatRepo(ref)}/compare/${encodeURIComponent(fromCommit)}...${encodeURIComponent(toCommit)}`;
+  const out = await runGh([
+    "api",
+    "-H",
+    "Accept: application/vnd.github.diff",
+    endpoint,
+  ]);
+  return out.stdout;
+}
+
 function encodeRepoPath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
@@ -448,6 +460,10 @@ export class GitHubBackend implements ForgeBackend {
 
   prDiff(ref: PrRef): Promise<string> {
     return prDiff(ref);
+  }
+
+  diffBetween(ref: PrRef, fromCommit: string, toCommit: string): Promise<string> {
+    return diffBetween(ref, fromCommit, toCommit);
   }
 
   repoFile(ref: PrRef, path: string, opts?: RepoFileOptions): Promise<string | null> {

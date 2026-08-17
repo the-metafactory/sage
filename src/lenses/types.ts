@@ -1,17 +1,27 @@
 export type Severity = "blocker" | "important" | "suggestion" | "nit";
 
+/** What a finding asks the reviewee to change. Kept separate from severity so
+ * review rounds can distinguish substantive progress from prose churn. */
+export type FindingImpact = "behavior" | "check" | "prose";
+
 export interface Finding {
   /** File path relative to repo root. */
   path: string;
   /** 1-indexed line number in the new revision. Use 0 for file-level findings. */
   line: number;
   severity: Severity;
+  /** The kind of change needed to address this finding (sage#107). */
+  impact?: FindingImpact;
+  /** True when Sage conservatively defaulted a missing or invalid impact. */
+  impactFallback?: true;
   title: string;
   rationale: string;
   /** Optional suggested patch (small inline replacement). */
   suggestion?: string;
   /** Lenses that raised this finding before cross-lens deduplication. */
   sourceLenses?: string[];
+  /** True when this line was added after Sage's most recent prior review. */
+  previousRoundSurface?: boolean;
 }
 
 export interface LensReport {
@@ -45,6 +55,8 @@ export interface LensReport {
    * for clean reviews stays byte-identical to pre-#26 output.
    */
   errored?: boolean;
+  /** True when the workflow could not compare this round with the prior Sage revision. */
+  previousRoundSurfaceUnavailable?: true;
 }
 
 /**

@@ -34,6 +34,8 @@ export interface PriorFindingsResult {
   readonly identity?: { readonly login: string };
   /** Present iff status !== "ok" — one human line for logs + Lifecycle envelope. */
   readonly reason?: string;
+  /** Commit of the latest trusted Sage review, if the forge exposed it. */
+  readonly latestReviewCommitId?: string;
 }
 
 /**

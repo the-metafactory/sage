@@ -26,6 +26,8 @@ import {
   type VerdictBlockMeta,
   verdictFilePath,
   verdictToEvent,
+  addedLinesByPath,
+  markPreviousRoundSurface,
 } from "../verdict/index.ts";
 import { LENSES } from "./registry.ts";
 import {
@@ -206,7 +208,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     }
   }
 
-  const verdict = decideVerdict(allLensReports);
+  const enrichedLensReports = await markPriorRoundSurface(
+    allLensReports,
+    opts.forge,
+    opts.ref,
+    pr.headRefOid,
+    priorResult.latestReviewCommitId,
+  );
+  const verdict = decideVerdict(enrichedLensReports);
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
@@ -252,6 +261,26 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),
   };
+}
+
+async function markPriorRoundSurface(
+  lenses: LensReport[],
+  forge: ForgeBackend,
+  ref: PrRef,
+  headCommit: string,
+  priorReviewCommit: string | undefined,
+): Promise<LensReport[]> {
+  if (!priorReviewCommit || !headCommit || !forge.diffBetween) return lenses;
+  try {
+    return markPreviousRoundSurface(
+      lenses,
+      addedLinesByPath(await forge.diffBetween(ref, priorReviewCommit, headCommit)),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[workflow] prior-round surface unavailable; marking coverage incomplete: ${message}`);
+    return lenses.map((lens) => ({ ...lens, previousRoundSurfaceUnavailable: true }));
+  }
 }
 
 interface AttemptPostResult {

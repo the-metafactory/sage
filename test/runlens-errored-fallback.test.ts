@@ -99,6 +99,27 @@ describe("runLens substrate-failure fallback (sage#27 Holly round 2 #1)", () => 
     expect(report.findings).toHaveLength(0);
   });
 
+  test("marks malformed model impact as a visible conservative fallback", async () => {
+    const malformedImpact: Substrate = {
+      name: "pi" as const,
+      displayName: "pi.dev",
+      bin: "pi",
+      jsonExtractors: TEXT_EXTRACTORS,
+      envRequirements: { namespaces: [], keys: [] },
+      run: async () => ({
+        stdout: JSON.stringify({
+          summary: "ok",
+          findings: [{ path: "a.ts", line: 1, severity: "suggestion", impact: "unknown", title: "t" }],
+        }),
+        stderr: "",
+        exitCode: 0,
+        durationMs: 1,
+      }),
+    };
+    const report = await runLens({ name: "CodeQuality", focus: "x" }, input(malformedImpact));
+    expect(report.findings[0]).toMatchObject({ impact: "behavior", impactFallback: true });
+  });
+
   test("non-lens JSON (no summary/findings) lands in errored-report path (sage#63 Pass-2 drop)", async () => {
     const nonLens: Substrate = {
       name: "claude" as const,

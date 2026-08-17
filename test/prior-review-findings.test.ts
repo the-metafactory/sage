@@ -59,7 +59,12 @@ describe("PriorFindings Module (sage#56)", () => {
           sageLogin: "jcfischer",
           bodies: [
             { authorLogin: "attacker", body: sageBody, postedAt: "2026-05-01T00:00:00Z" },
-            { authorLogin: "jcfischer", body: sageBody, postedAt: "2026-05-10T12:00:00Z" },
+            {
+              authorLogin: "jcfischer",
+              body: sageBody,
+              postedAt: "2026-05-10T12:00:00Z",
+              commitId: "prior-head",
+            },
           ],
         },
       },
@@ -69,6 +74,7 @@ describe("PriorFindings Module (sage#56)", () => {
 
     expect(result.status).toBe("ok");
     expect(result.identity).toEqual({ login: "jcfischer" });
+    expect(result.latestReviewCommitId).toBe("prior-head");
     expect(result.findings).toEqual([
       {
         path: "src/a.ts",

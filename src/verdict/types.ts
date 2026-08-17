@@ -1,4 +1,5 @@
 import type { LensReport } from "../lenses/types.ts";
+import type { ConvergenceSummary } from "./convergence.ts";
 
 /**
  * The decision output of a Review — exactly one of `approved`,
@@ -15,4 +16,6 @@ export interface Verdict {
   decision: "approved" | "changes-requested" | "commented";
   summary: string;
   lenses: LensReport[];
+  /** Additive round-progress signal for autonomous review loops (sage#107). */
+  convergence?: ConvergenceSummary;
 }
