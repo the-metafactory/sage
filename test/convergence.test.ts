@@ -25,6 +25,7 @@ describe("sage#107 convergence signal", () => {
       prose: 1,
       unclassifiedImpact: 0,
       previousRoundSurface: 0,
+      previousRoundSurfaceUnavailable: false,
       coverageFailed: false,
       status: "prose-only",
     });
@@ -39,6 +40,12 @@ describe("sage#107 convergence signal", () => {
     expect(legacy.convergence?.status).toBe("actionable");
     expect(legacy.convergence?.unclassifiedImpact).toBe(1);
     expect(renderVerdict(legacy)).toContain("unclassified impact 1");
+
+    const unavailable = decideVerdict([
+      { ...lens([{ path: "README.md", line: 4, severity: "nit", impact: "prose", title: "Wording", rationale: "Text only." }]), previousRoundSurfaceUnavailable: true },
+    ]);
+    expect(unavailable.convergence?.status).toBe("actionable");
+    expect(renderVerdict(unavailable)).toContain("Prior-round surface coverage is unavailable.");
 
     const errored: LensReport = { lens: "Security", summary: "", findings: [], durationMs: 0, errored: true };
     expect(decideVerdict([errored]).convergence?.status).toBe("actionable");

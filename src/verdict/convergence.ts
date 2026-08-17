@@ -7,6 +7,8 @@ export interface ConvergenceSummary {
   /** Findings conservatively counted as behavior because impact was absent or invalid. */
   unclassifiedImpact: number;
   previousRoundSurface: number;
+  /** The prior-round comparison was attempted but its diff could not be fetched. */
+  previousRoundSurfaceUnavailable: boolean;
   coverageFailed: boolean;
   /** An automation-safe stopping signal: no behavior or check change remains. */
   status: "actionable" | "prose-only" | "clean";
@@ -23,9 +25,11 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
   const counts: Record<FindingImpact, number> = { behavior: 0, check: 0, prose: 0 };
   let unclassifiedImpact = 0;
   let previousRoundSurface = 0;
+  let previousRoundSurfaceUnavailable = false;
   let coverageFailed = false;
   for (const lens of lenses) {
     if (lens.errored) coverageFailed = true;
+    if (lens.previousRoundSurfaceUnavailable) previousRoundSurfaceUnavailable = true;
     for (const finding of lens.findings) {
       if (finding.impactFallback || !finding.impact) {
         counts.behavior += 1;
@@ -36,10 +40,17 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
       if (finding.previousRoundSurface) previousRoundSurface++;
     }
   }
-  const status = coverageFailed || counts.behavior > 0 || counts.check > 0
+  const status = coverageFailed || previousRoundSurfaceUnavailable || counts.behavior > 0 || counts.check > 0
     ? "actionable"
     : counts.prose > 0
       ? "prose-only"
       : "clean";
-  return { ...counts, unclassifiedImpact, previousRoundSurface, coverageFailed, status };
+  return {
+    ...counts,
+    unclassifiedImpact,
+    previousRoundSurface,
+    previousRoundSurfaceUnavailable,
+    coverageFailed,
+    status,
+  };
 }

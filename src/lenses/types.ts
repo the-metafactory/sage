@@ -55,6 +55,8 @@ export interface LensReport {
    * for clean reviews stays byte-identical to pre-#26 output.
    */
   errored?: boolean;
+  /** True when the workflow could not compare this round with the prior Sage revision. */
+  previousRoundSurfaceUnavailable?: true;
 }
 
 /**

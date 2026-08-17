@@ -7,7 +7,10 @@ export function formatConvergenceLine(convergence: ConvergenceSummary): string {
   const stopSignal = convergence.status === "prose-only"
     ? " No behavior or check change is requested; an autonomous loop may stop."
     : "";
-  return `${counts}; ${provenance}${stopSignal}`;
+  const unavailable = convergence.previousRoundSurfaceUnavailable
+    ? " Prior-round surface coverage is unavailable."
+    : "";
+  return `${counts}; ${provenance}${unavailable}${stopSignal}`;
 }
 
 /**

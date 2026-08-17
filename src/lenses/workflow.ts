@@ -278,8 +278,8 @@ async function markPriorRoundSurface(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[workflow] prior-round surface unavailable; continuing unmarked: ${message}`);
-    return lenses;
+    console.error(`[workflow] prior-round surface unavailable; marking coverage incomplete: ${message}`);
+    return lenses.map((lens) => ({ ...lens, previousRoundSurfaceUnavailable: true }));
   }
 }
 
