@@ -53,6 +53,12 @@ Prerequisites:
 
 ## Usage
 
+For coding agents that need to trigger a Sage review from a Cortex
+environment, use the canonical bus guide first:
+[`docs/review-trigger-guide.md`](docs/review-trigger-guide.md). In short:
+`pilot request-review --wait` is the signed, agent-facing bus path;
+`sage review ... --post` is the deterministic no-bus fallback.
+
 ### Offline review — no bus required
 
 ```bash
@@ -93,6 +99,10 @@ subscription comes up with it.
 ```bash
 bun run src/cli/index.ts dispatch the-metafactory/sage#1
 ```
+
+This is Sage's operator-facing publisher CLI. In signed Cortex installs,
+agent automation should prefer `pilot request-review --wait` because Pilot
+signs review-request envelopes and waits on both current verdict families.
 
 Publishes a `tasks.code-review.typescript` envelope and streams the
 `dispatch.task.*` lifecycle + `code.pr.review.*` verdict back. Exits 0 on
