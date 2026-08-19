@@ -44,10 +44,34 @@ export interface ClaudeSubstrateConfig {
   permissionMode?: "default" | "acceptEdits" | "bypassPermissions" | "plan";
 }
 
+/**
+ * Claude Code reports a hook denial as a *successful* run: exit 0,
+ * `subtype: "success"`, `is_error: false`, and the denial notice sitting in
+ * `result` where the model's answer would be. The only field that gives it away
+ * is `num_turns: 0` — the model was never asked.
+ *
+ * Worked example (soma PR #528, and every soma review before it): a
+ * `UserPromptSubmit` hook on the operator's machine denied the lens prompt and
+ * returned `"Operation stopped by hook: Runtime policy denied this action:
+ * security-disable-request."`. Sage reported it as a JSON-contract deviation for
+ * months (sage#104) because nothing looked at `num_turns`.
+ */
+export function describeClaudeRefusal(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const envelope = payload as Record<string, unknown>;
+  if (envelope.type !== "result") return undefined;
+  if (envelope.num_turns !== 0) return undefined;
+  const result = typeof envelope.result === "string" ? envelope.result.trim() : "";
+  return result.length > 0
+    ? `Claude Code returned without invoking the model (num_turns: 0): ${result}`
+    : "Claude Code returned without invoking the model (num_turns: 0) and gave no reason.";
+}
+
 export class ClaudeSubstrate implements Substrate {
   readonly name = "claude" as const;
   readonly displayName = "Claude Code";
   readonly jsonExtractors = CLAUDE_EXTRACTORS;
+  readonly describeRefusal = describeClaudeRefusal;
   readonly envRequirements = {
     namespaces: ["CLAUDE_", "ANTHROPIC_"],
     keys: [],

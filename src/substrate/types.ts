@@ -161,6 +161,25 @@ export interface Substrate {
   readonly jsonExtractors: readonly NamedExtractor[];
 
   /**
+   * Recognise a payload that is the harness saying "I did not run the model".
+   *
+   * A refusal is not a contract deviation: the CLI exits 0 and returns a
+   * well-formed envelope, but its body is a denial notice — a permission hook
+   * fired, a policy gate blocked the prompt. The extraction pipeline then
+   * recovers that envelope as ordinary JSON, finds no lens shape, and the lens
+   * kernel would otherwise report "the model deviated from the JSON contract"
+   * about a model that was never invoked.
+   *
+   * Substrate-owned because the envelope shape is: only the Adapter knows what
+   * its own harness emits. Returns the operator-facing reason, or `undefined`
+   * when the payload is a genuine model answer in the wrong shape.
+   *
+   * Optional — a Substrate that cannot distinguish the two omits it and keeps
+   * today's behaviour.
+   */
+  readonly describeRefusal?: (payload: unknown) => string | undefined;
+
+  /**
    * Per-Adapter env contract declared as data. sage#60 — each
    * Substrate Adapter owns its own namespace prefix list next to
    * its `run()` code; `buildSubstrateEnv` reads this to compose

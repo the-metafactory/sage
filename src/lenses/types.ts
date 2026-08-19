@@ -22,6 +22,21 @@ export interface Finding {
   sourceLenses?: string[];
   /** True when this line was added after Sage's most recent prior review. */
   previousRoundSurface?: boolean;
+  /**
+   * True for a finding Sage synthesized about its own plumbing — a lens that
+   * never ran — rather than something it observed in the diff.
+   *
+   * These still ride in `findings` so existing renderers show them, but they are
+   * NOT code findings and must not be counted as such: a review reporting
+   * "6 important" when two of them are "the lens crashed" overstates what was
+   * actually found in the PR, and that miscount is what made a broken lens read
+   * like a quality problem for months (sage#104).
+   *
+   * Excluded from severity counts and from the blocker/important escalation in
+   * `decideVerdict`. The verdict still blocks — via `LensReport.errored`, which
+   * is the honest reason: coverage is incomplete, not "the code is bad".
+   */
+  infrastructure?: boolean;
 }
 
 export interface LensReport {
@@ -86,24 +101,43 @@ export interface ErroredLensReportInput {
    * Only affects the diagnostic finding's `path` and `title` —
    * everything else is identical between the two paths so the verdict
    * gate, renderer, and bus contract all behave the same.
+   *
+   * `refused` is a third case and the reason this union grew: the substrate
+   * accepted the call and returned a well-formed envelope saying it never ran
+   * the model — a hook denied the prompt, a permission gate fired. Calling that
+   * "the model deviated from the JSON contract" blames a model that was never
+   * invoked, and sent sage#104 chasing prompt-contract bugs for months while the
+   * real cause was a policy hook on the operator's own machine.
    */
-  source: "runtime" | "output";
+  source: "runtime" | "output" | "refused";
 }
 
+const ERRORED_TITLE: Record<ErroredLensReportInput["source"], (lens: string) => string> = {
+  runtime: (lens) => `${lens}: lens runtime error`,
+  output: (lens) => `${lens}: model deviated from JSON contract`,
+  refused: (lens) => `${lens}: substrate refused the call — the model never ran`,
+};
+
+const ERRORED_PATH: Record<ErroredLensReportInput["source"], string> = {
+  runtime: "(lens runtime)",
+  output: "(lens output)",
+  refused: "(substrate refusal)",
+};
+
 export function buildErroredLensReport(opts: ErroredLensReportInput): LensReport {
-  const isRuntime = opts.source === "runtime";
   return {
     lens: opts.lens,
     summary: `Lens "${opts.lens}" did not produce a usable verdict; verdict cannot rely on this lens.`,
     findings: [
       {
-        path: isRuntime ? "(lens runtime)" : "(lens output)",
+        path: ERRORED_PATH[opts.source],
         line: 0,
+        // Severity is retained for renderers that only understand severity; the
+        // `infrastructure` flag is what keeps it out of the code-finding counts.
         severity: "important",
-        title: isRuntime
-          ? `${opts.lens}: lens runtime error`
-          : `${opts.lens}: model deviated from JSON contract`,
+        title: ERRORED_TITLE[opts.source](opts.lens),
         rationale: opts.rationale,
+        infrastructure: true,
       },
     ],
     durationMs: opts.durationMs,
