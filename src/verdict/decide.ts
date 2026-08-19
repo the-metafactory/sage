@@ -14,10 +14,20 @@ import { summarizeConvergence } from "./convergence.ts";
  * regardless of which Substrate ran them.
  */
 export function decideVerdict(lenses: LensReport[]): Verdict {
-  const dedupedLenses = dedupeLensFindings(lenses);
+  const dedupedLenses = capPreviousRoundProse(dedupeLensFindings(lenses));
   const all = dedupedLenses.flatMap((l) => l.findings);
   const hasBlocker = all.some((f) => f.severity === "blocker");
-  const hasImportant = all.some((f) => f.severity === "important");
+  // sage#107 — the merge gate reads Finding impact, not severity alone. An
+  // `important` Finding blocks only when addressing it would change runtime
+  // behavior or a check's ability to fail. One that changes only wording does
+  // not: on seekolous#199 the code settled at round 5 and the loop still ran to
+  // round 20, because each round produced one reworded `important` and
+  // `important` alone was enough to return changes-requested.
+  //
+  // `blocker` is deliberately NOT impact-gated — see `blocksAtImpact`.
+  const hasBlockingImportant = all.some(
+    (f) => f.severity === "important" && blocksAtImpact(f),
+  );
   // A lens that errored before producing findings is itself a merge-
   // blocker: we don't know what the lens would have flagged, so the
   // verdict must not approve. Per Holly review of sage#27 (findings #1
@@ -26,10 +36,11 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
   const erroredLenses = lenses.filter((l) => l.errored);
   const hasLensError = erroredLenses.length > 0;
 
-  // blocker, important, and lens-error all signal "fix before merge"
-  // per persona.md §5 / Holly review. suggestion/nit are comment-only.
+  // blocker, behavior/check-impact important, and lens-error all signal
+  // "fix before merge" per persona.md §5 / Holly review. suggestion, nit, and
+  // wording-only important are comment-only.
   const decision: Verdict["decision"] =
-    hasBlocker || hasImportant || hasLensError
+    hasBlocker || hasBlockingImportant || hasLensError
       ? "changes-requested"
       : all.length === 0
         ? "approved"
@@ -93,6 +104,72 @@ const TITLE_STOP_WORDS = new Set([
   "to",
   "with",
 ]);
+
+/**
+ * Whether an `important` Finding is severe enough to block merge, given what
+ * addressing it would actually change.
+ *
+ * An unclassified impact reads as blocking. `impactFallback` marks a Finding
+ * whose impact Sage defaulted because the model omitted it or emitted garbage
+ * (see `normalizeImpact`); treating that as `prose` would let a substrate that
+ * has not learned the field quietly open the merge gate. Same conservative
+ * direction `summarizeConvergence` takes when it counts those into `behavior`.
+ */
+function blocksAtImpact(finding: Finding): boolean {
+  if (finding.impactFallback || !finding.impact) return true;
+  return finding.impact !== "prose";
+}
+
+/**
+ * Severities the previous-round prose cap may lower. `blocker` is absent on
+ * purpose — see `capPreviousRoundProse`.
+ */
+const PROSE_CAP_SEVERITIES: ReadonlySet<Severity> = new Set<Severity>([
+  "important",
+  "suggestion",
+]);
+
+/**
+ * sage#107 — de-prioritize the review surface Sage generated itself.
+ *
+ * A Finding carrying `previousRoundSurface` sits on a line the reviewee added
+ * *after* Sage's last review, which in a review loop overwhelmingly means it is
+ * text written to answer Sage. When that text also changes nothing but wording,
+ * raising it above `nit` closes a reinforcing loop: Sage raises a Finding, the
+ * reviewee explains the fix in a comment, that comment enters the diff, and the
+ * next round Sage reviews the explanation. On seekolous#199 the review surface
+ * inverted to roughly three parts prose to one part code by round 9.
+ *
+ * Scope, stated precisely so this is not read as more than it is:
+ *
+ *   - This NEVER changes a Verdict's decision. Prose-impact `important` already
+ *     stops blocking via `blocksAtImpact`, and `blocker` is excluded here. What
+ *     it changes is the Severity the reviewee SEES, so a round is not spent
+ *     rewording something that was never going to block.
+ *   - `blocker` is untouched. sage#107 warned against a round cap precisely
+ *     because round 12 of that PR found a real defect in round 11's fix; a
+ *     misleading claim in freshly-written prose is the same class of thing.
+ *   - `behavior` and `check` impact are untouched at every Severity. A fix that
+ *     broke something, or a regression test that can no longer fail, still
+ *     reads at full Severity on previous-round surface.
+ *   - An unclassified impact is untouched, for the same reason `blocksAtImpact`
+ *     treats it as blocking.
+ *
+ * When the prior-round comparison could not be fetched, no Finding carries
+ * `previousRoundSurface` and the cap simply does not fire — the fail-closed
+ * direction, matching `previousRoundSurfaceUnavailable`.
+ */
+function capPreviousRoundProse(lenses: LensReport[]): LensReport[] {
+  return lenses.map((lens) => ({
+    ...lens,
+    findings: lens.findings.map((finding) => {
+      if (!finding.previousRoundSurface) return finding;
+      if (finding.impactFallback || finding.impact !== "prose") return finding;
+      if (!PROSE_CAP_SEVERITIES.has(finding.severity)) return finding;
+      return { ...finding, severity: "nit" as const };
+    }),
+  }));
+}
 
 /**
  * Cross-lens Finding dedup (sage#32). Findings matching on

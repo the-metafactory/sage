@@ -13,7 +13,7 @@ The *act* of reviewing one PR — full pipeline run from PR fetch → Lens execu
 _Avoid_: review run, review job, scan
 
 **Verdict**:
-The *decision* output of a Review — exactly one of `approved`, `changes-requested`, `commented`. Produced by `decideVerdict()`. A Verdict of `changes-requested` is **earned, not assumed**: at least one Finding must have Severity `blocker`. No findings is a valid Verdict (`approved` or `commented` per config).
+The *decision* output of a Review — exactly one of `approved`, `changes-requested`, `commented`. Produced by `decideVerdict()`. A Verdict of `changes-requested` is **earned, not assumed**: at least one Finding of Severity `blocker`, or an `important` Finding whose Finding impact is `behavior` or `check`, or a Lens that failed to run. An `important` Finding that changes only wording does not flip the Verdict. No findings is a valid Verdict (`approved` or `commented` per config).
 _Avoid_: result, outcome, status
 
 **Verdict envelope**:
@@ -47,7 +47,7 @@ The *result of one Lens run* — list of Findings plus optional skip reason. The
 _Avoid_: lens output, lens result
 
 **Severity**:
-One of `blocker`, `important`, `suggestion`, `nit`. Earned, not assumed: only `blocker` flips the Verdict to `changes-requested`. `important` and below are comment-only. Severity is calibrated against Prior Findings — repeating a `nit` across iterations is not a `blocker`.
+One of `blocker`, `important`, `suggestion`, `nit`. Earned, not assumed: `blocker` flips the Verdict to `changes-requested` at any Finding impact; `important` flips it only at impact `behavior` or `check`. `suggestion` and `nit` are comment-only. A prose-impact Finding landing on previous-round surface is capped at `nit`, because that text is usually the reviewee answering Sage. Severity is calibrated against Prior Findings — repeating a `nit` across iterations is not a `blocker`.
 _Avoid_: priority, level
 
 **Finding impact**:
@@ -150,7 +150,7 @@ _Avoid_: direct subject, named subject
 
 - A **Review** runs zero or more applicable **Lens runs** in parallel; each Lens run produces a **LensReport** of **Findings** or skips.
 - **Severity** of a Finding determines the **Verdict**: any `blocker` ⇒ `changes-requested`; otherwise `commented` or `approved` per config.
-- **Finding impact** produces an additive convergence summary; it does not alter the stable Verdict-envelope vocabulary.
+- **Finding impact** produces a convergence summary and gates the `important` → `changes-requested` escalation. The Verdict-envelope vocabulary stays the same three values.
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
