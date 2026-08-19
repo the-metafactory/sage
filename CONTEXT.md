@@ -54,8 +54,12 @@ _Avoid_: priority, level
 The kind of work needed to address a Finding: `behavior`, `check`, or `prose`. Independent from Severity. A Review's convergence summary reports the per-round split; `prose-only` means no behavior or check change is requested, so an autonomous review loop may stop.
 _Avoid_: severity, priority
 
+**Review scope**:
+The *amount of the change* one Lens needs in order to judge it: `delta` (only what changed since Sage's previous Review of this PR) or `cumulative` (the whole PR diff). Declared per Lens, defaulting to `cumulative`. `delta` is what stops a round-12 Review from re-reading code that settled at round 5; `cumulative` is required by Lenses whose judgement is about the change as a whole (Maintainability's duplication, Architecture's boundaries, HonestOracle's claims). A `delta` Lens falls back to `cumulative` on round 1 and whenever the Forge cannot produce the comparison.
+_Avoid_: diff scope, lens scope, incremental review
+
 **Applicability**:
-The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability; substantial PR claims or docs/markdown changes for HonestOracle).
+The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. Evaluated against the delta when there is a previous Sage Review, so a Lens whose subject the current round did not touch stops firing instead of re-running on settled code. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability; substantial PR claims or docs/markdown changes for HonestOracle).
 _Avoid_: trigger, condition, gate, filter
 
 **Always-on Lens**:
@@ -149,12 +153,13 @@ _Avoid_: direct subject, named subject
 ## Relationships
 
 - A **Review** runs zero or more applicable **Lens runs** in parallel; each Lens run produces a **LensReport** of **Findings** or skips.
-- **Severity** of a Finding determines the **Verdict**: any `blocker` ⇒ `changes-requested`; otherwise `commented` or `approved` per config.
+- **Severity** and **Finding impact** together determine the **Verdict**: any `blocker` ⇒ `changes-requested`; an `important` of impact `behavior` or `check` ⇒ `changes-requested`; otherwise `commented` or `approved` per config.
 - **Finding impact** produces a convergence summary and gates the `important` → `changes-requested` escalation. The Verdict-envelope vocabulary stays the same three values.
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review.
+- **Review scope** decides which diff a **Lens run** receives; **Applicability** decides whether it happens at all. Both read the delta once a previous Sage Review exists.
 - **ContextDrift** consumes target-repo architecture context docs, especially `CONTEXT.md`, to check whether new vocabulary or public surfaces drift from canonical bounded-context language.
 - A **Task envelope** triggers a Review; the Review emits a **Verdict envelope**; cortex's `ReviewConsumer` emits the **Lifecycle envelopes** around them.
 

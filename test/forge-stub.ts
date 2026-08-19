@@ -42,6 +42,12 @@ export interface MakeStubForgeOptions {
    */
   reviewSource?: ForgeReviewSource;
   repoFile?: (path: string, opts?: RepoFileOptions) => Promise<string | null>;
+  /**
+   * Override `diffBetween` (sage#107 delta-scoped review). Omitted leaves the
+   * optional method absent, which is what a Forge that cannot compare two
+   * commits looks like — every Lens then reviews the cumulative diff.
+   */
+  diffBetween?: (fromCommit: string, toCommit: string) => Promise<string>;
 }
 
 export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
@@ -68,5 +74,11 @@ export function makeStubForge(opts: MakeStubForgeOptions): ForgeBackend {
       (async () => ({ posted: "comment", downgraded: false })),
     reviewSource: () => reviewSource,
     authStatus: opts.authStatus ?? (async () => ({ ok: true, output: "" })),
+    ...(opts.diffBetween
+      ? {
+          diffBetween: (_ref: unknown, from: string, to: string) =>
+            opts.diffBetween!(from, to),
+        }
+      : {}),
   };
 }

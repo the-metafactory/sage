@@ -17,7 +17,11 @@
 export type { Verdict } from "./types.ts";
 export { summarizeConvergence } from "./convergence.ts";
 export type { ConvergenceSummary } from "./convergence.ts";
-export { addedLinesByPath, markPreviousRoundSurface } from "./previous-round.ts";
+export {
+  addedLinesByPath,
+  changedPathsInDiff,
+  markPreviousRoundSurface,
+} from "./previous-round.ts";
 export { decideVerdict, verdictToEvent } from "./decide.ts";
 export { renderVerdict } from "./render.ts";
 export { renderVerdictBlock, mapFindingsToBuckets } from "./block.ts";

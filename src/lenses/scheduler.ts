@@ -19,7 +19,7 @@ import type { ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensRunInput } from "./base.ts";
 import type { GlossaryContext } from "./glossary.ts";
-import { lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
+import { lensReviewScope, lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
 import { buildErroredLensReport, type LensReport } from "./types.ts";
 
 export interface LensScheduleOptions {
@@ -29,8 +29,23 @@ export interface LensScheduleOptions {
    */
   readonly lenses: readonly LensModule[];
 
-  /** Applicability input. Each Lens's `applies?.(ctx)` is evaluated once. */
+  /**
+   * Applicability input. Each Lens's `applies?.(ctx)` is evaluated once.
+   *
+   * `ctx.diff` is the CUMULATIVE PR diff — what a `cumulative`-scoped Lens
+   * reviews, and the fallback for a `delta`-scoped one when `deltaDiff` is
+   * absent.
+   */
   readonly ctx: ApplicabilityContext;
+  /**
+   * What changed since Sage's previous review of this PR (sage#107).
+   *
+   * Present only when there IS a previous Sage review and the Forge could
+   * produce the comparison. Lenses declaring `reviewScope: "delta"` review
+   * this instead of `ctx.diff`; everything else ignores it. Absent → every
+   * Lens sees the cumulative diff, which is the pre-#107 behavior.
+   */
+  readonly deltaDiff?: string;
   /**
    * True when `lenses` has already been filtered by applicability.
    * Workflow uses this so the same predicates can feed doc preload and
@@ -87,6 +102,8 @@ export interface LensScheduleOptions {
  *       before any Lens runs.
  *   I7. Scheduler does NOT decide Verdict, render, persist, or post —
  *       it returns LensReports and stops.
+ *   I8. A Lens receives the diff its `reviewScope` declares. `delta` without
+ *       a `deltaDiff` falls back to the cumulative diff.
  */
 export async function runLenses(
   opts: LensScheduleOptions,
@@ -110,12 +127,11 @@ export async function runLenses(
   const timeout: { timeoutMs?: number } =
     opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {};
 
-  const lensInputBase: Omit<LensRunInput, "substrate" | "priorFindings"> & {
+  const lensInputBase: Omit<LensRunInput, "substrate" | "priorFindings" | "diff"> & {
     substrate: Substrate;
     priorFindings: readonly PriorReviewFinding[];
   } = {
     pr: opts.ctx.pr,
-    diff: opts.ctx.diff,
     substrate: opts.substrate,
     priorFindings: opts.priorFindings,
     // compass#98 F7: unconditional — every lens gets the glossary excerpt,
@@ -129,13 +145,21 @@ export async function runLenses(
     let report: LensReport;
     try {
       const usesArchitectureDocs = lensUsesArchitectureDocs(lens, opts.ctx);
+      // I8: a Lens sees the diff its declared scope asks for. `delta` falls
+      // back to cumulative when no comparison exists — reviewing more than
+      // necessary is the safe direction, and it is what round 1 always does.
+      const diff =
+        lensReviewScope(lens) === "delta" && opts.deltaDiff !== undefined
+          ? opts.deltaDiff
+          : opts.ctx.diff;
       const lensInput = usesArchitectureDocs
         ? {
             ...lensInputBase,
+            diff,
             acceptsArchitectureDocs: true,
             ...(opts.architectureDocs ? { architectureDocs: opts.architectureDocs } : {}),
           }
-        : lensInputBase;
+        : { ...lensInputBase, diff };
       report = await lens.review(lensInput as LensRunInput);
     } catch (err) {
       // I3: Lens that throws → errored LensReport (defense in depth
