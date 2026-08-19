@@ -20,7 +20,10 @@
  * `onPriorFindingsDegraded`.
  */
 
-import { parseSageReviewFindings } from "../forge/prior-findings.ts";
+import {
+  parseSageCheckedClaims,
+  parseSageReviewFindings,
+} from "../forge/prior-findings.ts";
 import type { PrRef, PriorReviewFinding } from "../forge/types.ts";
 import type {
   ForgeReviewSource,
@@ -58,11 +61,17 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const seen = new Set<string>();
       const findings: PriorReviewFinding[] = [];
       let latestReviewCommitId: string | undefined;
+      let latestCheckedClaimsDigest: string | undefined;
       let reviewCount = 0;
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
         reviewCount++;
         if (review.commitId) latestReviewCommitId = review.commitId;
+        // Last one wins, and only Reviews that recorded a digest update it: a
+        // later Review whose Oracle did not run must not erase the fact that an
+        // earlier one checked these claims.
+        const checked = parseSageCheckedClaims(review.body);
+        if (checked) latestCheckedClaimsDigest = checked;
         for (const finding of parseSageReviewFindings(review.body)) {
           const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
           if (seen.has(key)) continue;
@@ -80,6 +89,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         reviewCount,
         identity: { login: sageLogin },
         ...(latestReviewCommitId !== undefined ? { latestReviewCommitId } : {}),
+        ...(latestCheckedClaimsDigest !== undefined ? { latestCheckedClaimsDigest } : {}),
       };
     },
   };

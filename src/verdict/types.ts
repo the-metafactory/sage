@@ -21,4 +21,14 @@ export interface Verdict {
   lenses: LensReport[];
   /** Additive round-progress signal for autonomous review loops (sage#107). */
   convergence?: ConvergenceSummary;
+  /**
+   * Digest of the claims surface the HonestOracle actually checked this round
+   * (sage#107). Set only when the Oracle ran and returned a usable report, so
+   * the marker never asserts that claims nobody read have been checked.
+   *
+   * The next Review reads it back off the posted body to answer "are there new
+   * claims?" — the question the Oracle's PR-description trigger needs and
+   * cannot answer from a diff.
+   */
+  checkedClaimsDigest?: string;
 }

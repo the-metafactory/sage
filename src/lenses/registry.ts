@@ -71,6 +71,13 @@ export interface LensModule {
    * Lens added later gets the whole picture until someone decides otherwise.
    */
   reviewScope?: LensReviewScope;
+  /**
+   * True for the Lens whose subject is the PR's CLAIMS rather than its code.
+   * The workflow records a digest of what such a Lens checked, so the next
+   * Review can ask whether the claims are new instead of re-reading them every
+   * round (sage#107).
+   */
+  checksClaims?: boolean;
 }
 
 /** A Lens's declared review scope, defaulting to the safe `cumulative`. */
@@ -142,7 +149,12 @@ export const LENSES: readonly LensModule[] = [
   // Stays `cumulative`: the Oracle weighs the PR description's claims against
   // the artifact, and the artifact is the whole change, not the last round of
   // it. Its wording findings are no longer merge-blocking anyway (sage#107).
-  { name: "HonestOracle", review: reviewHonestOracle, applies: honestOracleApplies },
+  {
+    name: "HonestOracle",
+    review: reviewHonestOracle,
+    applies: honestOracleApplies,
+    checksClaims: true,
+  },
   // FederationGrammar ports compass sops/federation-wire-protocol.md checks
   // 1-5 (compass#99 F8) — there is no skill file for this, the SOP itself
   // is the authoritative source. Fires only on federated.*-touching diffs

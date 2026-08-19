@@ -37,6 +37,12 @@ export interface PriorFindingsResult {
   /** Commit of the latest trusted Sage review, if the forge exposed it. */
   readonly latestReviewCommitId?: string;
   /**
+   * Claims digest recorded by the most recent trusted Sage Review that actually
+   * checked claims. Undefined means no prior Review checked them — which is not
+   * the same as "unchanged", and callers must treat it as "unknown, look".
+   */
+  readonly latestCheckedClaimsDigest?: string;
+  /**
    * How many trusted Sage Reviews this PR already carries — the round number,
    * minus the round about to run. `0` means Sage has not looked at this PR
    * before.
