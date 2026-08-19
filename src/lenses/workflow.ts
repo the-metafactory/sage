@@ -1,6 +1,7 @@
 import type {
   ForgeBackend,
   InlineComment,
+  PrMetadata,
   PrRef,
   ReviewEvent,
 } from "../forge/types.ts";
@@ -27,13 +28,15 @@ import {
   verdictFilePath,
   verdictToEvent,
   addedLinesByPath,
+  changedPathsInDiff,
   markPreviousRoundSurface,
 } from "../verdict/index.ts";
-import { LENSES } from "./registry.ts";
+import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
 import {
   readConcurrencyEnv,
   runLenses,
 } from "./scheduler.ts";
+import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensReport } from "./types.ts";
 
 export interface ReviewOptions {
@@ -134,10 +137,32 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
-  const applicabilityCtx = { pr, diff };
+  // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
+  // used twice: as the review target for `delta`-scoped Lenses, and as the
+  // previous-round surface marking below. Round 1 (no prior review) and any
+  // Forge that cannot compare two commits both land on `diff` undefined, which
+  // is the pre-#107 behavior in full.
+  const priorRound = await fetchPriorRoundDiff(
+    opts.forge,
+    opts.ref,
+    pr.headRefOid,
+    priorResult.latestReviewCommitId,
+  );
+
+  // Two contexts, deliberately separated. Applicability asks "does this Lens
+  // have anything to say about the NEW work?" — so it reads the delta when
+  // there is one, and a Lens whose triggers left the diff stops firing instead
+  // of re-running on settled code every round. `cumulativeCtx` is what
+  // `cumulative`-scoped Lenses actually review.
+  const cumulativeCtx: ApplicabilityContext = { pr, diff };
+  const applicabilityCtx: ApplicabilityContext =
+    priorRound.diff !== undefined
+      ? { pr: narrowToDelta(pr, priorRound.diff), diff: priorRound.diff }
+      : cumulativeCtx;
   const applicableLenses = LENSES.filter(
     (lens) => !lens.applies || lens.applies(applicabilityCtx),
   );
+  logReviewScope(applicableLenses, diff, priorRound);
   // compass#98 F7: load unconditionally. Previously gated on
   // `applicableLenses.some(usesArchitectureDocs)` — the always-on
   // CodeQuality lens needs CONTEXT.md for the diff-aware glossary
@@ -176,7 +201,8 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   const lensReports = await runLenses({
     lenses: applicableLenses,
-    ctx: applicabilityCtx,
+    ctx: cumulativeCtx,
+    ...(priorRound.diff !== undefined ? { deltaDiff: priorRound.diff } : {}),
     lensesAreApplicable: true,
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
@@ -208,13 +234,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     }
   }
 
-  const enrichedLensReports = await markPriorRoundSurface(
-    allLensReports,
-    opts.forge,
-    opts.ref,
-    pr.headRefOid,
-    priorResult.latestReviewCommitId,
-  );
+  const enrichedLensReports = applyPriorRoundSurface(allLensReports, priorRound);
   const verdict = decideVerdict(enrichedLensReports);
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
@@ -263,24 +283,95 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   };
 }
 
-async function markPriorRoundSurface(
-  lenses: LensReport[],
+/**
+ * The comparison between Sage's previous review of this PR and the current
+ * head.
+ *
+ * `diff: undefined, unavailable: false` is the ordinary "there is no previous
+ * round" case — round 1, or a Forge with no `diffBetween`. `unavailable: true`
+ * means there WAS a previous round and the comparison could not be fetched,
+ * which is a coverage gap the Verdict has to disclose rather than silently
+ * treat as "nothing changed".
+ */
+interface PriorRoundDiff {
+  diff?: string;
+  unavailable: boolean;
+}
+
+async function fetchPriorRoundDiff(
   forge: ForgeBackend,
   ref: PrRef,
   headCommit: string,
   priorReviewCommit: string | undefined,
-): Promise<LensReport[]> {
-  if (!priorReviewCommit || !headCommit || !forge.diffBetween) return lenses;
+): Promise<PriorRoundDiff> {
+  if (!priorReviewCommit || !headCommit || !forge.diffBetween) {
+    return { unavailable: false };
+  }
   try {
-    return markPreviousRoundSurface(
-      lenses,
-      addedLinesByPath(await forge.diffBetween(ref, priorReviewCommit, headCommit)),
-    );
+    return {
+      diff: await forge.diffBetween(ref, priorReviewCommit, headCommit),
+      unavailable: false,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[workflow] prior-round surface unavailable; marking coverage incomplete: ${message}`);
-    return lenses.map((lens) => ({ ...lens, previousRoundSurfaceUnavailable: true }));
+    console.error(
+      `[workflow] prior-round comparison unavailable; every lens reviews the cumulative diff and coverage is marked incomplete: ${message}`,
+    );
+    return { unavailable: true };
   }
+}
+
+function applyPriorRoundSurface(
+  lenses: LensReport[],
+  priorRound: PriorRoundDiff,
+): LensReport[] {
+  if (priorRound.unavailable) {
+    return lenses.map((lens) => ({ ...lens, previousRoundSurfaceUnavailable: true as const }));
+  }
+  if (priorRound.diff === undefined) return lenses;
+  return markPreviousRoundSurface(lenses, addedLinesByPath(priorRound.diff));
+}
+
+/**
+ * The PR as applicability should see it for a delta round: same metadata, but
+ * only the files this round actually touched.
+ *
+ * Applicability reads `pr.files` more than it scans the diff body, so without
+ * this a PR that ever touched `src/auth.ts` wakes the Security lens on every
+ * later round regardless of what that round changed. Per-file addition and
+ * deletion counts stay cumulative — they over-report rather than under-report,
+ * and the lenses that read them review the cumulative diff anyway.
+ *
+ * Scoped to applicability ONLY. Lenses still receive the real `pr`, because a
+ * Lens reporting "2 changed files" on a 40-file PR would be lying.
+ */
+function narrowToDelta(pr: PrMetadata, deltaDiff: string): PrMetadata {
+  const touched = changedPathsInDiff(deltaDiff);
+  const files = pr.files.filter((f) => touched.has(f.path));
+  return { ...pr, files, changedFiles: files.length };
+}
+
+/**
+ * One line saying how much of the change each Lens is about to read. The whole
+ * point of delta scoping is that a round-12 review costs a fraction of a
+ * round-1 review, and a saving nobody can see is a saving nobody can check.
+ */
+function logReviewScope(
+  applicable: readonly LensModule[],
+  cumulativeDiff: string,
+  priorRound: PriorRoundDiff,
+): void {
+  if (priorRound.diff === undefined) {
+    console.error(
+      `[workflow] scope: no prior Sage review to compare against; ${applicable.length} lens(es) read the cumulative diff (${cumulativeDiff.length} bytes)`,
+    );
+    return;
+  }
+  const delta = applicable.filter((l) => lensReviewScope(l) === "delta");
+  console.error(
+    `[workflow] scope: ${delta.length}/${applicable.length} lens(es) read the ${priorRound.diff.length}-byte prior-round delta; ` +
+      `${applicable.length - delta.length} read the ${cumulativeDiff.length}-byte cumulative diff`,
+  );
 }
 
 interface AttemptPostResult {
