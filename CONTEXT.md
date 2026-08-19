@@ -70,6 +70,10 @@ _Avoid_: default lens, baseline lens
 Findings attributed to Sage from earlier Reviews on the same PR. Fed into every Lens run to calibrate Severity and suppress repeated noise across review iterations. Trust-gated: only Reviews authored by the configured Sage identity count (`SAGE_REVIEW_AUTHOR_LOGIN` / `gh api user`).
 _Avoid_: previous findings, history, past comments
 
+**Restated Finding**:
+A Finding this round that repeats one Sage already raised on an earlier round of the same PR, recognized by file path plus title-token overlap rather than by line — the reviewee's fixes shift line numbers every round. Marked, never dropped: a Finding that repeats because nobody fixed it is exactly the one that must keep reaching the Verdict, so it keeps its Severity and its hold on the decision, and only loses the appearance of being new work. The matcher deliberately under-matches; a heavy paraphrase reads as new.
+_Avoid_: duplicate finding, repeat noise, stale finding
+
 ### Forges
 
 **Forge**:
@@ -158,7 +162,8 @@ _Avoid_: direct subject, named subject
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
-- **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review.
+- **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review, and are what a **Restated Finding** is matched against.
+- A **Restated Finding** is counted in the convergence summary but never subtracted from it: a round whose restated count equals its Finding count produced no new information, which is a signal to the loop, not a reason to hide a Finding.
 - **Review scope** decides which diff a **Lens run** receives; **Applicability** decides whether it happens at all. Both read the delta once a previous Sage Review exists.
 - **ContextDrift** consumes target-repo architecture context docs, especially `CONTEXT.md`, to check whether new vocabulary or public surfaces drift from canonical bounded-context language.
 - A **Task envelope** triggers a Review; the Review emits a **Verdict envelope**; cortex's `ReviewConsumer` emits the **Lifecycle envelopes** around them.

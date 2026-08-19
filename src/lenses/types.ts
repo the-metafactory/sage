@@ -22,6 +22,17 @@ export interface Finding {
   sourceLenses?: string[];
   /** True when this line was added after Sage's most recent prior review. */
   previousRoundSurface?: boolean;
+  /**
+   * The title of the earlier-round Finding this one restates, when Sage
+   * recognized it as a restatement (sage#107). Carries the prior title rather
+   * than a bare flag so the reviewee can check the match instead of taking
+   * "you already said this" on trust — the matcher is a heuristic.
+   *
+   * A marked Finding is NOT suppressed and NOT downgraded. A Finding that
+   * repeats because nobody fixed it is exactly the one that must keep reaching
+   * the Verdict; what the mark removes is the appearance of newness.
+   */
+  repeatOfPriorFinding?: string;
 }
 
 export interface LensReport {

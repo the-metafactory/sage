@@ -30,6 +30,7 @@ import {
   addedLinesByPath,
   changedPathsInDiff,
   markPreviousRoundSurface,
+  markRepeatedFindings,
 } from "../verdict/index.ts";
 import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
 import {
@@ -234,7 +235,13 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     }
   }
 
-  const enrichedLensReports = applyPriorRoundSurface(allLensReports, priorRound);
+  // Order matters only for readability — the two marks are independent and
+  // both additive. Repeat detection runs against the Prior Findings already
+  // fetched for the lens prompts, so it costs no extra Forge call.
+  const enrichedLensReports = markRepeatedFindings(
+    applyPriorRoundSurface(allLensReports, priorRound),
+    priorResult.findings,
+  );
   const verdict = decideVerdict(enrichedLensReports);
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
