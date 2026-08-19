@@ -119,6 +119,8 @@ Impact rules:
 - check: addressing it changes whether a test, probe, or guard can fail.
 - prose: addressing it changes only comments, documentation, or wording.
 Choose exactly one impact for every finding; severity and impact are independent.
+Impact gates the merge block: an "important" finding blocks merge only at impact
+"behavior" or "check". Do not inflate severity to make a wording point land.
 
 Calibration: across a typical PR with findings, expect at most 1 blocker and
 at most 2 important findings. Important requires concrete, demonstrable harm

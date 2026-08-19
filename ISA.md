@@ -32,7 +32,7 @@ A PR drops into the Myelin bus as `local.metafactory.tasks.code-review.typescrip
 2. **Bus as contract**: the envelope is the integration. Anyone speaking Myelin can talk to Sage.
 3. **Substitute, don't reinvent**: piggyback on `gh` for GitHub and `pi` for LLM rather than re-implementing OAuth / HTTP-API clients.
 4. **No findings is a valid review.** The lens prompt and verdict logic must support empty findings without forcing a "looks good" filler.
-5. **Severity earned, not assumed.** Only `blocker` triggers `changes-requested`. `important` is comment-only.
+5. **Severity earned, not assumed.** `blocker` triggers `changes-requested` at any Finding impact; `important` triggers it only at impact `behavior` or `check`; `suggestion`, `nit`, and wording-only `important` are comment-only. (Widened from blocker-only by the Holly review of sage#27, then impact-gated by sage#107. CONTEXT.md holds the current rule.)
 
 ## Constraints
 
@@ -57,7 +57,7 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - [x] ISC-7: `parsePrRef()` parses both `OWNER/REPO#N` and `https://github.com/.../pull/N`. _Probe: synthetic test._
 - [x] ISC-8: `prView()` shells `gh pr view N --repo OWNER/REPO --json …` and parses JSON. _Probe: Read function body._
 - [x] ISC-9: `reviewCodeQuality()` calls `input.substrate.runJson` with the SYSTEM_PROMPT + per-PR user prompt, returns a `LensReport`. _Probe: Read function body._
-- [x] ISC-10: `decideVerdict()` returns `changes-requested` iff any finding is severity `blocker`. _Probe: unit test._
+- [x] ISC-10: `decideVerdict()` returns `changes-requested` iff any finding is severity `blocker`. _Probe: unit test._ _Superseded — the gate later grew errored-lens and impact-gated `important` cases; see CONTEXT.md and `test/convergence.test.ts`._
 - [x] ISC-11: `reviewPr({ post: true })` calls `postReview()` with the right `ReviewEvent`. _Probe: Read function body._
 - [x] ISC-12: `startBridge()` connects to NATS, subscribes to broadcast + direct subjects, and publishes lifecycle envelopes. _Probe: Read function body._
 - [x] ISC-13: `sage review <ref>` exits with code 1 on `changes-requested` verdict, 0 otherwise. _Probe: Read CLI action._

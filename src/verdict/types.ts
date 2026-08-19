@@ -7,10 +7,13 @@ import type { ConvergenceSummary } from "./convergence.ts";
  * `decideVerdict()` from the LensReports a Review collected.
  *
  * A `changes-requested` decision is **earned, not assumed**: at least
- * one Finding of Severity `blocker`, OR an `important`-severity
- * Finding, OR an errored Lens (a lens that did not produce a usable
- * verdict). Severity calibration is owned by `decideVerdict` —
- * downstream consumers branch on `decision` only.
+ * one Finding of Severity `blocker`, OR an `important`-severity Finding
+ * whose Finding impact is `behavior` or `check` (or is unclassified),
+ * OR an errored Lens (a lens that did not produce a usable verdict). An
+ * `important` Finding that changes only wording does NOT block — that
+ * gate is what lets an autonomous review loop terminate. Severity and
+ * impact calibration are owned by `decideVerdict` — downstream
+ * consumers branch on `decision` only.
  */
 export interface Verdict {
   decision: "approved" | "changes-requested" | "commented";
