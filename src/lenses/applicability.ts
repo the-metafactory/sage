@@ -14,6 +14,20 @@ import type { PrMetadata } from "../forge/types.ts";
 export interface ApplicabilityContext {
   pr: PrMetadata;
   diff: string;
+  /**
+   * Whether Sage has reviewed this PR before. `false` means it has.
+   *
+   * Only predicates reading `pr.body` need this, and they need it badly: the PR
+   * description is in no diff, so a trigger that fires on it cannot stop firing
+   * the way a diff-driven trigger does once its subject settles. It is a
+   * standing trigger for the PR's whole life, and it re-arms every time the
+   * reviewee edits the description to answer a finding.
+   *
+   * `undefined` means unknown — a direct lens call, or a prior-findings lookup
+   * that failed. Predicates treat unknown as "first look" and fire, because
+   * reviewing more than necessary is the safe direction.
+   */
+  isFirstRound?: boolean;
 }
 
 // ──────────────────────────── Security ────────────────────────────
@@ -78,13 +92,25 @@ export function architectureApplies(ctx: ApplicabilityContext): boolean {
 const CONTEXT_DRIFT_DOC_RE =
   /(?:^|\/)(?:CONTEXT\.md|README\.md|CHANGELOG\.md|docs\/.*\.(?:md|mdx|rst|adoc)|specs?\/.*\.(?:md|mdx|rst|adoc)|fixtures?\/.*\.(?:md|json|ya?ml|txt))$/i;
 
+const CONTEXT_DRIFT_BODY_RE =
+  /\b(?:CONTEXT\.md|glossary|terminology|vocabulary|canonical term|bounded context|rename|renamed|alias|drift)\b/i;
+
 const CONTEXT_DRIFT_EXPORT_RE =
   /\bexport\s+(?:default\s+)?(?:(?:declare|abstract|async)\s+)*(?:namespace|interface|type|class|function|const|let|var|enum)\s+[A-Za-z0-9_]+|\bexport\s+\{/i;
 
 export function contextDriftApplies(ctx: ApplicabilityContext): boolean {
   if (ctx.pr.files.some((f) => CONTEXT_DRIFT_DOC_RE.test(f.path))) return true;
   if (diffAddsOrRemovesExport(ctx.diff)) return true;
-  return false;
+  // A PR that SAYS it renames a canonical term, in a file that is not a doc and
+  // with no export change, trips neither trigger above — an internal rename to
+  // an `_Avoid_` alias is exactly the drift this lens exists to catch.
+  //
+  // First round only. The description is in no diff, so this cannot settle on
+  // its own: without the gate, one PR body saying "renamed" runs the lens on
+  // every round for the life of the PR, and editing the description to answer a
+  // finding re-arms it.
+  if (ctx.isFirstRound === false) return false;
+  return CONTEXT_DRIFT_BODY_RE.test(ctx.pr.body);
 }
 
 function diffAddsOrRemovesExport(diff: string): boolean {

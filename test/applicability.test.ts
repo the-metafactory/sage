@@ -149,12 +149,45 @@ describe("contextDriftApplies", () => {
     expect(contextDriftApplies({ pr: pr([{ path: "README.md" }]), diff: "" })).toBe(true);
   });
 
-  test("does not fire on PR body claims alone", () => {
-    const ctx = {
-      pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
-      diff: "",
-    };
-    expect(contextDriftApplies(ctx)).toBe(false);
+  // A PR that SAYS it renames a canonical term, in a non-doc file with no export
+  // change, trips neither the path nor the export trigger — but an internal
+  // rename to an `_Avoid_` alias is exactly this lens's job.
+  const bodyClaim = {
+    pr: pr([{ path: "src/x.ts" }], "Renames the canonical term and updates the glossary."),
+    diff: "",
+  };
+
+  test("fires on a PR body claiming terminology drift, on the first round", () => {
+    expect(contextDriftApplies({ ...bodyClaim, isFirstRound: true })).toBe(true);
+  });
+
+  test("stops firing on a body claim once Sage has reviewed the PR", () => {
+    // The description is in no diff, so this trigger cannot settle on its own.
+    // Ungated, one PR body saying "renamed" would run the lens every round for
+    // the life of the PR — and editing the description to answer a finding
+    // would re-arm it.
+    expect(contextDriftApplies({ ...bodyClaim, isFirstRound: false })).toBe(false);
+  });
+
+  test("an unknown round count is treated as a first look", () => {
+    expect(contextDriftApplies(bodyClaim)).toBe(true);
+  });
+
+  test("a later round still fires on a doc path or an export change", () => {
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "CONTEXT.md" }], ""),
+        diff: "",
+        isFirstRound: false,
+      }),
+    ).toBe(true);
+    expect(
+      contextDriftApplies({
+        pr: pr([{ path: "src/x.ts" }], ""),
+        diff: "+export function newThing() {}",
+        isFirstRound: false,
+      }),
+    ).toBe(true);
   });
 
   test("fires for public surface terms even when architecture does not apply", () => {
