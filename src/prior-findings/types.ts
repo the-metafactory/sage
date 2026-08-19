@@ -36,6 +36,16 @@ export interface PriorFindingsResult {
   readonly reason?: string;
   /** Commit of the latest trusted Sage review, if the forge exposed it. */
   readonly latestReviewCommitId?: string;
+  /**
+   * How many trusted Sage Reviews this PR already carries — the round number,
+   * minus the round about to run. `0` means Sage has not looked at this PR
+   * before.
+   *
+   * Always `0` on a non-`ok` status: a source that failed to answer has not
+   * told us there were no Reviews, only that it could not say. Callers wanting
+   * "is this the first look?" should read it together with `status`.
+   */
+  readonly reviewCount: number;
 }
 
 /**

@@ -39,6 +39,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         return {
           status: "source-failed",
           findings: [],
+          reviewCount: 0,
           reason: message,
         };
       }
@@ -47,6 +48,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         return {
           status: "trust-gate-failed",
           findings: [],
+          reviewCount: 0,
           reason:
             "Sage identity could not be resolved (SAGE_REVIEW_AUTHOR_LOGIN unset and forge user-API call failed)",
         };
@@ -56,8 +58,10 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const seen = new Set<string>();
       const findings: PriorReviewFinding[] = [];
       let latestReviewCommitId: string | undefined;
+      let reviewCount = 0;
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
+        reviewCount++;
         if (review.commitId) latestReviewCommitId = review.commitId;
         for (const finding of parseSageReviewFindings(review.body)) {
           const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
@@ -73,6 +77,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       return {
         status: "ok",
         findings,
+        reviewCount,
         identity: { login: sageLogin },
         ...(latestReviewCommitId !== undefined ? { latestReviewCommitId } : {}),
       };

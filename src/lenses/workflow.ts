@@ -155,10 +155,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // there is one, and a Lens whose triggers left the diff stops firing instead
   // of re-running on settled code every round. `cumulativeCtx` is what
   // `cumulative`-scoped Lenses actually review.
-  const cumulativeCtx: ApplicabilityContext = { pr, diff };
+  // `reviewCount` is 0 on a degraded prior-findings lookup as well as on a
+  // genuine first round; both mean "we cannot say Sage has been here", and
+  // firing the body-driven predicates is the safe answer to that.
+  const isFirstRound = priorResult.reviewCount === 0;
+  const cumulativeCtx: ApplicabilityContext = { pr, diff, isFirstRound };
   const applicabilityCtx: ApplicabilityContext =
     priorRound.diff !== undefined
-      ? { pr: narrowToDelta(pr, priorRound.diff), diff: priorRound.diff }
+      ? { pr: narrowToDelta(pr, priorRound.diff), diff: priorRound.diff, isFirstRound }
       : cumulativeCtx;
   const applicableLenses = LENSES.filter(
     (lens) => !lens.applies || lens.applies(applicabilityCtx),

@@ -75,6 +75,7 @@ describe("PriorFindings Module (sage#56)", () => {
     expect(result.status).toBe("ok");
     expect(result.identity).toEqual({ login: "jcfischer" });
     expect(result.latestReviewCommitId).toBe("prior-head");
+    expect(result.reviewCount).toBe(1);
     expect(result.findings).toEqual([
       {
         path: "src/a.ts",
