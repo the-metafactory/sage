@@ -7,6 +7,15 @@ export interface ConvergenceSummary {
   /** Findings conservatively counted as behavior because impact was absent or invalid. */
   unclassifiedImpact: number;
   previousRoundSurface: number;
+  /**
+   * Findings this round that restate one from an earlier round (sage#107).
+   *
+   * Reported, never subtracted. A round of nothing but repeats produced no new
+   * information, and `repeated === behavior + check + prose` says so plainly —
+   * but those Findings are still unaddressed, so they stay in the counts and
+   * keep whatever hold on the Verdict they had.
+   */
+  repeated: number;
   /** The prior-round comparison was attempted but its diff could not be fetched. */
   previousRoundSurfaceUnavailable: boolean;
   coverageFailed: boolean;
@@ -25,6 +34,7 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
   const counts: Record<FindingImpact, number> = { behavior: 0, check: 0, prose: 0 };
   let unclassifiedImpact = 0;
   let previousRoundSurface = 0;
+  let repeated = 0;
   let previousRoundSurfaceUnavailable = false;
   let coverageFailed = false;
   for (const lens of lenses) {
@@ -38,6 +48,7 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
         counts[finding.impact] += 1;
       }
       if (finding.previousRoundSurface) previousRoundSurface++;
+      if (finding.repeatOfPriorFinding !== undefined) repeated++;
     }
   }
   const status = coverageFailed || previousRoundSurfaceUnavailable || counts.behavior > 0 || counts.check > 0
@@ -49,6 +60,7 @@ export function summarizeConvergence(lenses: readonly LensReport[]): Convergence
     ...counts,
     unclassifiedImpact,
     previousRoundSurface,
+    repeated,
     previousRoundSurfaceUnavailable,
     coverageFailed,
     status,

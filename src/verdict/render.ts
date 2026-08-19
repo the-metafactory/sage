@@ -3,7 +3,7 @@ import { summarizeConvergence, type ConvergenceSummary } from "./convergence.ts"
 
 export function formatConvergenceLine(convergence: ConvergenceSummary): string {
   const counts = `Round impact: behavior ${convergence.behavior}, checks ${convergence.check}, prose ${convergence.prose}`;
-  const provenance = `unclassified impact ${convergence.unclassifiedImpact}; prior-round surface ${convergence.previousRoundSurface}.`;
+  const provenance = `unclassified impact ${convergence.unclassifiedImpact}; prior-round surface ${convergence.previousRoundSurface}; restated from earlier rounds ${convergence.repeated}.`;
   const stopSignal = convergence.status === "prose-only"
     ? " No behavior or check change is requested; an autonomous loop may stop."
     : "";
@@ -45,7 +45,10 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
               const priorRoundTag = f.previousRoundSurface
                 ? "\n  _Subject was added after Sage's previous review._"
                 : "";
-              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}${priorRoundTag}`;
+              const repeatTag = f.repeatOfPriorFinding
+                ? `\n  _Restates an earlier round: "${f.repeatOfPriorFinding}". Still open._`
+                : "";
+              const findingHead = `- **[${f.severity}]** \`${f.path}:${f.line}\` — **${f.title}**\n  ${f.rationale}${lensTag}${priorRoundTag}${repeatTag}`;
               if (!f.suggestion) return findingHead;
               if (!f.suggestion.includes("\n")) return `${findingHead}\n  Fix: ${f.suggestion}`;
               const fence = pickFence(f.suggestion);

@@ -17,6 +17,8 @@
 export type { Verdict } from "./types.ts";
 export { summarizeConvergence } from "./convergence.ts";
 export type { ConvergenceSummary } from "./convergence.ts";
+export { markRepeatedFindings } from "./repeats.ts";
+export { normalizeTitle, titleTokens } from "./title.ts";
 export {
   addedLinesByPath,
   changedPathsInDiff,

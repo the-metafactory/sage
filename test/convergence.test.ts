@@ -25,6 +25,7 @@ describe("sage#107 convergence signal", () => {
       prose: 1,
       unclassifiedImpact: 0,
       previousRoundSurface: 0,
+      repeated: 0,
       previousRoundSurfaceUnavailable: false,
       coverageFailed: false,
       status: "prose-only",

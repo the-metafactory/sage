@@ -2,6 +2,7 @@ import type { ReviewEvent } from "../forge/types.ts";
 import type { Finding, LensReport, Severity } from "../lenses/types.ts";
 import type { Verdict } from "./types.ts";
 import { summarizeConvergence } from "./convergence.ts";
+import { normalizeTitle } from "./title.ts";
 
 /**
  * Decide a Verdict from a set of LensReports. Owns:
@@ -85,25 +86,6 @@ const SEVERITY_RANK: Record<Severity, number> = {
   suggestion: 2,
   nit: 1,
 };
-
-const TITLE_STOP_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "be",
-  "by",
-  "for",
-  "in",
-  "is",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "with",
-]);
 
 /**
  * Whether an `important` Finding is severe enough to block merge, given what
@@ -244,14 +226,6 @@ function findingDedupKey(finding: Finding): string {
   return `${finding.path}:${finding.line}:${normalizeTitle(finding.title)}`;
 }
 
-function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 0 && !TITLE_STOP_WORDS.has(word))
-    .join(" ");
-}
 
 function buildVerdictSummary(all: Finding[], errored: LensReport[]): string {
   if (errored.length === 0) {
