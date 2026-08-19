@@ -33,6 +33,7 @@ import {
   markRepeatedFindings,
 } from "../verdict/index.ts";
 import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
+import { digestClaims } from "../util/claims.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -159,10 +160,22 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // genuine first round; both mean "we cannot say Sage has been here", and
   // firing the body-driven predicates is the safe answer to that.
   const isFirstRound = priorResult.reviewCount === 0;
-  const cumulativeCtx: ApplicabilityContext = { pr, diff, isFirstRound };
+  // Undefined when no prior Review recorded a claims digest — unknown, not
+  // unchanged, so the claims-checking lens looks.
+  const claimsChanged =
+    priorResult.latestCheckedClaimsDigest === undefined
+      ? undefined
+      : digestClaims(pr.body) !== priorResult.latestCheckedClaimsDigest;
+  const claimsCtx = claimsChanged === undefined ? {} : { claimsChanged };
+  const cumulativeCtx: ApplicabilityContext = { pr, diff, isFirstRound, ...claimsCtx };
   const applicabilityCtx: ApplicabilityContext =
     priorRound.diff !== undefined
-      ? { pr: narrowToDelta(pr, priorRound.diff), diff: priorRound.diff, isFirstRound }
+      ? {
+          pr: narrowToDelta(pr, priorRound.diff),
+          diff: priorRound.diff,
+          isFirstRound,
+          ...claimsCtx,
+        }
       : cumulativeCtx;
   const applicableLenses = LENSES.filter(
     (lens) => !lens.applies || lens.applies(applicabilityCtx),
@@ -246,7 +259,17 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     applyPriorRoundSurface(allLensReports, priorRound),
     priorResult.findings,
   );
-  const verdict = decideVerdict(enrichedLensReports);
+  const decided = decideVerdict(enrichedLensReports);
+  // Recorded only when a claims-checking lens actually produced a report. A
+  // digest written for a round whose Oracle crashed would assert that claims
+  // nobody read have been checked, and the next round would skip them.
+  const checkedClaims = claimsWereChecked(applicableLenses, enrichedLensReports)
+    ? digestClaims(pr.body)
+    : undefined;
+  const verdict: Verdict =
+    checkedClaims !== undefined
+      ? { ...decided, checkedClaimsDigest: checkedClaims }
+      : decided;
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
@@ -341,6 +364,22 @@ function applyPriorRoundSurface(
   }
   if (priorRound.diff === undefined) return lenses;
   return markPreviousRoundSurface(lenses, addedLinesByPath(priorRound.diff));
+}
+
+/**
+ * Whether a Lens whose subject is the PR's claims ran and returned a usable
+ * report this Review. Registry-driven rather than matching a lens name, so the
+ * knowledge of WHICH lens checks claims stays in one place.
+ */
+function claimsWereChecked(
+  applicable: readonly LensModule[],
+  reports: readonly LensReport[],
+): boolean {
+  const names = new Set(
+    applicable.filter((lens) => lens.checksClaims).map((lens) => lens.name),
+  );
+  if (names.size === 0) return false;
+  return reports.some((report) => names.has(report.lens) && !report.errored);
 }
 
 /**

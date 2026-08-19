@@ -28,6 +28,15 @@ export interface ApplicabilityContext {
    * reviewing more than necessary is the safe direction.
    */
   isFirstRound?: boolean;
+  /**
+   * Whether the PR description carries claims Sage has not checked yet.
+   *
+   * `false` means a prior Review checked this exact description. `undefined`
+   * means unknown — no prior Review recorded a claims digest, or the lookup
+   * failed — and predicates treat unknown as "look", because a source that
+   * could not answer has not said the claims are old.
+   */
+  claimsChanged?: boolean;
 }
 
 // ──────────────────────────── Security ────────────────────────────
@@ -210,12 +219,26 @@ const ORACLE_CLAIMS_DOC_RE = /\.(?:md|mdx|rst|txt|adoc|asciidoc)$/i;
 
 export function honestOracleApplies(ctx: ApplicabilityContext): boolean {
   // The Oracle checks the gap between what is CLAIMED and what is shown, so it
-  // fires when there are claims to check: a non-trivial PR description, or any
-  // docs/markdown in the diff (READMEs, design notes, changelogs — the places
-  // overclaim and surrogate-endpoint language live). A bare dependency bump
-  // with an empty body and no docs has nothing for it to attack.
-  if (ctx.pr.body.trim().length >= 80) return true;
-  return ctx.pr.files.some((f) => ORACLE_CLAIMS_DOC_RE.test(f.path));
+  // fires when there are claims to check. A bare dependency bump with an empty
+  // body and no docs has nothing for it to attack.
+
+  // Docs/markdown in the change — READMEs, design notes, changelogs, where
+  // overclaim and surrogate-endpoint language lives. This branch settles on its
+  // own: the file list is narrowed to the delta (sage#111), so a round touching
+  // no markdown does not trip it.
+  if (ctx.pr.files.some((f) => ORACLE_CLAIMS_DOC_RE.test(f.path))) return true;
+
+  // The PR description. This branch CANNOT settle on its own — the description
+  // is in no diff, and answering a reviewer only makes it longer, so an
+  // unconditional check is a full-diff model call on every round for the life
+  // of the PR.
+  //
+  // Firing only on round 1 would be the cheap fix and the wrong one: claims
+  // introduced DURING a review loop are exactly the ones an author cannot catch
+  // alone. So the condition is "are there claims Sage has not checked?", not
+  // "is this the first look?". Unknown counts as unchecked.
+  if (ctx.pr.body.trim().length < 80) return false;
+  return ctx.claimsChanged !== false;
 }
 
 // ────────────────────────── Federation Grammar ──────────────────────────

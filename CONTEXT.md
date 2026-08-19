@@ -59,7 +59,7 @@ The *amount of the change* one Lens needs in order to judge it: `delta` (only wh
 _Avoid_: diff scope, lens scope, incremental review
 
 **Applicability**:
-The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. Evaluated against the delta when there is a previous Sage Review, so a Lens whose subject the current round did not touch stops firing instead of re-running on settled code. A predicate reading the PR description instead of the diff fires only on the first round: the description is in no diff, so it cannot settle on its own and would otherwise be a standing trigger for the PR's whole life. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability; substantial PR claims or docs/markdown changes for HonestOracle).
+The *static rule* on a Lens deciding whether a Lens run should occur for a given PR. Evaluated against the delta when there is a previous Sage Review, so a Lens whose subject the current round did not touch stops firing instead of re-running on settled code. A predicate reading the PR description instead of the diff cannot settle on its own — the description is in no diff, and answering a reviewer only lengthens it — so each one carries an explicit stopping condition rather than standing for the PR's whole life. ContextDrift's description trigger fires on the first round only. HonestOracle's fires while the claims are unchecked, because claims introduced mid-loop are the ones an author is least able to catch alone. CodeQuality's Applicability is unconditional — it is the always-on Lens. The other Lenses fire on diff signals (auth/secret/crypto for Security; new modules / schema for Architecture; `CONTEXT.md`, docs, or export syntax in the diff for ContextDrift; cortex.yaml / arc-manifest / hooks for EcosystemCompliance; hot path / sync IO / N+1 for Performance; file size for Maintainability; substantial PR claims or docs/markdown changes for HonestOracle).
 _Avoid_: trigger, condition, gate, filter
 
 **Always-on Lens**:
@@ -69,6 +69,10 @@ _Avoid_: default lens, baseline lens
 **Prior Findings**:
 Findings attributed to Sage from earlier Reviews on the same PR. Fed into every Lens run to calibrate Severity and suppress repeated noise across review iterations. Trust-gated: only Reviews authored by the configured Sage identity count (`SAGE_REVIEW_AUTHOR_LOGIN` / `gh api user`).
 _Avoid_: previous findings, history, past comments
+
+**Checked claims**:
+The version of the PR description a claims-checking Lens has already read, recorded as a digest in the Review body it posted and read back by the next Review. Written only when that Lens actually ran and returned a usable report — a digest recorded for a round whose Lens crashed would assert that unread claims have been checked. Absent means *unknown*, never *unchanged*: a Review that never checked claims has not reported them old.
+_Avoid_: body hash, claims cache, description state
 
 **Restated Finding**:
 A Finding this round that repeats one Sage already raised on an earlier round of the same PR, recognized by file path plus title-token overlap rather than by line — the reviewee's fixes shift line numbers every round. Marked, never dropped: a Finding that repeats because nobody fixed it is exactly the one that must keep reaching the Verdict, so it keeps its Severity and its hold on the decision, and only loses the appearance of being new work. The matcher deliberately under-matches; a heavy paraphrase reads as new.
@@ -163,6 +167,7 @@ _Avoid_: direct subject, named subject
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review, and are what a **Restated Finding** is matched against.
+- **Checked claims** are what makes HonestOracle's description trigger settle: unchecked or unknown ⇒ the Lens runs; already checked ⇒ it does not.
 - A **Restated Finding** is counted in the convergence summary but never subtracted from it: a round whose restated count equals its Finding count produced no new information, which is a signal to the loop, not a reason to hide a Finding.
 - **Review scope** decides which diff a **Lens run** receives; **Applicability** decides whether it happens at all. Both read the delta once a previous Sage Review exists.
 - **ContextDrift** consumes target-repo architecture context docs, especially `CONTEXT.md`, to check whether new vocabulary or public surfaces drift from canonical bounded-context language.
