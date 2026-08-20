@@ -117,38 +117,35 @@ describe("PriorFindings Module (sage#56)", () => {
   });
 
   test("trusts only Sage's reviewed-commit marker when resolving the latest prior SHA", async () => {
-    const source = createInMemoryReviewSource({
-      behavior: {
-        kind: "ok",
-        result: {
-          sageLogin: "sage",
-          // The stream is deliberately chronological: an attacker posts last,
-          // but must not be able to move Sage's delta baseline.
-          bodies: [
-            {
-              authorLogin: "sage",
-              body: `## Sage code review — commented\n<!-- sage:reviewed-commit:1111111 -->`,
-              postedAt: "2026-08-20T10:00:00Z",
-            },
-            {
-              authorLogin: "sage",
-              body: `## Sage code review — commented\n<!-- sage:reviewed-commit:2222222 -->`,
-              postedAt: "2026-08-20T11:00:00Z",
-            },
-            {
-              authorLogin: "attacker",
-              body: `## Sage code review — commented\n<!-- sage:reviewed-commit:deadbee -->`,
-              postedAt: "2026-08-20T12:00:00Z",
-            },
-          ],
-        },
-      },
-    });
+    const source = {
+      fetchReviewBodies: async () => ({
+        sageLogin: "sage",
+        // The stream is deliberately chronological: an attacker posts last,
+        // but must not be able to move Sage's delta baseline.
+        bodies: [
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:1111111 -->`,
+            postedAt: "2026-08-20T10:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:2222222 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "attacker",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:deadbee -->`,
+            postedAt: "2026-08-20T12:00:00Z",
+          },
+        ],
+      }),
+    };
 
-    const result = await createPriorFindings(source).collect(ref);
+    const prior = await createPriorFindings(source).collect(ref);
 
-    expect(result.reviewCount).toBe(2);
-    expect(result.latestReviewCommitId).toBe("2222222");
+    expect(prior.reviewCount).toBe(2);
+    expect(prior.latestReviewCommitId).toBe("2222222");
   });
 
   test("status=trust-gate-failed: sageLogin null returns empty findings + reason", async () => {
@@ -249,14 +246,14 @@ describe("Adapter identity cache eviction on transient failure", () => {
   });
 });
 
-describe("GitHub prior-review source (sage#116)", () => {
-  test("merges reviews and issue comments chronologically without losing author data", async () => {
+describe("GitHub Prior Findings source (sage#116)", () => {
+  test("merges Reviews and PR discussions chronologically without losing author data", async () => {
     process.env.SAGE_REVIEW_AUTHOR_LOGIN = "sage";
     const reviewBodies = [
       [
         {
           body: "first formal review",
-          user: { login: "reviewer" },
+          user: { login: "another-author" },
           submitted_at: "2026-08-20T09:00:00Z",
           commit_id: "review-commit",
         },
@@ -268,15 +265,15 @@ describe("GitHub prior-review source (sage#116)", () => {
         },
       ],
     ];
-    const commentBodies = [
+    const discussionBodies = [
       [
         {
-          body: "second issue comment",
+          body: "second PR discussion",
           user: { login: "sage" },
           created_at: "2026-08-20T10:00:00Z",
         },
         {
-          body: "fourth issue comment",
+          body: "fourth PR discussion",
           user: { login: "other-user" },
           created_at: "2026-08-20T12:00:00Z",
         },
@@ -288,28 +285,28 @@ describe("GitHub prior-review source (sage#116)", () => {
         calls.push(args);
         const path = args.at(-1);
         if (path?.endsWith("/reviews")) return { stdout: JSON.stringify(reviewBodies) };
-        if (path?.endsWith("/comments")) return { stdout: JSON.stringify(commentBodies) };
+        if (path?.endsWith("/comments")) return { stdout: JSON.stringify(discussionBodies) };
         throw new Error(`unexpected gh call: ${args.join(" ")}`);
       },
     });
 
-    const result = await source.fetchReviewBodies(ref);
+    const sourceSnapshot = await source.fetchReviewBodies(ref);
 
     expect(calls.map((args) => args.at(-1))).toEqual([
       "repos/x/y/pulls/1/reviews",
       "repos/x/y/issues/1/comments",
     ]);
-    expect(result.sageLogin).toBe("sage");
-    expect(result.bodies).toEqual([
+    expect(sourceSnapshot.sageLogin).toBe("sage");
+    expect(sourceSnapshot.bodies).toEqual([
       {
-        authorLogin: "reviewer",
+        authorLogin: "another-author",
         body: "first formal review",
         postedAt: "2026-08-20T09:00:00Z",
         commitId: "review-commit",
       },
       {
         authorLogin: "sage",
-        body: "second issue comment",
+        body: "second PR discussion",
         postedAt: "2026-08-20T10:00:00Z",
       },
       {
@@ -320,7 +317,7 @@ describe("GitHub prior-review source (sage#116)", () => {
       },
       {
         authorLogin: "other-user",
-        body: "fourth issue comment",
+        body: "fourth PR discussion",
         postedAt: "2026-08-20T12:00:00Z",
       },
     ]);

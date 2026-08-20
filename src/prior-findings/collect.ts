@@ -67,9 +67,9 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
         reviewCount++;
-        // GitHub's issue comments carry no native commit ID. New Sage verdict
+        // GitHub's non-Review records carry no native commit ID. New Sage Verdict
         // bodies record it in a forge-neutral marker; prefer the native field
-        // when a formal review supplies both.
+        // when a formal Review supplies both.
         const reviewedCommit = review.commitId ?? parseSageReviewedCommit(review.body);
         if (reviewedCommit) latestReviewCommitId = reviewedCommit;
         // Last one wins, and only Reviews that recorded a digest update it: a

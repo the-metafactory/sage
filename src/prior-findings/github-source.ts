@@ -1,16 +1,16 @@
 /**
  * GitHub `ForgeReviewSource` Adapter.
  *
- * Wraps both `gh api repos/.../pulls/N/reviews` and the issue comments
- * associated with a pull request (each paginated + slurped), plus `gh api
- * user` for the trust-gate identity. Sage's self-review fallback posts a
- * verdict as an issue comment, so both records form the prior-review stream.
- * Identity caching lives in the closure returned from `createGitHubReviewSource`
+ * Wraps both the GitHub Review endpoint and its associated PR-discussion
+ * records (each paginated + slurped), plus the `gh user` endpoint for the Sage
+ * login. Sage's self-review fallback posts a Verdict as a PR discussion, so
+ * both records form the Prior Findings stream. Sage-login caching lives in the
+ * closure returned from `createGitHubReviewSource`
  * — there is no module-level global (issue #56: kill `ghViewerLoginPromise`).
  *
  * Failure modes:
  *   - `/user` throws OR returns a malformed payload  ⇒ `sageLogin: null`
- *     (the Module maps this to `trust-gate-failed`).
+ *     (the Module maps this to its trust-boundary failure state).
  *   - `/reviews` throws / non-JSON / schema fail     ⇒ propagated as an
  *     Error (the Module maps this to `source-failed`).
  *
@@ -56,7 +56,7 @@ export function createGitHubReviewSource(
 ): ForgeReviewSource {
   const runGh = opts.runGh ?? defaultRunGh;
 
-  // Per-Adapter-instance identity cache. Resolves once; subsequent
+  // Per-Adapter-instance Sage-login cache. Resolves once; subsequent
   // calls return the cached promise. On rejection the cache slot is
   // evicted so a transient `gh api user` failure does not poison the
   // cache for the rest of the process lifetime — the next caller
@@ -117,9 +117,9 @@ export function createGitHubReviewSource(
         })),
       ];
 
-      // GitHub returns each individual source oldest-first, but a comment can
-      // be interleaved with reviews. The Module's "last one wins" provenance
-      // rule needs the combined stream oldest-first too.
+      // GitHub returns each individual stream oldest-first, but a PR discussion
+      // can be interleaved with Reviews. The Module's "last one wins" provenance
+      // policy needs the combined stream oldest-first too.
       bodies.sort((a, b) => (a.postedAt ?? "").localeCompare(b.postedAt ?? ""));
 
       return { bodies, sageLogin };
@@ -132,7 +132,7 @@ function parseJson(stdout: string, source: "reviews" | "comments"): unknown {
     return JSON.parse(stdout);
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh api ${source} returned non-JSON output: ${m}`);
+    throw new Error(`gh ${source} endpoint returned non-JSON output: ${m}`);
   }
 }
 
@@ -145,7 +145,7 @@ function parsePages<T extends z.ZodTypeAny>(
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(
-      `gh api ${source} payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
+      `gh ${source} endpoint payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
     );
   }
   return parsed.data;
@@ -158,11 +158,11 @@ async function fetchViewerLogin(runGh: RunGh): Promise<string> {
     raw = JSON.parse(out.stdout);
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh api user returned non-JSON output: ${m}`);
+    throw new Error(`gh user endpoint returned non-JSON output: ${m}`);
   }
   const parsed = UserSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error(`gh api user payload failed schema validation: ${parsed.error.message}`);
+    throw new Error(`gh user endpoint payload failed schema validation: ${parsed.error.message}`);
   }
   return parsed.data.login;
 }

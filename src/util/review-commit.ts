@@ -1,9 +1,9 @@
 /**
  * Marker for the commit Sage reviewed.
  *
- * GitHub issue comments do not carry a `commit_id`, even when they are the
- * normal fallback record for a self-review. Keep this in a leaf utility so
- * the renderer and prior-findings parser can share the same forge-neutral
+ * GitHub's non-Review records do not carry a `commit_id`, even when they are
+ * Sage's normal fallback when it reviews its own PR. Keep this in a leaf
+ * utility so the renderer and prior-findings parser can share the same forge-neutral
  * format without depending on each other.
  */
 
@@ -18,7 +18,7 @@ export function renderReviewedCommitMarker(commitId: string): string | undefined
   return `${MARKER_PREFIX}${commitId}${MARKER_SUFFIX}`;
 }
 
-/** Read the reviewed commit marker from a prior rendered Sage verdict. */
+/** Read the reviewed commit marker from a prior rendered Sage Verdict. */
 export function parseReviewedCommitMarker(body: string): string | undefined {
   return MARKER_RE.exec(body)?.[1];
 }
