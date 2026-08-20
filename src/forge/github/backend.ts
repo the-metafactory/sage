@@ -476,7 +476,7 @@ export class GitHubBackend implements ForgeBackend {
 
   reviewSource(): ForgeReviewSource {
     if (!this._reviewSource) {
-      this._reviewSource = createGitHubReviewSource();
+      this._reviewSource = createGitHubReviewSource({ runGh });
     }
     return this._reviewSource;
   }

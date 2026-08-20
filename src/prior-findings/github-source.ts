@@ -19,7 +19,6 @@
  */
 
 import { z } from "zod";
-import { runGh as defaultRunGh } from "../forge/github/backend.ts";
 import { SAGE_REVIEW_HEADING_MARKER } from "../forge/prior-findings.ts";
 import type { PrRef } from "../forge/types.ts";
 import type { ForgeReviewSource } from "./types.ts";
@@ -28,8 +27,8 @@ import type { ForgeReviewSource } from "./types.ts";
 export type RunGh = (args: string[]) => Promise<{ stdout: string }>;
 
 export interface CreateGitHubReviewSourceOptions {
-  /** Injectable for tests; defaults to the production `runGh`. */
-  runGh?: RunGh;
+  /** GitHub Forge backend operation injected by the production adapter. */
+  runGh: RunGh;
 }
 
 const ReviewSchema = z.object({
@@ -49,10 +48,8 @@ const CommentSchema = z.object({
 });
 
 const UserSchema = z.object({ login: z.string() });
-export function createGitHubReviewSource(
-  opts: CreateGitHubReviewSourceOptions = {},
-): ForgeReviewSource {
-  const runGh = opts.runGh ?? defaultRunGh;
+export function createGitHubReviewSource(opts: CreateGitHubReviewSourceOptions): ForgeReviewSource {
+  const { runGh } = opts;
 
   // Per-Adapter-instance Sage-login cache. Resolves once; subsequent
   // calls return the cached promise. On rejection the cache slot is
@@ -139,7 +136,7 @@ async function fetchRenderedSageDiscussions(
   ]);
 }
 
-function parseJson(stdout: string, source: "reviews" | "comments"): unknown {
+function parseJson(stdout: string, source: "reviews" | "comments" | "user"): unknown {
   try {
     return JSON.parse(stdout);
   } catch (err) {
@@ -186,13 +183,7 @@ function parseRenderedSageDiscussions(stdout: string): z.infer<typeof CommentSch
 
 async function fetchViewerLogin(runGh: RunGh): Promise<string> {
   const out = await runGh(["api", "user"]);
-  let raw: unknown;
-  try {
-    raw = JSON.parse(out.stdout);
-  } catch (err) {
-    const detail = String(err);
-    throw new Error(`gh user endpoint returned non-JSON output: ${detail}`);
-  }
+  const raw = parseJson(out.stdout, "user");
   const parsed = UserSchema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(

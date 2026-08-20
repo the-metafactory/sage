@@ -171,19 +171,23 @@ function aliasAppearsOutsideCanonicalTerms(
   alias: string,
   text: string,
 ): boolean {
-  const withoutCanonicalCompounds = entries
-    .filter((entry) => literallyAppears(alias, entry.term)) // glossary: allow(filter) — standard Array method.
-    .reduce((remaining, entry) => {
-      const words = entry.term.split(/\s+/).map(escapeRegExp).join("[\\s_-]*");
-      return remaining.replace(new RegExp(words, "gi"), "");
-    }, text);
+  let withoutCanonicalCompounds = text;
+  for (const entry of entries) {
+    if (!literallyAppears(alias, entry.term)) continue;
+    const words = entry.term.split(/\s+/).map(escapeRegExp).join("[\\s_-]*");
+    withoutCanonicalCompounds = withoutCanonicalCompounds.replace(new RegExp(words, "gi"), "");
+  }
   return literallyAppears(alias, withoutCanonicalCompounds);
 }
 
-/** Explicit, audited exemption for immutable external protocol literals. */
+const IMMUTABLE_PROTOCOL_LITERALS = new Set(["api"]);
+
+/** Explicit exemption limited to immutable external protocol literals. */
 function allowsAlias(text: string, alias: string): boolean {
-  const allowed = text.match(/glossary: allow\(([^)]*)\)/i)?.[1];
-  return allowed?.split(",").some((value) => value.trim().toLowerCase() === alias.toLowerCase()) ?? false;
+  return (
+    IMMUTABLE_PROTOCOL_LITERALS.has(alias.toLowerCase()) &&
+    text.includes(`glossary: allow(${alias})`)
+  );
 }
 
 /**
