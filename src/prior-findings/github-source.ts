@@ -49,8 +49,6 @@ const CommentSchema = z.object({
 });
 
 const UserSchema = z.object({ login: z.string() });
-const CURSOR_OVERLAP_MS = 60_000;
-
 export function createGitHubReviewSource(
   opts: CreateGitHubReviewSourceOptions = {},
 ): ForgeReviewSource {
@@ -63,10 +61,6 @@ export function createGitHubReviewSource(
   // re-fetches. Mirrors the GitLab Adapter's eviction-on-reject
   // pattern.
   let viewerLoginPromise: Promise<string | null> | undefined;
-  const discussionCache = new Map<string, {
-    fetchedAt: string;
-    records: z.infer<typeof CommentSchema>[];
-  }>();
 
   async function resolveSageLogin(): Promise<string | null> {
     const envLogin = process.env.SAGE_REVIEW_AUTHOR_LOGIN?.trim();
@@ -86,8 +80,6 @@ export function createGitHubReviewSource(
 
   return {
     async fetchReviewBodies(ref: PrRef) {
-      const cacheKey = `${ref.owner}/${ref.repo}#${ref.number}`;
-      const cached = discussionCache.get(cacheKey);
       const reviewsOutPromise = runGh([
         "api", // glossary: allow(api) — immutable GitHub CLI subcommand.
         "--paginate",
@@ -97,16 +89,12 @@ export function createGitHubReviewSource(
       const sageLogin = await resolveSageLogin();
       const [reviewsOut, commentsOut] = await Promise.all([
         reviewsOutPromise,
-        fetchRenderedSageDiscussions(runGh, ref, sageLogin, cached?.fetchedAt),
+        fetchRenderedSageDiscussions(runGh, ref, sageLogin),
       ]);
 
       const rawReviews = parseJson(reviewsOut.stdout, "reviews");
       const reviews = parsePages(ReviewPagesSchema, rawReviews, ref, "reviews");
-      const freshDiscussions = parseRenderedSageDiscussions(commentsOut.stdout);
-      const discussions = mergeDiscussions(cached?.records ?? [], freshDiscussions);
-      if (sageLogin !== null) {
-        discussionCache.set(cacheKey, { fetchedAt: new Date().toISOString(), records: discussions });
-      }
+      const discussions = parseRenderedSageDiscussions(commentsOut.stdout);
 
       const bodies = [
         ...reviews.flat().map((r) => ({
@@ -137,35 +125,18 @@ async function fetchRenderedSageDiscussions(
   runGh: RunGh,
   ref: PrRef,
   sageLogin: string | null,
-  previousFetchAt: string | undefined,
 ): Promise<{ stdout: string }> {
   if (sageLogin === null) return { stdout: "" };
   const login = JSON.stringify(sageLogin);
   const heading = JSON.stringify(SAGE_REVIEW_HEADING_MARKER);
   const selection = `.[] | select(.user.login == ${login} and ((.body // "") | startswith(${heading}))) | {body, user, created_at} | @json`;
-  const since = previousFetchAt ? `&since=${encodeURIComponent(overlappingSince(previousFetchAt))}` : "";
   return runGh([
     "api", // glossary: allow(api) — immutable GitHub CLI subcommand.
     "--paginate",
     "--jq",
     selection,
-    `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments?per_page=100${since}`,
+    `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments?per_page=100`,
   ]);
-}
-
-function overlappingSince(fetchedAt: string): string {
-  return new Date(Date.parse(fetchedAt) - CURSOR_OVERLAP_MS).toISOString();
-}
-
-function mergeDiscussions(
-  cached: readonly z.infer<typeof CommentSchema>[],
-  fresh: readonly z.infer<typeof CommentSchema>[],
-): z.infer<typeof CommentSchema>[] {
-  const merged = new Map<string, z.infer<typeof CommentSchema>>();
-  for (const record of [...cached, ...fresh]) {
-    merged.set(`${record.user.login}\u0000${record.created_at}\u0000${record.body}`, record);
-  }
-  return [...merged.values()];
 }
 
 function parseJson(stdout: string, source: "reviews" | "comments"): unknown {

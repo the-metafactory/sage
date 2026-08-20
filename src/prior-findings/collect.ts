@@ -64,6 +64,8 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const findings: PriorReviewFinding[] = [];
       let latestReviewCommitId: string | undefined;
       let latestReviewCommitPostedAt: string | undefined;
+      let sawReviewCommit = false;
+      let latestReviewCommitIsAmbiguous = false;
       let latestCheckedClaimsDigest: string | undefined;
       let reviewCount = 0;
       for (const review of raw.bodies) {
@@ -76,18 +78,21 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         const reviewedCommit = review.commitId ?? parseSageReviewedCommit(review.body);
         if (reviewedCommit) {
           const hasTimestampTie =
-            latestReviewCommitId !== undefined &&
+            sawReviewCommit &&
             (review.postedAt === undefined ||
               latestReviewCommitPostedAt === undefined ||
               review.postedAt === latestReviewCommitPostedAt);
-          if (hasTimestampTie && latestReviewCommitId !== reviewedCommit) {
+          if (hasTimestampTie && (latestReviewCommitIsAmbiguous || latestReviewCommitId !== reviewedCommit)) {
             // GitHub timestamps are second-granular across distinct review and
             // discussion resources. Their relative order is unknowable, so do
             // not select an arbitrary delta baseline.
             latestReviewCommitId = undefined;
+            latestReviewCommitIsAmbiguous = true;
           } else {
             latestReviewCommitId = reviewedCommit;
+            latestReviewCommitIsAmbiguous = false;
           }
+          sawReviewCommit = true;
           latestReviewCommitPostedAt = review.postedAt;
         }
         // Last one wins, and only Reviews that recorded a digest update it: a

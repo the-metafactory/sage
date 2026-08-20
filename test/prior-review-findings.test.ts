@@ -135,6 +135,11 @@ describe("PriorFindings Module (sage#56)", () => {
           },
           {
             authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:3333333 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "sage",
             body: "Sage-authored PR discussion without a rendered Review heading.",
             postedAt: "2026-08-20T11:30:00Z",
           },
@@ -149,8 +154,8 @@ describe("PriorFindings Module (sage#56)", () => {
 
     const prior = await createPriorFindings(source).collect(ref);
 
-    expect(prior.reviewCount).toBe(2);
-    expect(prior.latestReviewCommitId).toBe("2222222");
+    expect(prior.reviewCount).toBe(3);
+    expect(prior.latestReviewCommitId).toBeUndefined();
   });
 
   test("withholds a conflicting reviewed commit when Forge timestamps tie", async () => {
@@ -344,8 +349,5 @@ describe("GitHub Prior Findings source (sage#116)", () => {
       },
     ]);
 
-    await source.fetchReviewBodies(ref);
-    const discussionPaths = calls.map((args) => args.at(-1)).filter((path) => path?.includes("/comments")); // glossary: allow(filter) — standard Array method.
-    expect(discussionPaths[1]).toContain("&since=");
   });
 });
