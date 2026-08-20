@@ -25,24 +25,29 @@ const PRIOR_FINDING_RE =
 
 const REVIEW_HEADING_MARKER = "## Sage code review";
 
+/** True only for a Sage-rendered Review body. */
+export function isSageRenderedReview(body: string): boolean {
+  return body.includes(REVIEW_HEADING_MARKER);
+}
+
 /**
  * The claims digest a prior Sage review recorded, if it checked any. Absent on
  * a review whose Oracle did not run — which correctly reads as "these claims
  * have not been checked" rather than "unchanged".
  */
 export function parseSageCheckedClaims(body: string): string | undefined {
-  if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
+  if (!isSageRenderedReview(body)) return undefined;
   return parseCheckedClaimsMarker(body);
 }
 
 /** The commit Sage reviewed, when the prior body carries a provenance marker. */
 export function parseSageReviewedCommit(body: string): string | undefined {
-  if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
+  if (!isSageRenderedReview(body)) return undefined;
   return parseReviewedCommitMarker(body);
 }
 
 export function parseSageReviewFindings(body: string): PriorReviewFinding[] {
-  if (!body.includes(REVIEW_HEADING_MARKER)) return [];
+  if (!isSageRenderedReview(body)) return [];
 
   const findings: PriorReviewFinding[] = [];
   for (const match of body.matchAll(PRIOR_FINDING_RE)) {

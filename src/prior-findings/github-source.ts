@@ -6,7 +6,7 @@
  * login. Sage's self-review fallback posts a Verdict as a PR discussion, so
  * both records form the Prior Findings stream. Sage-login caching lives in the
  * closure returned from `createGitHubReviewSource`
- * — there is no module-level global (issue #56: kill `ghViewerLoginPromise`).
+ * — there is no module-level global (sage#56: kill `ghViewerLoginPromise`).
  *
  * Failure modes:
  *   - `/user` throws OR returns a malformed payload  ⇒ `sageLogin: null`
@@ -58,7 +58,7 @@ export function createGitHubReviewSource(
 
   // Per-Adapter-instance Sage-login cache. Resolves once; subsequent
   // calls return the cached promise. On rejection the cache slot is
-  // evicted so a transient `gh api user` failure does not poison the
+  // evicted so a transient GitHub CLI user lookup failure does not poison the
   // cache for the rest of the process lifetime — the next caller
   // re-fetches. Mirrors the GitLab Adapter's eviction-on-reject
   // pattern.
@@ -131,8 +131,8 @@ function parseJson(stdout: string, source: "reviews" | "comments"): unknown {
   try {
     return JSON.parse(stdout);
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh ${source} endpoint returned non-JSON output: ${m}`);
+    const detail = String(err);
+    throw new Error(`gh ${source} endpoint returned non-JSON output: ${detail}`);
   }
 }
 
@@ -145,7 +145,7 @@ function parsePages<T extends z.ZodTypeAny>(
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(
-      `gh ${source} endpoint payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
+      `gh ${source} endpoint payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${JSON.stringify(parsed.error.issues)}`,
     );
   }
   return parsed.data;
@@ -157,12 +157,14 @@ async function fetchViewerLogin(runGh: RunGh): Promise<string> {
   try {
     raw = JSON.parse(out.stdout);
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
-    throw new Error(`gh user endpoint returned non-JSON output: ${m}`);
+    const detail = String(err);
+    throw new Error(`gh user endpoint returned non-JSON output: ${detail}`);
   }
   const parsed = UserSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error(`gh user endpoint payload failed schema validation: ${parsed.error.message}`);
+    throw new Error(
+      `gh user endpoint payload failed schema validation: ${JSON.stringify(parsed.error.issues)}`,
+    );
   }
   return parsed.data.login;
 }

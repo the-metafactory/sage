@@ -21,6 +21,7 @@
  */
 
 import {
+  isSageRenderedReview,
   parseSageCheckedClaims,
   parseSageReviewedCommit,
   parseSageReviewFindings,
@@ -66,6 +67,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       let reviewCount = 0;
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
+        if (!isSageRenderedReview(review.body)) continue;
         reviewCount++;
         // GitHub's non-Review records carry no native commit ID. New Sage Verdict
         // bodies record it in a forge-neutral marker; prefer the native field

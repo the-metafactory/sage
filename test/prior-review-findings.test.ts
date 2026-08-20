@@ -134,6 +134,11 @@ describe("PriorFindings Module (sage#56)", () => {
             postedAt: "2026-08-20T11:00:00Z",
           },
           {
+            authorLogin: "sage",
+            body: "Sage-authored PR discussion without a rendered Review heading.",
+            postedAt: "2026-08-20T11:30:00Z",
+          },
+          {
             authorLogin: "attacker",
             body: `## Sage code review — commented\n<!-- sage:reviewed-commit:deadbee -->`,
             postedAt: "2026-08-20T12:00:00Z",
