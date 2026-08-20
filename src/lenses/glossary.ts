@@ -162,6 +162,31 @@ function literallyAppears(needle: string, haystack: string): boolean {
 }
 
 /**
+ * An added line may contain an avoid alias as part of the entry's own
+ * canonical compound (for example, `Review comment`). Remove that compound
+ * before checking the alias so correct canonical vocabulary is not rejected.
+ */
+function aliasAppearsOutsideCanonicalTerms(
+  entries: readonly GlossaryEntry[],
+  alias: string,
+  text: string,
+): boolean {
+  const withoutCanonicalCompounds = entries
+    .filter((entry) => literallyAppears(alias, entry.term))
+    .reduce((remaining, entry) => {
+      const words = entry.term.split(/\s+/).map(escapeRegExp).join("[\\s_-]*");
+      return remaining.replace(new RegExp(words, "gi"), "");
+    }, text);
+  return literallyAppears(alias, withoutCanonicalCompounds);
+}
+
+/** Explicit, audited exemption for immutable external protocol literals. */
+function allowsAlias(text: string, alias: string): boolean {
+  const allowed = text.match(/glossary: allow\(([^)]*)\)/i)?.[1];
+  return allowed?.split(",").some((value) => value.trim().toLowerCase() === alias.toLowerCase()) ?? false;
+}
+
+/**
  * Entries whose canonical term OR any `_Avoid_` alias literally appears
  * somewhere in the diff. Used only to size the stdin excerpt — never the
  * full glossary, never the full CONTEXT.md.
@@ -269,7 +294,7 @@ export function findGlossaryViolations(
   for (const { path, lineNumber, text } of addedLines) {
     for (const entry of entries) {
       for (const alias of entry.avoid) {
-        if (!literallyAppears(alias, text)) continue;
+        if (allowsAlias(text, alias) || !aliasAppearsOutsideCanonicalTerms(entries, alias, text)) continue;
         const key = `${path}:${lineNumber}:${entry.term}:${alias}`;
         if (seen.has(key)) continue;
         seen.add(key);

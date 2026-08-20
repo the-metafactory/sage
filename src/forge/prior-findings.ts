@@ -23,11 +23,11 @@ import { parseReviewedCommitMarker } from "../util/review-commit.ts";
 const PRIOR_FINDING_RE =
   /^- \*\*\[(blocker|important|suggestion|nit)\]\*\* `([^`]+):(\d+)` — \*\*([^*]+)\*\*/gm;
 
-const REVIEW_HEADING_MARKER = "## Sage code review";
+export const SAGE_REVIEW_HEADING_MARKER = "## Sage code review";
 
 /** True only for a Sage-rendered Review comment. */
 export function isSageRenderedReview(body: string): boolean {
-  return body.includes(REVIEW_HEADING_MARKER);
+  return body.includes(SAGE_REVIEW_HEADING_MARKER);
 }
 
 /**

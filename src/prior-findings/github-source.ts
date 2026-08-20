@@ -1,11 +1,11 @@
 /**
  * GitHub `ForgeReviewSource` Adapter.
  *
- * Wraps both the GitHub Review endpoint and its associated PR-discussion
- * records (each paginated + slurped), plus the `gh user` endpoint for the Sage
- * login. Sage's self-review fallback posts a Verdict as a PR discussion, so
- * both records form the Prior Findings stream. Sage-login caching lives in the
- * closure returned from `createGitHubReviewSource`
+ * Wraps the GitHub Review endpoint plus its associated PR-discussion stream,
+ * retaining only Sage-rendered records from the latter, plus the `gh user`
+ * endpoint for the Sage login. Sage's self-review fallback posts a Verdict as
+ * a PR discussion, so both records form the Prior Findings stream. Sage-login
+ * caching lives in the closure returned from `createGitHubReviewSource`
  * — there is no global cache (sage#56: kill `ghViewerLoginPromise`).
  *
  * Failure modes:
@@ -20,6 +20,7 @@
 
 import { z } from "zod";
 import { runGh as defaultRunGh } from "../forge/github/backend.ts";
+import { SAGE_REVIEW_HEADING_MARKER } from "../forge/prior-findings.ts";
 import type { PrRef } from "../forge/types.ts";
 import type { ForgeReviewSource } from "./types.ts";
 
@@ -46,8 +47,6 @@ const CommentSchema = z.object({
   user: z.object({ login: z.string() }),
   created_at: z.string(),
 });
-
-const CommentPagesSchema = z.array(z.array(CommentSchema));
 
 const UserSchema = z.object({ login: z.string() });
 
@@ -82,26 +81,20 @@ export function createGitHubReviewSource(
 
   return {
     async fetchReviewBodies(ref: PrRef) {
-      const [reviewsOut, commentsOut, sageLogin] = await Promise.all([
+      const sageLogin = await resolveSageLogin();
+      const [reviewsOut, commentsOut] = await Promise.all([
         runGh([
-          "api",
+          "api", // glossary: allow(api) — immutable GitHub CLI subcommand.
           "--paginate",
           "--slurp",
           `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`,
         ]),
-        runGh([
-          "api",
-          "--paginate",
-          "--slurp",
-          `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
-        ]),
-        resolveSageLogin(),
+        fetchRenderedSageDiscussions(runGh, ref, sageLogin),
       ]);
 
       const rawReviews = parseJson(reviewsOut.stdout, "reviews");
-      const rawComments = parseJson(commentsOut.stdout, "comments");
       const reviews = parsePages(ReviewPagesSchema, rawReviews, ref, "reviews");
-      const comments = parsePages(CommentPagesSchema, rawComments, ref, "comments");
+      const discussions = parseRenderedSageDiscussions(commentsOut.stdout);
 
       const bodies = [
         ...reviews.flat().map((r) => ({
@@ -110,7 +103,7 @@ export function createGitHubReviewSource(
           ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
           ...(r.commit_id != null ? { commitId: r.commit_id } : {}),
         })),
-        ...comments.flat().map((c) => ({
+        ...discussions.map((c) => ({
           authorLogin: c.user.login,
           body: c.body,
           postedAt: c.created_at,
@@ -126,6 +119,24 @@ export function createGitHubReviewSource(
       return { bodies, sageLogin };
     },
   };
+}
+
+async function fetchRenderedSageDiscussions(
+  runGh: RunGh,
+  ref: PrRef,
+  sageLogin: string | null,
+): Promise<{ stdout: string }> {
+  if (sageLogin === null) return { stdout: "" };
+  const login = JSON.stringify(sageLogin);
+  const heading = JSON.stringify(SAGE_REVIEW_HEADING_MARKER);
+  const query = `.[] | select(.user.login == ${login} and ((.body // "") | startswith(${heading}))) | {body, user, created_at} | @json`;
+  return runGh([
+    "api", // glossary: allow(api) — immutable GitHub CLI subcommand.
+    "--paginate",
+    "--jq",
+    query,
+    `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
+  ]);
 }
 
 function parseJson(stdout: string, source: "reviews" | "comments"): unknown {
@@ -147,6 +158,27 @@ function parsePages<T extends z.ZodTypeAny>(
   if (!parsed.success) {
     throw new Error(
       `gh ${source} endpoint payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${JSON.stringify(parsed.error.issues)}`,
+    );
+  }
+  return parsed.data;
+}
+
+/** Decode `gh --jq ... | @json` output without retaining unrelated records. */
+function parseRenderedSageDiscussions(stdout: string): z.infer<typeof CommentSchema>[] {
+  if (stdout.trim() === "") return [];
+  const values = stdout.trim().split(/\r?\n/).map((line) => {
+    try {
+      const encoded: unknown = JSON.parse(line);
+      return typeof encoded === "string" ? JSON.parse(encoded) : undefined;
+    } catch (err) {
+      const detail = String(err);
+      throw new Error(`gh comments endpoint returned invalid rendered-Sage record: ${detail}`);
+    }
+  });
+  const parsed = z.array(CommentSchema).safeParse(values);
+  if (!parsed.success) {
+    throw new Error(
+      `gh comments endpoint rendered-Sage record failed schema validation: ${JSON.stringify(parsed.error.issues)}`,
     );
   }
   return parsed.data;

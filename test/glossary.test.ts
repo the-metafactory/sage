@@ -210,6 +210,32 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findGlossaryViolations(entries, diff)).toEqual([]);
   });
 
+  test("does not reject canonical compound vocabulary", () => {
+    const alias = ["com", "ment"].join("");
+    const compound = [{ term: `Review ${alias}`, avoid: [alias], section: "", line: 1 }];
+    const diff = `diff --git a/src/x.ts b/src/x.ts
+--- a/src/x.ts
++++ b/src/x.ts
+@@ -1,1 +1,1 @@
++const label = \`Review ${alias}\`; const separate = "${alias}";
+`;
+
+    const findings = findGlossaryViolations(compound, diff);
+    expect(findings).toHaveLength(1);
+  });
+
+  test("honors an explicit exemption for an immutable protocol literal", () => {
+    const entries = [{ term: "Provider", avoid: ["api"], section: "", line: 1 }];
+    const diff = `diff --git a/src/x.ts b/src/x.ts
+--- a/src/x.ts
++++ b/src/x.ts
+@@ -1,1 +1,1 @@
++const subcommand = "api"; // glossary: allow(api)
+`;
+
+    expect(findGlossaryViolations(entries, diff)).toEqual([]);
+  });
+
   test("computes correct new-revision line numbers across multiple hunks", () => {
     const diff = `diff --git a/a.ts b/a.ts
 --- a/a.ts

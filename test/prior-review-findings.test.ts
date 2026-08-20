@@ -236,6 +236,7 @@ describe("Adapter identity cache eviction on transient failure", () => {
         if (attempt === 1) throw new Error("transient ECONNREFUSED");
         return { stdout: JSON.stringify({ login: "sage" }) };
       }
+      if (args.at(-1)?.endsWith("/comments")) return { stdout: "" };
       // Empty reviews page so fetchReviewBodies just returns no bodies.
       return { stdout: JSON.stringify([[]]) };
     };
@@ -295,18 +296,11 @@ describe("GitHub Prior Findings source (sage#116)", () => {
       ],
     ];
     const discussionBodies = [
-      [
-        {
-          body: "second PR discussion",
-          user: { login: "sage" },
-          created_at: "2026-08-20T10:00:00Z",
-        },
-        {
-          body: "fourth PR discussion",
-          user: { login: "other-user" },
-          created_at: "2026-08-20T12:00:00Z",
-        },
-      ],
+      {
+        body: "## Sage code review — commented\n\nsecond PR discussion",
+        user: { login: "sage" },
+        created_at: "2026-08-20T10:00:00Z",
+      },
     ];
     const calls: string[][] = [];
     const source = createGitHubReviewSource({
@@ -314,7 +308,9 @@ describe("GitHub Prior Findings source (sage#116)", () => {
         calls.push(args);
         const path = args.at(-1);
         if (path?.endsWith("/reviews")) return { stdout: JSON.stringify(reviewBodies) };
-        if (path?.endsWith("/comments")) return { stdout: JSON.stringify(discussionBodies) };
+        if (path?.endsWith("/comments")) {
+          return { stdout: discussionBodies.map((record) => JSON.stringify(JSON.stringify(record))).join("\n") };
+        }
         throw new Error(`unexpected gh call: ${args.join(" ")}`);
       },
     });
@@ -325,6 +321,8 @@ describe("GitHub Prior Findings source (sage#116)", () => {
       "repos/x/y/pulls/1/reviews",
       "repos/x/y/issues/1/comments",
     ]);
+    expect(calls[1]).toContain("--jq");
+    expect(calls[1]).not.toContain("--slurp");
     expect(sourceSnapshot.sageLogin).toBe("sage");
     expect(sourceSnapshot.bodies).toEqual([
       {
@@ -335,7 +333,7 @@ describe("GitHub Prior Findings source (sage#116)", () => {
       },
       {
         authorLogin: "sage",
-        body: "second PR discussion",
+        body: "## Sage code review — commented\n\nsecond PR discussion",
         postedAt: "2026-08-20T10:00:00Z",
       },
       {
@@ -343,11 +341,6 @@ describe("GitHub Prior Findings source (sage#116)", () => {
         body: "third formal review",
         postedAt: "2026-08-20T11:00:00Z",
         commitId: "sage-review-commit",
-      },
-      {
-        authorLogin: "other-user",
-        body: "fourth PR discussion",
-        postedAt: "2026-08-20T12:00:00Z",
       },
     ]);
   });
