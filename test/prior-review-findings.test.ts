@@ -153,6 +153,30 @@ describe("PriorFindings Module (sage#56)", () => {
     expect(prior.latestReviewCommitId).toBe("2222222");
   });
 
+  test("withholds a conflicting reviewed commit when Forge timestamps tie", async () => {
+    const source = {
+      fetchReviewBodies: async () => ({
+        sageLogin: "sage",
+        bodies: [
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:1111111 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:2222222 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+        ],
+      }),
+    };
+
+    const prior = await createPriorFindings(source).collect(ref);
+
+    expect(prior.latestReviewCommitId).toBeUndefined();
+  });
+
   test("status=trust-gate-failed: sageLogin null returns empty findings + reason", async () => {
     const source = createInMemoryReviewSource({
       behavior: {

@@ -5,6 +5,7 @@ import {
 } from "../src/forge/prior-findings.ts";
 import type { LensReport } from "../src/lenses/types.ts";
 import { renderVerdict, type Verdict } from "../src/verdict/index.ts";
+import { renderReviewComment } from "../src/review-comment.ts";
 
 /**
  * sage#27 Holly re-review (finding #5): a lens that errored is visually
@@ -175,7 +176,7 @@ describe("renderVerdict compact review body", () => {
       lenses: [cleanLens("CodeQuality")],
     };
 
-    const body = renderVerdict(verdict, "codex", "a1b2c3d4e5f6");
+    const body = renderReviewComment(verdict, "codex", "a1b2c3d4e5f6");
 
     expect(parseSageReviewedCommit(body)).toBe("a1b2c3d4e5f6");
   });

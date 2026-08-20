@@ -34,6 +34,7 @@ import {
 } from "../verdict/index.ts";
 import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
 import { digestClaims } from "../util/claims.ts";
+import { renderReviewComment } from "../review-comment.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -270,7 +271,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     checkedClaims !== undefined
       ? { ...decided, checkedClaimsDigest: checkedClaims }
       : decided;
-  const body = renderVerdict(verdict, opts.substrate.displayName, pr.headRefOid);
+  const body = renderReviewComment(verdict, opts.substrate.displayName, pr.headRefOid);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
   // for manual re-post via `gh pr review --body-file` (sage#16).

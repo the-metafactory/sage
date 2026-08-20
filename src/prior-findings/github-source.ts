@@ -6,7 +6,7 @@
  * login. Sage's self-review fallback posts a Verdict as a PR discussion, so
  * both records form the Prior Findings stream. Sage-login caching lives in the
  * closure returned from `createGitHubReviewSource`
- * — there is no module-level global (sage#56: kill `ghViewerLoginPromise`).
+ * — there is no global cache (sage#56: kill `ghViewerLoginPromise`).
  *
  * Failure modes:
  *   - `/user` throws OR returns a malformed payload  ⇒ `sageLogin: null`
@@ -118,8 +118,9 @@ export function createGitHubReviewSource(
       ];
 
       // GitHub returns each individual stream oldest-first, but a PR discussion
-      // can be interleaved with Reviews. The Module's "last one wins" provenance
-      // policy needs the combined stream oldest-first too.
+      // can be interleaved with Reviews. Equal timestamps cannot establish a
+      // cross-resource order; the Module rejects a conflicting tied provenance
+      // marker rather than selecting a fabricated delta baseline.
       bodies.sort((a, b) => (a.postedAt ?? "").localeCompare(b.postedAt ?? ""));
 
       return { bodies, sageLogin };

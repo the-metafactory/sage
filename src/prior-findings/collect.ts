@@ -63,6 +63,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const seen = new Set<string>();
       const findings: PriorReviewFinding[] = [];
       let latestReviewCommitId: string | undefined;
+      let latestReviewCommitPostedAt: string | undefined;
       let latestCheckedClaimsDigest: string | undefined;
       let reviewCount = 0;
       for (const review of raw.bodies) {
@@ -73,7 +74,19 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         // bodies record it in a forge-neutral marker; prefer the native field
         // when a formal Review supplies both.
         const reviewedCommit = review.commitId ?? parseSageReviewedCommit(review.body);
-        if (reviewedCommit) latestReviewCommitId = reviewedCommit;
+        if (reviewedCommit) {
+          const hasTimestampTie =
+            review.postedAt !== undefined && review.postedAt === latestReviewCommitPostedAt;
+          if (hasTimestampTie && latestReviewCommitId !== reviewedCommit) {
+            // GitHub timestamps are second-granular across distinct review and
+            // discussion resources. Their relative order is unknowable, so do
+            // not select an arbitrary delta baseline.
+            latestReviewCommitId = undefined;
+          } else {
+            latestReviewCommitId = reviewedCommit;
+          }
+          latestReviewCommitPostedAt = review.postedAt;
+        }
         // Last one wins, and only Reviews that recorded a digest update it: a
         // later Review whose Oracle did not run must not erase the fact that an
         // earlier one checked these claims.

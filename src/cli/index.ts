@@ -14,7 +14,8 @@ import {
   reviewPr,
 } from "../lenses/workflow.ts";
 import { selectSubstrate } from "../substrate/select.ts";
-import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
+import { renderVerdictBlock } from "../verdict/index.ts";
+import { renderReviewComment } from "../review-comment.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -126,7 +127,7 @@ program
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
-      const body = renderVerdict(
+      const body = renderReviewComment(
         review.verdict,
         selection.substrate.displayName,
         review.blockMeta.commit_id,

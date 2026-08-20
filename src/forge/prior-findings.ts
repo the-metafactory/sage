@@ -25,7 +25,7 @@ const PRIOR_FINDING_RE =
 
 const REVIEW_HEADING_MARKER = "## Sage code review";
 
-/** True only for a Sage-rendered Review body. */
+/** True only for a Sage-rendered Review comment. */
 export function isSageRenderedReview(body: string): boolean {
   return body.includes(REVIEW_HEADING_MARKER);
 }
