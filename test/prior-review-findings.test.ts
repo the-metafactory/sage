@@ -236,7 +236,7 @@ describe("Adapter identity cache eviction on transient failure", () => {
         if (attempt === 1) throw new Error("transient ECONNREFUSED");
         return { stdout: JSON.stringify({ login: "sage" }) };
       }
-      if (args.at(-1)?.endsWith("/comments")) return { stdout: "" };
+      if (args.at(-1)?.includes("/comments")) return { stdout: "" };
       // Empty reviews page so fetchReviewBodies just returns no bodies.
       return { stdout: JSON.stringify([[]]) };
     };
@@ -319,7 +319,7 @@ describe("GitHub Prior Findings source (sage#116)", () => {
 
     expect(calls.map((args) => args.at(-1))).toEqual([
       "repos/x/y/pulls/1/reviews",
-      "repos/x/y/issues/1/comments",
+      "repos/x/y/issues/1/comments?per_page=100",
     ]);
     expect(calls[1]).toContain("--jq");
     expect(calls[1]).not.toContain("--slurp");
@@ -345,7 +345,7 @@ describe("GitHub Prior Findings source (sage#116)", () => {
     ]);
 
     await source.fetchReviewBodies(ref);
-    const discussionPaths = calls.map((args) => args.at(-1)).filter((path) => path?.includes("/comments"));
-    expect(discussionPaths[1]).toContain("?since=");
+    const discussionPaths = calls.map((args) => args.at(-1)).filter((path) => path?.includes("/comments")); // glossary: allow(filter) — standard Array method.
+    expect(discussionPaths[1]).toContain("&since=");
   });
 });

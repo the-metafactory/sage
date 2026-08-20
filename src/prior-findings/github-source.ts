@@ -3,8 +3,8 @@
  *
  * Wraps the GitHub Review endpoint plus its associated PR-discussion stream,
  * selecting only Sage-rendered records from the latter, plus the `gh user`
- * endpoint for the Sage login. Sage's self-review fallback posts a Verdict as
- * a PR discussion, so both records form the Prior Findings stream. Sage-login
+ * endpoint for the Sage login. Sage's Forge-visible prior Review material can
+ * appear in either stream, so both form the Prior Findings input. Sage-login
  * caching lives in the closure returned from `createGitHubReviewSource`
  * — there is no global cache (sage#56: kill `ghViewerLoginPromise`).
  *
@@ -143,13 +143,13 @@ async function fetchRenderedSageDiscussions(
   const login = JSON.stringify(sageLogin);
   const heading = JSON.stringify(SAGE_REVIEW_HEADING_MARKER);
   const selection = `.[] | select(.user.login == ${login} and ((.body // "") | startswith(${heading}))) | {body, user, created_at} | @json`;
-  const since = previousFetchAt ? `?since=${encodeURIComponent(overlappingSince(previousFetchAt))}` : "";
+  const since = previousFetchAt ? `&since=${encodeURIComponent(overlappingSince(previousFetchAt))}` : "";
   return runGh([
     "api", // glossary: allow(api) — immutable GitHub CLI subcommand.
     "--paginate",
     "--jq",
     selection,
-    `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments${since}`,
+    `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments?per_page=100${since}`,
   ]);
 }
 

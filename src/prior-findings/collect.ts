@@ -76,7 +76,10 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         const reviewedCommit = review.commitId ?? parseSageReviewedCommit(review.body);
         if (reviewedCommit) {
           const hasTimestampTie =
-            review.postedAt !== undefined && review.postedAt === latestReviewCommitPostedAt;
+            latestReviewCommitId !== undefined &&
+            (review.postedAt === undefined ||
+              latestReviewCommitPostedAt === undefined ||
+              review.postedAt === latestReviewCommitPostedAt);
           if (hasTimestampTie && latestReviewCommitId !== reviewedCommit) {
             // GitHub timestamps are second-granular across distinct review and
             // discussion resources. Their relative order is unknowable, so do
