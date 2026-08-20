@@ -182,7 +182,7 @@ function parseRenderedSageDiscussions(stdout: string): z.infer<typeof CommentSch
 }
 
 async function fetchViewerLogin(runGh: RunGh): Promise<string> {
-  const out = await runGh(["api", "user"]);
+  const out = await runGh(["api", "user"]); // glossary: allow(api) — immutable GitHub CLI subcommand.
   const raw = parseJson(out.stdout, "user");
   const parsed = UserSchema.safeParse(raw);
   if (!parsed.success) {

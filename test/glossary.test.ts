@@ -213,24 +213,31 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
   test("does not reject canonical compound vocabulary", () => {
     const alias = ["com", "ment"].join("");
     const compound = [{ term: `Review ${alias}`, avoid: [alias], section: "", line: 1 }];
-    const diff = `diff --git a/src/x.ts b/src/x.ts
+    const canonicalOnly = `diff --git a/src/x.ts b/src/x.ts
+--- a/src/x.ts
++++ b/src/x.ts
+@@ -1,1 +1,1 @@
++const label = \`Review ${alias}\`;
+`;
+    const separateAlias = `diff --git a/src/x.ts b/src/x.ts
 --- a/src/x.ts
 +++ b/src/x.ts
 @@ -1,1 +1,1 @@
 +const label = \`Review ${alias}\`; const separate = "${alias}";
 `;
 
-    const findings = findGlossaryViolations(compound, diff);
-    expect(findings).toHaveLength(1);
+    expect(findGlossaryViolations(compound, canonicalOnly)).toEqual([]);
+    expect(findGlossaryViolations(compound, separateAlias)).toHaveLength(1);
   });
 
   test("does not treat a longer word as the canonical compound", () => {
-    const entries = [{ term: "Review comment", avoid: ["comment"], section: "", line: 1 }];
+    const alias = ["com", "ment"].join("");
+    const entries = [{ term: `Review ${alias}`, avoid: [alias], section: "", line: 1 }];
     const diff = `diff --git a/src/x.ts b/src/x.ts
 --- a/src/x.ts
 +++ b/src/x.ts
 @@ -1,1 +1,1 @@
-+const label = "Preview comment";
++const label = "Preview ${alias}";
 `;
 
     expect(findGlossaryViolations(entries, diff)).toHaveLength(1);

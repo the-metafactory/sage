@@ -181,7 +181,7 @@ function aliasAppearsOutsideCanonicalTerms(
   return literallyAppears(alias, withoutCanonicalCompounds);
 }
 
-const IMMUTABLE_PROTOCOL_LITERALS = new Set(["api"]);
+const IMMUTABLE_PROTOCOL_LITERALS = new Set(["api"]); // glossary: allow(api) — immutable GitHub CLI subcommand.
 
 /** Explicit exemption limited to immutable external protocol literals. */
 function allowsAlias(text: string, alias: string): boolean {
