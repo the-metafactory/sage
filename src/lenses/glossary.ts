@@ -175,7 +175,8 @@ function aliasAppearsOutsideCanonicalTerms(
   for (const entry of entries) {
     if (!literallyAppears(alias, entry.term)) continue;
     const words = entry.term.split(/\s+/).map(escapeRegExp).join("[\\s_-]*");
-    withoutCanonicalCompounds = withoutCanonicalCompounds.replace(new RegExp(words, "gi"), "");
+    const compound = new RegExp(`(?<![A-Za-z0-9_])${words}(?![A-Za-z0-9_])`, "gi");
+    withoutCanonicalCompounds = withoutCanonicalCompounds.replace(compound, "");
   }
   return literallyAppears(alias, withoutCanonicalCompounds);
 }
@@ -186,7 +187,7 @@ const IMMUTABLE_PROTOCOL_LITERALS = new Set(["api"]);
 function allowsAlias(text: string, alias: string): boolean {
   return (
     IMMUTABLE_PROTOCOL_LITERALS.has(alias.toLowerCase()) &&
-    text.includes(`glossary: allow(${alias})`)
+    text.toLowerCase().includes(`glossary: allow(${alias.toLowerCase()})`)
   );
 }
 

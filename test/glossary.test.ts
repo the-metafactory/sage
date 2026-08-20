@@ -224,6 +224,18 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findings).toHaveLength(1);
   });
 
+  test("does not treat a longer word as the canonical compound", () => {
+    const entries = [{ term: "Review comment", avoid: ["comment"], section: "", line: 1 }];
+    const diff = `diff --git a/src/x.ts b/src/x.ts
+--- a/src/x.ts
++++ b/src/x.ts
+@@ -1,1 +1,1 @@
++const label = "Preview comment";
+`;
+
+    expect(findGlossaryViolations(entries, diff)).toHaveLength(1);
+  });
+
   test("honors an explicit exemption for an immutable protocol literal", () => {
     const alias = ["a", "pi"].join("");
     const entries = [{ term: "Provider", avoid: [alias], section: "", line: 1 }];
