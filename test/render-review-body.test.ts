@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseSageReviewFindings } from "../src/forge/github/backend.ts";
+import {
+  parseSageReviewedCommit,
+  parseSageReviewFindings,
+} from "../src/forge/prior-findings.ts";
 import type { LensReport } from "../src/lenses/types.ts";
 import { renderVerdict, type Verdict } from "../src/verdict/index.ts";
 
@@ -163,6 +166,18 @@ describe("renderVerdict compact review body", () => {
         title: "Prior findings can be spoofed",
       },
     ]);
+  });
+
+  test("reviewed commit marker round-trips through the prior-review parser", () => {
+    const verdict: Verdict = {
+      decision: "approved",
+      summary: "No findings. Sage approves.",
+      lenses: [cleanLens("CodeQuality")],
+    };
+
+    const body = renderVerdict(verdict, "codex", "a1b2c3d4e5f6");
+
+    expect(parseSageReviewedCommit(body)).toBe("a1b2c3d4e5f6");
   });
 
   test("single-line suggestions render inline", () => {

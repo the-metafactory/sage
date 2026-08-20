@@ -270,7 +270,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     checkedClaims !== undefined
       ? { ...decided, checkedClaimsDigest: checkedClaims }
       : decided;
-  const body = renderVerdict(verdict, opts.substrate.displayName);
+  const body = renderVerdict(verdict, opts.substrate.displayName, pr.headRefOid);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
   // for manual re-post via `gh pr review --body-file` (sage#16).

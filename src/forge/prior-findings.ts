@@ -18,6 +18,7 @@
 
 import type { PriorReviewFinding } from "./types.ts";
 import { parseCheckedClaimsMarker } from "../util/claims.ts";
+import { parseReviewedCommitMarker } from "../util/review-commit.ts";
 
 const PRIOR_FINDING_RE =
   /^- \*\*\[(blocker|important|suggestion|nit)\]\*\* `([^`]+):(\d+)` — \*\*([^*]+)\*\*/gm;
@@ -32,6 +33,12 @@ const REVIEW_HEADING_MARKER = "## Sage code review";
 export function parseSageCheckedClaims(body: string): string | undefined {
   if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
   return parseCheckedClaimsMarker(body);
+}
+
+/** The commit Sage reviewed, when the prior body carries a provenance marker. */
+export function parseSageReviewedCommit(body: string): string | undefined {
+  if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
+  return parseReviewedCommitMarker(body);
 }
 
 export function parseSageReviewFindings(body: string): PriorReviewFinding[] {

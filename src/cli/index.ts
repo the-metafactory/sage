@@ -126,7 +126,11 @@ program
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
-      const body = renderVerdict(result.verdict, selection.substrate.displayName);
+      const body = renderVerdict(
+        result.verdict,
+        selection.substrate.displayName,
+        result.blockMeta.commit_id,
+      );
       // The verdict block MUST be the terminal artefact: cortex's
       // extractVerdictBlock picks the LAST ```json fence in stdout.
       const out = opts.emitVerdictBlock

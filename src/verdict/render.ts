@@ -1,5 +1,6 @@
 import type { Verdict } from "./types.ts";
 import { renderCheckedClaimsMarker } from "../util/claims.ts";
+import { renderReviewedCommitMarker } from "../util/review-commit.ts";
 import { summarizeConvergence, type ConvergenceSummary } from "./convergence.ts";
 
 export function formatConvergenceLine(convergence: ConvergenceSummary): string {
@@ -21,7 +22,11 @@ export function formatConvergenceLine(convergence: ConvergenceSummary): string {
  * string. Used by `reviewPr` (workflow.ts) before posting, and by
  * `sage review` (cli/index.ts) for stdout display.
  */
-export function renderVerdict(verdict: Verdict, substrateLabel?: string): string {
+export function renderVerdict(
+  verdict: Verdict,
+  substrateLabel?: string,
+  reviewedCommitId?: string,
+): string {
   const convergence = verdict.convergence ?? summarizeConvergence(verdict.lenses);
   const label = convergence.status === "prose-only"
     ? `${verdict.decision} (prose only)`
@@ -61,7 +66,10 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
   const claimsMarker = verdict.checkedClaimsDigest
     ? `\n${renderCheckedClaimsMarker(verdict.checkedClaimsDigest)}`
     : "";
-  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._${claimsMarker}`;
+  const reviewedCommitMarker = reviewedCommitId
+    ? renderReviewedCommitMarker(reviewedCommitId)
+    : undefined;
+  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._${claimsMarker}${reviewedCommitMarker ? `\n${reviewedCommitMarker}` : ""}`;
   return [head, ...sections, footer].join("\n\n");
 }
 

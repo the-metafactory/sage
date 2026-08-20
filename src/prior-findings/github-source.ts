@@ -1,10 +1,12 @@
 /**
  * GitHub `ForgeReviewSource` Adapter.
  *
- * Wraps `gh api repos/.../pulls/N/reviews` (paginated + slurped) plus
- * `gh api user` for the trust-gate identity. Identity caching lives in
- * the closure returned from `createGitHubReviewSource` — there is no
- * module-level global (issue #56: kill `ghViewerLoginPromise`).
+ * Wraps both `gh api repos/.../pulls/N/reviews` and the issue comments
+ * associated with a pull request (each paginated + slurped), plus `gh api
+ * user` for the trust-gate identity. Sage's self-review fallback posts a
+ * verdict as an issue comment, so both records form the prior-review stream.
+ * Identity caching lives in the closure returned from `createGitHubReviewSource`
+ * — there is no module-level global (issue #56: kill `ghViewerLoginPromise`).
  *
  * Failure modes:
  *   - `/user` throws OR returns a malformed payload  ⇒ `sageLogin: null`
@@ -19,7 +21,7 @@
 import { z } from "zod";
 import { runGh as defaultRunGh } from "../forge/github/backend.ts";
 import type { PrRef } from "../forge/types.ts";
-import type { ForgeReviewSource, ForgeReviewBody } from "./types.ts";
+import type { ForgeReviewSource } from "./types.ts";
 
 /** Subset of the gh subprocess wrapper the Adapter actually needs. */
 export type RunGh = (args: string[]) => Promise<{ stdout: string }>;
@@ -38,6 +40,14 @@ const ReviewSchema = z.object({
 
 /** `gh api --paginate --slurp` returns an array-of-pages. */
 const ReviewPagesSchema = z.array(z.array(ReviewSchema));
+
+const CommentSchema = z.object({
+  body: z.string().nullable().transform((s) => s ?? ""),
+  user: z.object({ login: z.string() }),
+  created_at: z.string(),
+});
+
+const CommentPagesSchema = z.array(z.array(CommentSchema));
 
 const UserSchema = z.object({ login: z.string() });
 
@@ -72,41 +82,73 @@ export function createGitHubReviewSource(
 
   return {
     async fetchReviewBodies(ref: PrRef) {
-      const [reviewsOut, sageLogin] = await Promise.all([
+      const [reviewsOut, commentsOut, sageLogin] = await Promise.all([
         runGh([
           "api",
           "--paginate",
           "--slurp",
           `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`,
         ]),
+        runGh([
+          "api",
+          "--paginate",
+          "--slurp",
+          `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
+        ]),
         resolveSageLogin(),
       ]);
 
-      let rawReviews: unknown;
-      try {
-        rawReviews = JSON.parse(reviewsOut.stdout);
-      } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
-        throw new Error(`gh api reviews returned non-JSON output: ${m}`);
-      }
+      const rawReviews = parseJson(reviewsOut.stdout, "reviews");
+      const rawComments = parseJson(commentsOut.stdout, "comments");
+      const reviews = parsePages(ReviewPagesSchema, rawReviews, ref, "reviews");
+      const comments = parsePages(CommentPagesSchema, rawComments, ref, "comments");
 
-      const parsed = ReviewPagesSchema.safeParse(rawReviews);
-      if (!parsed.success) {
-        throw new Error(
-          `gh api reviews payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
-        );
-      }
+      const bodies = [
+        ...reviews.flat().map((r) => ({
+          authorLogin: r.user.login,
+          body: r.body,
+          ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
+          ...(r.commit_id != null ? { commitId: r.commit_id } : {}),
+        })),
+        ...comments.flat().map((c) => ({
+          authorLogin: c.user.login,
+          body: c.body,
+          postedAt: c.created_at,
+        })),
+      ];
 
-      const bodies: ForgeReviewBody[] = parsed.data.flat().map((r) => ({
-        authorLogin: r.user.login,
-        body: r.body,
-        ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
-        ...(r.commit_id != null ? { commitId: r.commit_id } : {}),
-      }));
+      // GitHub returns each individual source oldest-first, but a comment can
+      // be interleaved with reviews. The Module's "last one wins" provenance
+      // rule needs the combined stream oldest-first too.
+      bodies.sort((a, b) => (a.postedAt ?? "").localeCompare(b.postedAt ?? ""));
 
       return { bodies, sageLogin };
     },
   };
+}
+
+function parseJson(stdout: string, source: "reviews" | "comments"): unknown {
+  try {
+    return JSON.parse(stdout);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    throw new Error(`gh api ${source} returned non-JSON output: ${m}`);
+  }
+}
+
+function parsePages<T extends z.ZodTypeAny>(
+  schema: T,
+  raw: unknown,
+  ref: PrRef,
+  source: "reviews" | "comments",
+): z.infer<T> {
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `gh api ${source} payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
+    );
+  }
+  return parsed.data;
 }
 
 async function fetchViewerLogin(runGh: RunGh): Promise<string> {
