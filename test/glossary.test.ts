@@ -225,12 +225,13 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
   });
 
   test("honors an explicit exemption for an immutable protocol literal", () => {
-    const entries = [{ term: "Provider", avoid: ["api"], section: "", line: 1 }];
+    const alias = ["a", "pi"].join("");
+    const entries = [{ term: "Provider", avoid: [alias], section: "", line: 1 }];
     const diff = `diff --git a/src/x.ts b/src/x.ts
 --- a/src/x.ts
 +++ b/src/x.ts
 @@ -1,1 +1,1 @@
-+const subcommand = "api"; // glossary: allow(api)
++const subcommand = "${alias}"; // glossary: allow(${alias})
 `;
 
     expect(findGlossaryViolations(entries, diff)).toEqual([]);

@@ -308,8 +308,8 @@ describe("GitHub Prior Findings source (sage#116)", () => {
         calls.push(args);
         const path = args.at(-1);
         if (path?.endsWith("/reviews")) return { stdout: JSON.stringify(reviewBodies) };
-        if (path?.endsWith("/comments")) {
-          return { stdout: discussionBodies.map((record) => JSON.stringify(JSON.stringify(record))).join("\n") };
+        if (path?.includes("/comments")) {
+          return { stdout: discussionBodies.map((record) => JSON.stringify(record)).join("\n") };
         }
         throw new Error(`unexpected gh call: ${args.join(" ")}`);
       },
@@ -343,5 +343,9 @@ describe("GitHub Prior Findings source (sage#116)", () => {
         commitId: "sage-review-commit",
       },
     ]);
+
+    await source.fetchReviewBodies(ref);
+    const discussionPaths = calls.map((args) => args.at(-1)).filter((path) => path?.includes("/comments"));
+    expect(discussionPaths[1]).toContain("?since=");
   });
 });

@@ -172,7 +172,7 @@ function aliasAppearsOutsideCanonicalTerms(
   text: string,
 ): boolean {
   const withoutCanonicalCompounds = entries
-    .filter((entry) => literallyAppears(alias, entry.term))
+    .filter((entry) => literallyAppears(alias, entry.term)) // glossary: allow(filter) — standard Array method.
     .reduce((remaining, entry) => {
       const words = entry.term.split(/\s+/).map(escapeRegExp).join("[\\s_-]*");
       return remaining.replace(new RegExp(words, "gi"), "");
