@@ -116,6 +116,72 @@ describe("PriorFindings Module (sage#56)", () => {
     expect(result.findings[0]!.postedAt).toBe("2026-05-01T00:00:00Z");
   });
 
+  test("trusts only Sage's reviewed-commit marker when resolving the latest prior SHA", async () => {
+    const source = {
+      fetchReviewBodies: async () => ({
+        sageLogin: "sage",
+        // The stream is deliberately chronological: an attacker posts last,
+        // but must not be able to move Sage's delta baseline.
+        bodies: [
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:1111111 -->`,
+            postedAt: "2026-08-20T10:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:2222222 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: "Sage-authored PR discussion without a rendered Review heading.",
+            postedAt: "2026-08-20T11:30:00Z",
+          },
+          {
+            authorLogin: "attacker",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:deadbee -->`,
+            postedAt: "2026-08-20T12:00:00Z",
+          },
+        ],
+      }),
+    };
+
+    const prior = await createPriorFindings(source).collect(ref);
+
+    expect(prior.reviewCount).toBe(2);
+    expect(prior.latestReviewCommitId).toBe("2222222");
+  });
+
+  test("withholds a conflicting reviewed commit when Forge timestamps tie", async () => {
+    const source = {
+      fetchReviewBodies: async () => ({
+        sageLogin: "sage",
+        bodies: [
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:1111111 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:2222222 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+          {
+            authorLogin: "sage",
+            body: `## Sage code review — commented\n<!-- sage:reviewed-commit:3333333 -->`,
+            postedAt: "2026-08-20T11:00:00Z",
+          },
+        ],
+      }),
+    };
+
+    const prior = await createPriorFindings(source).collect(ref);
+
+    expect(prior.latestReviewCommitId).toBeUndefined();
+  });
+
   test("status=trust-gate-failed: sageLogin null returns empty findings + reason", async () => {
     const source = createInMemoryReviewSource({
       behavior: {
@@ -175,6 +241,7 @@ describe("Adapter identity cache eviction on transient failure", () => {
         if (attempt === 1) throw new Error("transient ECONNREFUSED");
         return { stdout: JSON.stringify({ login: "sage" }) };
       }
+      if (args.at(-1)?.includes("/comments")) return { stdout: "" };
       // Empty reviews page so fetchReviewBodies just returns no bodies.
       return { stdout: JSON.stringify([[]]) };
     };
@@ -211,5 +278,76 @@ describe("Adapter identity cache eviction on transient failure", () => {
     const r2 = await source.fetchReviewBodies(glRef);
     expect(r2.sageLogin).toBe("sage");
     expect(attempt).toBe(2);
+  });
+});
+
+describe("GitHub Prior Findings source (sage#116)", () => {
+  test("merges Reviews and PR discussions chronologically without losing author data", async () => {
+    process.env.SAGE_REVIEW_AUTHOR_LOGIN = "sage";
+    const reviewBodies = [
+      [
+        {
+          body: "first formal review",
+          user: { login: "another-author" },
+          submitted_at: "2026-08-20T09:00:00Z",
+          commit_id: "review-commit",
+        },
+        {
+          body: "third formal review",
+          user: { login: "sage" },
+          submitted_at: "2026-08-20T11:00:00Z",
+          commit_id: "sage-review-commit",
+        },
+      ],
+    ];
+    const discussionBodies = [
+      {
+        body: "## Sage code review — commented\n\nsecond PR discussion",
+        user: { login: "sage" },
+        created_at: "2026-08-20T10:00:00Z",
+      },
+    ];
+    const calls: string[][] = [];
+    const source = createGitHubReviewSource({
+      runGh: async (args) => {
+        calls.push(args);
+        const path = args.at(-1);
+        if (path?.endsWith("/reviews")) return { stdout: JSON.stringify(reviewBodies) };
+        if (path?.includes("/comments")) {
+          return { stdout: discussionBodies.map((record) => JSON.stringify(record)).join("\n") };
+        }
+        throw new Error(`unexpected gh call: ${args.join(" ")}`);
+      },
+    });
+
+    const sourceSnapshot = await source.fetchReviewBodies(ref);
+
+    expect(calls.map((args) => args.at(-1))).toEqual([
+      "repos/x/y/pulls/1/reviews",
+      "repos/x/y/issues/1/comments?per_page=100",
+    ]);
+    expect(calls[1]).toContain("--jq");
+    expect(calls[1]).not.toContain("--slurp");
+    expect(sourceSnapshot.sageLogin).toBe("sage");
+    expect(sourceSnapshot.bodies).toEqual([
+      {
+        authorLogin: "another-author",
+        body: "first formal review",
+        postedAt: "2026-08-20T09:00:00Z",
+        commitId: "review-commit",
+      },
+      {
+        authorLogin: "sage",
+        body: "## Sage code review — commented\n\nsecond PR discussion",
+        postedAt: "2026-08-20T10:00:00Z",
+      },
+      {
+        authorLogin: "sage",
+        body: "third formal review",
+        postedAt: "2026-08-20T11:00:00Z",
+        commitId: "sage-review-commit",
+      },
+    ]);
+
   });
 });
