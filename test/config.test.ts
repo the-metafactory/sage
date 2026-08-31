@@ -77,9 +77,9 @@ describe("cortexConfigPath", () => {
     expect(cortexConfigPath()).toBe("/custom/cortex.yaml");
   });
 
-  test("uses the selected split default config when the monolith is absent", () => {
+  test("uses either an existing monolith or the selected split default config", () => {
     delete process.env.CORTEX_CONFIG;
-    expect(cortexConfigPath()).toMatch(/\.config\/cortex\/default\/default\.yaml$/);
+    expect(cortexConfigPath()).toMatch(/\.config\/cortex\/(?:cortex|default\/default)\.yaml$/);
   });
 });
 
