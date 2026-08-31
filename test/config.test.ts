@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   resolvePrincipalFromConfig,
   resolveDefaultPrincipal,
+  resolveDefaultStack,
   cortexConfigPath,
 } from "../src/config.ts";
 
@@ -76,8 +77,19 @@ describe("cortexConfigPath", () => {
     expect(cortexConfigPath()).toBe("/custom/cortex.yaml");
   });
 
-  test("defaults under ~/.config/cortex", () => {
+  test("uses either an existing monolith or the selected split default config", () => {
     delete process.env.CORTEX_CONFIG;
-    expect(cortexConfigPath()).toMatch(/\.config\/cortex\/cortex\.yaml$/);
+    expect(cortexConfigPath()).toMatch(/\.config\/cortex\/(?:cortex|default\/default)\.yaml$/);
+  });
+});
+
+describe("split Cortex config", () => {
+  test("resolves the stack segment from stack.id", () => {
+    const p = writeYaml("principal:\n  id: jc\nstack:\n  id: jc/default\n");
+    expect(resolveDefaultStack(p)).toBe("default");
+  });
+
+  test("missing or malformed config has no inferred stack", () => {
+    expect(resolveDefaultStack("/no/such/cortex.yaml")).toBeUndefined();
   });
 });
