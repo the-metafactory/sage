@@ -42,6 +42,7 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).toEqual([
       "exec",
       "--ephemeral",
+      "--skip-git-repo-check",
       "--sandbox",
       "read-only",
       "--model",
@@ -83,6 +84,7 @@ describe("CodexSubstrate", () => {
     expect(captured.argv).toEqual([
       "exec",
       "--ephemeral",
+      "--skip-git-repo-check",
       "--sandbox",
       "workspace-write",
       "--profile",

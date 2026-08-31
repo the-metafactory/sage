@@ -69,6 +69,11 @@ export class CodexSubstrate implements Substrate {
     const args: string[] = [
       "exec",
       "--ephemeral",
+      // A dispatched review is executed by Cortex, whose daemon cwd is not
+      // necessarily the checked-out repository. The PR worktree is supplied
+      // to Codex in the review input, while this bypass only disables Codex's
+      // cwd trust guard; the read-only sandbox remains the safety boundary.
+      "--skip-git-repo-check",
       "--sandbox",
       sandbox,
     ];
