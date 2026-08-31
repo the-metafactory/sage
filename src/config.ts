@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 
 /**
@@ -18,7 +18,20 @@ import { existsSync, readFileSync } from "node:fs";
  * `~/.config/cortex/cortex.yaml` (the monolithic file pilot reads).
  */
 export function cortexConfigPath(): string {
-  return process.env.CORTEX_CONFIG ?? join(homedir(), ".config", "cortex", "cortex.yaml");
+  if (process.env.CORTEX_CONFIG) return process.env.CORTEX_CONFIG;
+
+  const cortexHome = join(homedir(), ".config", "cortex");
+  const monolith = join(cortexHome, "cortex.yaml");
+  if (existsSync(monolith)) return monolith;
+
+  // Cortex config-split deployments retain a small, selected-stack sentinel at
+  // this location. Prefer it over Sage's historic "metafactory" fallback: a
+  // task addressed to the wrong principal is otherwise accepted by NATS but
+  // never claimed by Cortex.
+  const defaultStack = join(cortexHome, "default", "default.yaml");
+  if (existsSync(defaultStack)) return defaultStack;
+
+  return monolith;
 }
 
 /**
@@ -37,7 +50,15 @@ export function resolvePrincipalFromConfig(path: string = cortexConfigPath()): s
       | null
       | undefined;
     const id = doc?.principal?.id;
-    return typeof id === "string" && id !== "" ? id : undefined;
+    if (typeof id === "string" && id !== "") return id;
+
+    // A config-split sentinel is intentionally almost empty. Its basename
+    // selects the stack fragment that contains the principal identity.
+    const stackDoc = Bun.YAML.parse(
+      readFileSync(join(dirname(path), "stacks", `${basename(path, ".yaml")}.yaml`), "utf8"),
+    ) as { principal?: { id?: unknown } } | null | undefined;
+    const stackId = stackDoc?.principal?.id;
+    return typeof stackId === "string" && stackId !== "" ? stackId : undefined;
   } catch {
     return undefined;
   }
@@ -59,4 +80,23 @@ export function resolveDefaultPrincipal(
   resolvePrincipal: () => string | undefined = resolvePrincipalFromConfig,
 ): string {
   return process.env.SAGE_ORG ?? resolvePrincipal() ?? "metafactory";
+}
+
+/** Resolve the selected Cortex stack segment with the same config precedence. */
+export function resolveDefaultStack(path: string = cortexConfigPath()): string | undefined {
+  try {
+    const doc = Bun.YAML.parse(readFileSync(path, "utf8")) as
+      | { stack?: { id?: unknown } }
+      | null
+      | undefined;
+    const id = doc?.stack?.id;
+    if (typeof id === "string") {
+      const [, stack] = id.split("/", 2);
+      if (stack) return stack;
+    }
+    const inferred = basename(path, ".yaml");
+    return inferred === "cortex" ? undefined : inferred;
+  } catch {
+    return undefined;
+  }
 }

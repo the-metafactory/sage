@@ -4,7 +4,7 @@ import { writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import packageJson from "../../package.json";
-import { resolveDefaultPrincipal } from "../config.ts";
+import { cortexConfigPath, resolveDefaultPrincipal, resolveDefaultStack } from "../config.ts";
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
@@ -152,6 +152,16 @@ program
 // use `sage dispatch <pr-ref>` (publisher half — receiver is cortex).
 
 program
+  .command("context")
+  .description("Print the Cortex dispatch context Sage will use; does not connect or publish.")
+  .action(() => {
+    const config = cortexConfigPath();
+    const principal = resolveDefaultPrincipal();
+    const stack = process.env.SAGE_STACK ?? resolveDefaultStack() ?? "default";
+    console.log(JSON.stringify({ config, principal, stack }, null, 2));
+  });
+
+program
   .command("dispatch")
   .description(
     "Publish a code-review task envelope to the Myelin bus and stream the verdict back. Requires a running cortex with sage wired as an in-process agent (sage#40).",
@@ -160,7 +170,7 @@ program
   .option("--nats <url>", "NATS broker URL", process.env.NATS_URL ?? "nats://localhost:4222")
   .option(
     "--org <org>",
-    "Org/principal segment of the publish subject (must match the cortex consumer's principal). Default: SAGE_ORG env → cortex.yaml principal.id → metafactory (sage#85).",
+    "Principal segment of the publish subject. Default: SAGE_ORG → selected Cortex config (including split default/default.yaml) → metafactory.",
     resolveDefaultPrincipal(),
   )
   .option(
@@ -195,7 +205,7 @@ program
   .option(
     "--stack <name>",
     "IoAW operator stack segment (defaults to SAGE_STACK env or \"default\")",
-    process.env.SAGE_STACK,
+    process.env.SAGE_STACK ?? resolveDefaultStack(),
   )
   .action(
     async (
