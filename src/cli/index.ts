@@ -14,7 +14,8 @@ import {
   reviewPr,
 } from "../lenses/workflow.ts";
 import { selectSubstrate } from "../substrate/select.ts";
-import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
+import { renderVerdictBlock } from "../verdict/index.ts";
+import { renderReviewComment } from "../review-comment.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -118,7 +119,7 @@ program
       console.error(
         `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
-      const result = await reviewPr({
+      const review = await reviewPr({
         ref,
         forge: forgeSelection.backend,
         post: opts.post,
@@ -126,15 +127,19 @@ program
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
       });
-      const body = renderVerdict(result.verdict, selection.substrate.displayName);
+      const body = renderReviewComment(
+        review.verdict,
+        selection.substrate.displayName,
+        review.blockMeta.commit_id,
+      );
       // The verdict block MUST be the terminal artefact: cortex's
       // extractVerdictBlock picks the LAST ```json fence in stdout.
       const out = opts.emitVerdictBlock
-        ? `${body}\n\n${renderVerdictBlock(result.verdict, result.blockMeta)}`
+        ? `${body}\n\n${renderVerdictBlock(review.verdict, review.blockMeta)}`
         : body;
       console.log(out);
-      console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
-      if (result.verdict.decision === "changes-requested") {
+      console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
+      if (review.verdict.decision === "changes-requested") {
         process.exit(1);
       }
     },

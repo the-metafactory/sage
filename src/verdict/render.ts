@@ -21,7 +21,10 @@ export function formatConvergenceLine(convergence: ConvergenceSummary): string {
  * string. Used by `reviewPr` (workflow.ts) before posting, and by
  * `sage review` (cli/index.ts) for stdout display.
  */
-export function renderVerdict(verdict: Verdict, substrateLabel?: string): string {
+export function renderVerdict(
+  verdict: Verdict,
+  substrateLabel?: string,
+): string {
   const convergence = verdict.convergence ?? summarizeConvergence(verdict.lenses);
   const label = convergence.status === "prose-only"
     ? `${verdict.decision} (prose only)`
