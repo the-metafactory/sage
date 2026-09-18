@@ -4,6 +4,7 @@ import { CorpusManifestSchema } from "../src/typesafe/corpus.ts";
 import {
   generateEvaluationReport,
   renderEvaluationReport,
+  type EvaluationThresholds,
   type ReviewerLabel,
 } from "../src/typesafe/report.ts";
 import type { ShadowComparisonRecord } from "../src/typesafe/types.ts";
@@ -94,6 +95,21 @@ describe("TypeSafe corpus manifest", () => {
 });
 
 describe("TypeSafe evaluation report", () => {
+  const approvedThresholds: EvaluationThresholds = {
+    status: "approved",
+    approvedBy: "principal",
+    approvedAt: "2026-09-18T20:00:00.000Z",
+    minimumLabels: 2,
+    stopBelowPrecision: 0.5,
+    proposeMinimumPrecision: 0.8,
+    proposeMinimumUsefulness: 0.8,
+    proposeMaximumFailureRate: 0,
+    proposeMaximumCostUsdPerRecord: 0.001,
+    proposeMaximumP95LatencyMs: 1000,
+    proposeMinimumRepeatAgreement: 0.9,
+    proposeMaximumProbabilitySpread: 0.25,
+  };
+
   test("reports per-question labels, repeatability, costs, and a bounded recommendation", () => {
     const records = [record("r1", "recommend", 0.9), record("r2", "recommend", 0.7)];
     const labels: ReviewerLabel[] = records.map((item) => ({
@@ -119,5 +135,28 @@ describe("TypeSafe evaluation report", () => {
     expect(markdown).toContain("Independent reviewer labels");
     expect(markdown).toContain("Maximum probability spread");
     expect(markdown).toContain("Estimated provider cost");
+  });
+
+  test("requires cost, latency, and repeatability gates before proposing integration", () => {
+    const records = [record("r1", "recommend", 0.9), record("r2", "recommend", 0.8)];
+    const labels: ReviewerLabel[] = records.map((item) => ({
+      recordId: item.recordId,
+      questionId: "lens.security.v1",
+      reviewer: "independent-reviewer",
+      usefulness: "useful",
+      evidenceSufficient: true,
+      groundTruthPositive: true,
+    }));
+
+    expect(generateEvaluationReport(records, labels, approvedThresholds).recommendation)
+      .toBe("propose_separately_authorized_integration");
+
+    const expensive = records.map((item) => ({ ...item, estimatedCostUsd: 1 }));
+    expect(generateEvaluationReport(expensive, labels, approvedThresholds).recommendation)
+      .toBe("iterate");
+
+    const inconsistent = [record("r1", "recommend", 0.9), record("r2", "do_not_recommend", 0.9)];
+    expect(generateEvaluationReport(inconsistent, labels, approvedThresholds).recommendation)
+      .toBe("iterate");
   });
 });

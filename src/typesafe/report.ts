@@ -24,6 +24,10 @@ export const EvaluationThresholdsSchema = z.discriminatedUnion("status", [
     proposeMinimumPrecision: z.number().min(0).max(1),
     proposeMinimumUsefulness: z.number().min(0).max(1),
     proposeMaximumFailureRate: z.number().min(0).max(1),
+    proposeMaximumCostUsdPerRecord: z.number().nonnegative(),
+    proposeMaximumP95LatencyMs: z.number().int().positive(),
+    proposeMinimumRepeatAgreement: z.number().min(0).max(1),
+    proposeMaximumProbabilitySpread: z.number().min(0).max(1),
   }),
 ]);
 
@@ -187,6 +191,11 @@ export function generateEvaluationReport(
   const failedRecords = records.filter((record) => record.failureReason !== null).length;
   const failureRate = records.length > 0 ? failedRecords / records.length : 1;
   const usefulnessRate = decidedLabels > 0 ? useful / decidedLabels : 0;
+  const averageCostUsd = records.length > 0
+    ? records.reduce((sum, record) => sum + record.estimatedCostUsd, 0) / records.length
+    : Number.POSITIVE_INFINITY;
+  const repeat = repeatability(records);
+  const p95LatencyMs = percentile(records.map((record) => record.latencyMs), 0.95);
 
   let recommendation: EvaluationReport["recommendation"] = "iterate";
   let recommendationReason =
@@ -205,11 +214,17 @@ export function generateEvaluationReport(
     labeled >= thresholds.minimumLabels &&
     (meanPrecision ?? 0) >= thresholds.proposeMinimumPrecision &&
     usefulnessRate >= thresholds.proposeMinimumUsefulness &&
-    failureRate <= thresholds.proposeMaximumFailureRate
+    failureRate <= thresholds.proposeMaximumFailureRate &&
+    averageCostUsd <= thresholds.proposeMaximumCostUsdPerRecord &&
+    p95LatencyMs <= thresholds.proposeMaximumP95LatencyMs &&
+    repeat.meanAgreement !== null &&
+    repeat.meanAgreement >= thresholds.proposeMinimumRepeatAgreement &&
+    repeat.maxProbabilitySpread !== null &&
+    repeat.maxProbabilitySpread <= thresholds.proposeMaximumProbabilitySpread
   ) {
     recommendation = "propose_separately_authorized_integration";
     recommendationReason =
-      "The bounded corpus cleared the predeclared precision, usefulness, and failure thresholds.";
+      "The bounded corpus cleared the predeclared precision, usefulness, failure, cost, latency, and repeatability thresholds.";
   } else if (thresholds.status === "approved" && labeled > 0) {
     recommendationReason =
       "The labeled evidence does not yet clear either the stop or production-proposal threshold.";
@@ -234,14 +249,14 @@ export function generateEvaluationReport(
     ),
     latencyMs: {
       p50: percentile(records.map((record) => record.latencyMs), 0.5),
-      p95: percentile(records.map((record) => record.latencyMs), 0.95),
+      p95: p95LatencyMs,
     },
     usage: {
       inputTokens: records.reduce((sum, record) => sum + record.usage.inputTokens, 0),
       outputTokens: records.reduce((sum, record) => sum + record.usage.outputTokens, 0),
       estimatedCostUsd: records.reduce((sum, record) => sum + record.estimatedCostUsd, 0),
     },
-    repeatability: repeatability(records),
+    repeatability: repeat,
     questions,
     recommendation,
     recommendationReason,
