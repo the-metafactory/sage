@@ -40,6 +40,7 @@ import {
 } from "./scheduler.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensReport } from "./types.ts";
+import type { TypeSafeShadowObserver } from "../typesafe/types.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -81,6 +82,13 @@ export interface ReviewOptions {
   onPriorFindingsDegraded?: (status: PriorFindingsStatus, reason: string) => void | Promise<void>;
   /** Progress callback fired after each lens completes — envelope emission. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
+  /**
+   * Optional TypeSafe proof-of-value observer (sage#125). The workflow invokes
+   * it only after Sage has selected lenses, decided the Verdict, persisted it,
+   * and completed any Forge post. It receives a deep-frozen copy and has no
+   * return channel into review behavior. Observer failures are fail-open.
+   */
+  typeSafeShadow?: TypeSafeShadowObserver;
 }
 
 export interface ReviewResult {
@@ -306,7 +314,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     inline_comments: posted ? inlineComments.length : 0,
   };
 
-  return {
+  const result: ReviewResult = {
     verdict,
     posted,
     blockMeta,
@@ -315,6 +323,42 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),
   };
+
+  await notifyTypeSafeShadow(opts.typeSafeShadow, {
+    ref: opts.ref,
+    pr,
+    diff,
+    baselineLensNames: applicableLenses.map((lens) => lens.name),
+    lensReports: enrichedLensReports,
+    verdict,
+    posted,
+  });
+
+  return result;
+}
+
+async function notifyTypeSafeShadow(
+  observer: TypeSafeShadowObserver | undefined,
+  input: Parameters<TypeSafeShadowObserver["observe"]>[0],
+): Promise<void> {
+  if (!observer) return;
+  try {
+    const copy = structuredClone(input);
+    deepFreeze(copy);
+    await observer.observe(copy);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] TypeSafe shadow observer failed open: ${message.slice(0, 500)}`);
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
 }
 
 /**
