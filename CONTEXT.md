@@ -135,8 +135,8 @@ The *bounded typed-decision integration* under `src/typesafe/`. It sends a
 redacted, size-limited state to a pinned TypeSafe Jev endpoint and accepts only
 schema-validated choices and probabilities. It is not a Substrate: it cannot
 run a Lens, produce prose, add or suppress a Finding, change a Verdict, or
-cause a Forge side effect. It is also outside the Provider term because it does
-not back a Substrate. Direct HTTP is confined to this adapter, runs only
+cause a Forge side effect. It is also outside the term defined immediately
+above because it does not back a Substrate. Direct HTTP is confined to this adapter, runs only
 after Sage has completed its ordinary Review, is authorization-gated and
 fail-open, and records advisory shadow evidence locally.
 _Avoid_: TypeSafe substrate, Jev lens, Jev peer
