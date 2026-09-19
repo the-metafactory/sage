@@ -26,9 +26,10 @@ const SourceAnchorSchema = z.object({
   failureReason: z.string().nullable(),
 }).passthrough();
 
+const roundAuditNumber = (value: number): number =>
+  Number.isInteger(value) ? value : Number(value.toFixed(12));
+
 function sanitize(record: ShadowComparisonRecord): ShadowComparisonRecord {
-  const roundAuditNumber = (value: number): number =>
-    Number.isInteger(value) ? value : Number(value.toFixed(12));
   const sanitizeStage = (stage: ShadowComparisonRecord["routing"]) => ({
     ...stage,
     signals: stage.signals.map((signal) => ({
