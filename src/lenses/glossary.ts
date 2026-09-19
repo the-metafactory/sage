@@ -154,10 +154,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Literal, case-insensitive, word-boundary-respecting containment check. */
+/** Literal, case-insensitive containment check excluding identifier properties. */
 function literallyAppears(needle: string, haystack: string): boolean {
   if (!needle) return false;
-  const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapeRegExp(needle)}(?![A-Za-z0-9_])`, "i");
+  const pattern = new RegExp(`(?<![A-Za-z0-9_.])${escapeRegExp(needle)}(?![A-Za-z0-9_])`, "i");
   return pattern.test(haystack);
 }
 

@@ -210,13 +210,13 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findGlossaryViolations(entries, diff)).toEqual([]);
   });
 
-  test("does not reinterpret external TypeSafe contract vocabulary as Sage aliases", () => {
-    const diff = `diff --git a/src/typesafe/transport.ts b/src/typesafe/transport.ts
---- a/src/typesafe/transport.ts
-+++ b/src/typesafe/transport.ts
+  test("does not reinterpret a standard property identifier as domain prose", () => {
+    const diff = `diff --git a/src/errors.ts b/src/errors.ts
+--- a/src/errors.ts
++++ b/src/errors.ts
 @@ -1,1 +1,2 @@
- const endpoint = "/api/v1/system-one/run";
-+const request = { model: "jev-1.13.0", status: "ready" };
+ const error = new Error();
++const detail = error.message;
 `;
     expect(findGlossaryViolations(entries, diff)).toEqual([]);
   });
