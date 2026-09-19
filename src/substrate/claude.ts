@@ -97,8 +97,9 @@ export class ClaudeSubstrate implements Substrate {
         "--no-session-persistence",
         "--no-chrome",
       );
-      // Claude interprets an empty value as disabling all built-in tools while
-      // preserving normal authentication, unlike --bare.
+      // `claude --help` defines an empty --tools value as disabling every
+      // built-in tool; this keeps ordinary authentication available, unlike
+      // --bare.
       args.push("--tools", opts.tools.join(","));
     }
     if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);
