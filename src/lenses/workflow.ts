@@ -41,6 +41,7 @@ import {
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensReport } from "./types.ts";
 import type {
+  CompletedReviewAnchor,
   CompletedReviewObservation,
   CompletedReviewObserver,
 } from "./completed-review-observer.ts";
@@ -146,11 +147,21 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
-  const [pr, diff, priorResult] = await Promise.all([
+  const [pr, priorResult] = await Promise.all([
     opts.forge.prView(opts.ref),
-    opts.forge.prDiff(opts.ref),
     priorFindingsModule.collect(opts.ref),
   ]);
+  const observerAccepted = acceptsCompletedReviewObserver(opts.completedReviewObserver, {
+    ref: opts.ref,
+    headSha: pr.headRefOid,
+  });
+  const diff = await opts.forge.prDiff(opts.ref);
+  const observerDiffHeadStable = !observerAccepted || await observerHeadMatches(
+    opts.forge,
+    opts.ref,
+    pr.headRefOid,
+    "after diff retrieval",
+  );
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
@@ -328,20 +339,19 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(postError !== undefined ? { postError } : {}),
   };
 
-  const completedObservation: CompletedReviewObservation = {
-    ref: opts.ref,
-    pr,
-    diff,
-    selectedLensNames: applicableLenses.map((lens) => lens.name),
-    lensReports: enrichedLensReports,
-    verdict,
-    posted,
-  };
-  const observerAccepted = acceptsCompletedReviewObserver(
-    opts.completedReviewObserver,
-    completedObservation,
-  );
-  const observerCompletion = observerAccepted
+  const completedObservation: CompletedReviewObservation | undefined =
+    observerAccepted && observerDiffHeadStable
+      ? {
+          ref: opts.ref,
+          pr,
+          diff,
+          selectedLensNames: applicableLenses.map((lens) => lens.name),
+          lensReports: enrichedLensReports,
+          verdict,
+          posted,
+        }
+      : undefined;
+  const observerCompletion = completedObservation
     ? notifyCompletedReviewObserver(opts.completedReviewObserver!, opts.forge, completedObservation)
     : Promise.resolve();
   if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
@@ -351,11 +361,31 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
 function acceptsCompletedReviewObserver(
   observer: CompletedReviewObserver | undefined,
-  input: CompletedReviewObservation,
+  anchor: CompletedReviewAnchor,
 ): boolean {
   if (!observer) return false;
   try {
-    return !observer.accepts || observer.accepts({ ref: input.ref, headSha: input.pr.headRefOid });
+    return !observer.accepts || observer.accepts(anchor);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
+    return false;
+  }
+}
+
+async function observerHeadMatches(
+  forge: ForgeBackend,
+  ref: PrRef,
+  expectedHeadSha: string,
+  stage: string,
+): Promise<boolean> {
+  try {
+    const currentHeadSha = (await forge.prView(ref)).headRefOid;
+    if (currentHeadSha === expectedHeadSha) return true;
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer skipped: PR head changed ${stage}`);
+    return false;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     // eslint-disable-next-line no-console
@@ -373,12 +403,7 @@ async function notifyCompletedReviewObserver(
     // Move snapshot work to a later event-loop turn so the caller receives
     // the authoritative Review before observer allocation or traversal.
     await new Promise<void>((resolve) => setImmediate(resolve));
-    const headAfterDiff = (await forge.prView(input.ref)).headRefOid;
-    if (headAfterDiff !== input.pr.headRefOid) {
-      // eslint-disable-next-line no-console
-      console.error("[workflow] completed Review observer skipped: PR head changed after diff retrieval");
-      return;
-    }
+    if (!await observerHeadMatches(forge, input.ref, input.pr.headRefOid, "before observation")) return;
     const copy = structuredClone(input);
     deepFreeze(copy);
     await observer.observe(copy);

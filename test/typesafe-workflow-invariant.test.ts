@@ -235,7 +235,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(observerFinished).toBe(true);
   });
 
-  test("revalidates the PR head once before advisory observation", async () => {
+  test("revalidates the PR head after diff retrieval and before advisory observation", async () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     let prViewCalls = 0;
     let observed = false;
@@ -257,14 +257,14 @@ describe("review workflow TypeSafe authority boundary", () => {
       },
     });
 
-    expect(prViewCalls).toBe(1);
+    expect(prViewCalls).toBe(2);
     expect(observed).toBe(false);
     await result.observerCompletion;
-    expect(prViewCalls).toBe(2);
+    expect(prViewCalls).toBe(3);
     expect(observed).toBe(true);
   });
 
-  test("skips observation when the PR head changes after diff retrieval", async () => {
+  test("skips observation when the PR head changes during diff retrieval", async () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     let prViewCalls = 0;
     let observed = false;

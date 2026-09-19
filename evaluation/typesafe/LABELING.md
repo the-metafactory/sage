@@ -56,6 +56,8 @@ coordinates.
 | `#389` | `4c2dfe5eaa4c` | `pad` glossary alias | negative |
 | `#389` | `936984df67b5` | `pad` glossary alias | negative |
 
-The audit is reproducible from the exact heads in `corpus.json`, the sanitized
-decision records in `live-evidence/`, and the label file. The unredacted local
-records remain mode `0600` and are not committed.
+The audit inputs are traceable to the exact heads in `corpus.json`, the
+sanitized decision records in `live-evidence/`, and the label file. Reproducing
+the ground-truth judgments requires re-fetching those exact heads and reviewing
+their source evidence; the sanitized records and labels alone are insufficient.
+The unredacted local records remain mode `0600` and are not committed.
