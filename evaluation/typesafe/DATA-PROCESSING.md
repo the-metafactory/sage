@@ -34,15 +34,17 @@ principal accepted US processing and ordinary retention; zero-data-retention
 is not assumed. This approval does not extend beyond the exact heads and
 three-run evaluation recorded in the manifest.
 
-On 2026-09-19, Jens-Christian Fischer separately authorized this machine to
-keep the same bounded, redacted, shadow-only observer enabled until he
-explicitly turns it off, noting that the active work for the next few days is
-game development. The local `0600` manifest uses
-`authorizationMode: approved-repositories-until-revoked` and names the
-approved non-critical game repositories. Sage still runs normally elsewhere,
-but reviews outside that allowlist never call TypeSafe. This authorization is
-not the shipped corpus default. New records identify which authorization mode
-was used. Revocation is performed by removing
+The linked issue receipt records Jens-Christian Fischer's 2026-09-19 approval
+to install the same bounded, redacted, shadow-only observer on this machine
+after merge and keep it enabled until he explicitly turns it off. The planned
+machine-local mode-`0600` manifest will use
+`authorizationMode: approved-repositories-until-revoked` and name only the
+approved non-critical game repositories. Neither that manifest nor the local
+on/off switch is committed; their presence must be verified on the machine.
+Until installation, the shipped `frozen-corpus` manifest remains disabled by
+default. After installation, Sage still runs normally elsewhere, but reviews
+outside the local allowlist never call TypeSafe. New records identify which
+authorization mode was used. Revocation is performed by removing
 `~/.config/sage/typesafe.env` or setting `SAGE_TYPESAFE_MODE=off`.
 
 References reviewed: [model/data-handling documentation](https://docs.typesafe.ai/models),

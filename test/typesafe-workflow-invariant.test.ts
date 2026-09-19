@@ -66,6 +66,35 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("review workflow TypeSafe authority boundary", () => {
+  test("keeps ordinary Forge reads concurrent when no observer is configured", async () => {
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    let releasePrView!: () => void;
+    const blockedPrView = new Promise<void>((resolve) => { releasePrView = resolve; });
+    let diffStarted = false;
+    const concurrentForge = {
+      ...forge,
+      prView: async () => {
+        await blockedPrView;
+        return pr;
+      },
+      prDiff: async () => {
+        diffStarted = true;
+        return diff;
+      },
+    };
+
+    const pendingReview = reviewPr({
+      ref: { owner: "x", repo: "y", number: 125 },
+      forge: concurrentForge,
+      substrate,
+      post: false,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(diffStarted).toBe(true);
+    releasePrView();
+    await pendingReview;
+  });
+
   test("observer runs after posting and cannot mutate or change the ordinary result", async () => {
     const events: string[] = [];
     const observingForge = makeStubForge({

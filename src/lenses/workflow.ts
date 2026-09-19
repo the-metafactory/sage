@@ -8,6 +8,7 @@ import type {
 import { createPriorFindings } from "../prior-findings/index.ts";
 import type {
   PriorFindings,
+  PriorFindingsResult,
   PriorFindingsStatus,
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
@@ -147,21 +148,34 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
-  const [pr, priorResult] = await Promise.all([
-    opts.forge.prView(opts.ref),
-    priorFindingsModule.collect(opts.ref),
-  ]);
-  const observerAccepted = acceptsCompletedReviewObserver(opts.completedReviewObserver, {
-    ref: opts.ref,
-    headSha: pr.headRefOid,
-  });
-  const diff = await opts.forge.prDiff(opts.ref);
-  const observerDiffHeadStable = !observerAccepted || await observerHeadMatches(
-    opts.forge,
-    opts.ref,
-    pr.headRefOid,
-    "after diff retrieval",
-  );
+  let pr: PrMetadata;
+  let diff: string;
+  let priorResult: PriorFindingsResult;
+  let observerAccepted = false;
+  let observerDiffHeadStable = true;
+  if (!opts.completedReviewObserver) {
+    [pr, diff, priorResult] = await Promise.all([
+      opts.forge.prView(opts.ref),
+      opts.forge.prDiff(opts.ref),
+      priorFindingsModule.collect(opts.ref),
+    ]);
+  } else {
+    [pr, priorResult] = await Promise.all([
+      opts.forge.prView(opts.ref),
+      priorFindingsModule.collect(opts.ref),
+    ]);
+    observerAccepted = acceptsCompletedReviewObserver(opts.completedReviewObserver, {
+      ref: opts.ref,
+      headSha: pr.headRefOid,
+    });
+    diff = await opts.forge.prDiff(opts.ref);
+    observerDiffHeadStable = !observerAccepted || await observerHeadMatches(
+      opts.forge,
+      opts.ref,
+      pr.headRefOid,
+      "after diff retrieval",
+    );
+  }
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
