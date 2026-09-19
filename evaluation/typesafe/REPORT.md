@@ -6,7 +6,7 @@ This snapshot covers two of the five approved immutable Seelite corpus heads,
 each with one complete Sage baseline and three sequential Jev judgments over
 the same bounded state:
 
-- `jcfischer/seelite#347` at `a6995ab79d48286070823914671e1ecf37444efe`
+- `jcfischer/seelite#347` at `a6995ab79d48286070823<wbr>914671e1ecf37444efe`
 - `jcfischer/seelite#354` at `f2297e371d2c9b608166742995069aafd29a5e4c`
 
 Both reviews ran through Claude Code without posting to GitHub. All 14 Sage
