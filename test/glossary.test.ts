@@ -210,6 +210,17 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findGlossaryViolations(entries, diff)).toEqual([]);
   });
 
+  test("does not reinterpret a standard property identifier as domain prose", () => {
+    const diff = `diff --git a/src/errors.ts b/src/errors.ts
+--- a/src/errors.ts
++++ b/src/errors.ts
+@@ -1,1 +1,2 @@
+ const error = new Error();
++const detail = error.message;
+`;
+    expect(findGlossaryViolations(entries, diff)).toEqual([]);
+  });
+
   test("computes correct new-revision line numbers across multiple hunks", () => {
     const diff = `diff --git a/a.ts b/a.ts
 --- a/a.ts

@@ -114,6 +114,10 @@ _Avoid_: model, LLM, runner, harness (bare)
 A *concrete impl* of the Substrate interface — `PiSubstrate`, `ClaudeSubstrate`, `CodexSubstrate`. Each wraps one harness binary and absorbs its JSON-extraction quirks.
 _Avoid_: substrate client, substrate driver
 
+**Lens tool selection**:
+The *explicit tool selection attached to a Lens run*. Every Lens selects an empty tool set. The Claude adapter enforces that selection and prevents PR titles, bodies, diffs, and repository context from activating local settings, MCP servers, browser integration, sessions, slash commands, or built-in tools. Pi and Codex retain their existing adapter-specific safety behavior; this contract does not claim they enforce an empty tool set.
+_Avoid_: sandboxed review, bare mode
+
 **Process-level substrate**:
 The *binding rule*: Substrate is resolved once at host startup (CLI flag > env > config > pi) and applies to every Review this process handles. Per-task Substrate selection is deliberately out of scope — same Persona on different Substrates must produce envelopes that differ only in `extensions.substrate`, so A/B comparison stays clean.
 _Avoid_: per-task substrate (the rejected alternative)
@@ -129,6 +133,17 @@ _Avoid_: query, request, message (those are bus terms)
 **Provider**:
 The *LLM vendor* behind a Substrate (Anthropic, OpenAI, OpenRouter, Gemini, …). Sage forwards Provider API keys to the Substrate subprocess via an explicit env allow-list (`src/substrate/env.ts`) and never sees Provider responses directly — the Substrate is the only consumer.
 _Avoid_: vendor, model provider, API
+
+**System One adapter**:
+The *bounded typed-decision integration* under `src/typesafe/`. It sends a
+redacted, size-limited state to a pinned TypeSafe Jev endpoint and accepts only
+schema-validated choices and probabilities. It is not a Substrate: it cannot
+run a Lens, produce prose, add or suppress a Finding, change a Verdict, or
+cause a Forge side effect. It is outside the Substrate boundary and never
+runs a Lens. Direct HTTP is confined to this adapter, runs only
+after Sage has completed its ordinary Review, is authorization-gated and
+fail-open, and records advisory shadow evidence locally.
+_Avoid_: TypeSafe substrate, Jev lens, Jev peer
 
 ### Sage-specific bus surfaces
 
@@ -166,6 +181,9 @@ _Avoid_: direct subject, named subject
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
+- A **System One adapter** may call its typed decision service directly, but it
+  observes only a completed Review and has no path back into Lens selection,
+  Findings, Verdict, or Forge behavior.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review, and are what a **Restated Finding** is matched against.
 - **Checked claims** are what makes HonestOracle's description trigger settle: unchecked or unknown ⇒ the Lens runs; already checked ⇒ it does not.
 - A **Restated Finding** is counted in the convergence summary but never subtracted from it: a round whose restated count equals its Finding count produced no new information, which is a signal to the loop, not a reason to hide a Finding.
@@ -186,6 +204,7 @@ _Avoid_: direct subject, named subject
 
 ## Flagged ambiguities
 
+- **`substrate` vs upstream inference service.** Two layers, often conflated. A Substrate is the coding-tool subprocess Sage launches; its upstream service performs inference. A Lens speaks only to the Substrate. The System One adapter is a documented exception outside the Lens/Substrate boundary: it calls a typed-decision service directly only after Review completion.
 - **`review` was overloaded** — the act, the artifact on the bus, the comment posted, the forge enum, the CLI subcommand. Resolved into **Review** (act), **Verdict** (decision), **Verdict envelope** (bus artifact), **Review comment** (forge body), **PostAction** (forge enum). The CLI subcommand `sage review` is named after the act.
 - **`ReviewEvent` was misleading.** It sounded like a bus event but is a forge-API enum mapping a Verdict to a Forge call. Resolved: **PostAction**.
 - **`lens` did two jobs** — concern category and per-PR execution. Resolved into **Lens** (static category) and **Lens run** (per-PR execution).
@@ -193,7 +212,6 @@ _Avoid_: direct subject, named subject
 - **"broadcast" Subject was a misread of cortex.** Sage README called the Offer Subject "broadcast"; cortex CONTEXT explicitly avoids that word because exactly one Assistant claims an offered task. Resolved: **Offer Dispatch** (cortex term) is canonical.
 - **`{org}` in subject templates.** Sage README uses `{org}` in the Subject pattern; ecosystem-wide that segment is **`{principal}`**, and `metafactory` is the **network**, never a Subject segment. Resolved: README needs updating to `{principal}`.
 - **`persona` is a sage concept, not a cortex one.** Cortex CONTEXT explicitly resolves `persona → assistant`. Within Sage's bounded context **Persona** is the voice/principles file (`persona.md`); the Assistant itself is *Sage*. The file `personas/sage.md` is "Sage's Persona file" — same shape cortex uses for filenames.
-- **`substrate` vs `provider`.** Two layers, often conflated. Substrate = the harness subprocess Sage launches. Provider = the LLM vendor the harness talks to. Sage never speaks Provider; the Substrate does.
 - **"Bus" is informal.** myelin owns the formal term **Transport**. Sage docs may use "bus" colloquially; in any formal context use **Transport**.
 
 ## Boundary with adjacent contexts

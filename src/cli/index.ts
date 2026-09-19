@@ -14,6 +14,14 @@ import {
   reviewPr,
 } from "../lenses/workflow.ts";
 import { selectSubstrate } from "../substrate/select.ts";
+import {
+  createFileShadowSink,
+  createHttpTypeSafeTransport,
+  createTypeSafeShadowObserver,
+  loadCorpusManifest,
+  type TypeSafeMode,
+  type TypeSafeShadowObserver,
+} from "../typesafe/index.ts";
 import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
 import { dispatchReview } from "./dispatch.ts";
 
@@ -40,6 +48,42 @@ function parseForgeKind(raw: string | undefined): ForgeKind | undefined {
   if (raw === undefined || raw === "") return undefined;
   if (raw === "github" || raw === "gitlab") return raw;
   throw new Error(`--forge must be "github" or "gitlab" (got ${JSON.stringify(raw)})`);
+}
+
+function parseTypeSafeMode(raw: string): TypeSafeMode {
+  if (raw === "off" || raw === "shadow") return raw;
+  throw new Error(`--typesafe-mode must be "off" or "shadow" (got ${JSON.stringify(raw)})`);
+}
+
+function buildTypeSafeShadow(
+  mode: TypeSafeMode,
+  corpusPath: string,
+): TypeSafeShadowObserver | undefined {
+  if (mode === "off") return undefined;
+  try {
+    const corpus = loadCorpusManifest(corpusPath);
+    const apiKey = process.env.TYPESAFE_API_KEY;
+    const timeoutMs = Number(process.env.SAGE_TYPESAFE_TIMEOUT_MS ?? 5_000);
+    const repeatCount = Number(process.env.SAGE_TYPESAFE_REPEATS ?? 1);
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new Error("SAGE_TYPESAFE_TIMEOUT_MS must be a positive integer");
+    }
+    if (!Number.isInteger(repeatCount) || repeatCount <= 0 || repeatCount > 10) {
+      throw new Error("SAGE_TYPESAFE_REPEATS must be an integer from 1 to 10");
+    }
+    return createTypeSafeShadowObserver({
+      mode,
+      corpus,
+      sink: createFileShadowSink(),
+      ...(apiKey ? { transport: createHttpTypeSafeTransport({ apiKey }) } : {}),
+      timeoutMs,
+      repeatCount,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[sage] TypeSafe shadow disabled (ordinary review continues): ${detail}`);
+    return undefined;
+  }
 }
 
 const program = new Command();
@@ -85,6 +129,17 @@ program
     "--lens-concurrency <n>",
     "Max concurrent lenses (default unbounded; env SAGE_LENS_CONCURRENCY)",
   )
+  .option(
+    "--typesafe-mode <mode>",
+    "TypeSafe advisory proof-of-value mode (off|shadow). Shadow is corpus-gated and cannot affect Sage output.",
+    process.env.SAGE_TYPESAFE_MODE ?? "off",
+  )
+  .option(
+    "--typesafe-corpus <path>",
+    "Frozen approved corpus manifest used to authorize shadow requests.",
+    process.env.SAGE_TYPESAFE_CORPUS ??
+      join(import.meta.dir, "..", "..", "evaluation", "typesafe", "corpus.json"),
+  )
   .action(
     async (prRef: string, opts: {
       post: boolean;
@@ -94,6 +149,8 @@ program
       forge?: string;
       gitlabHost?: string;
       lensConcurrency?: string;
+      typesafeMode: string;
+      typesafeCorpus: string;
     }) => {
       const forgeSelection = selectForge({
         ...(opts.forge !== undefined ? { flag: opts.forge } : {}),
@@ -111,6 +168,8 @@ program
 
       const selection = selectSubstrate({ flag: opts.substrate });
       const lensConcurrency = resolveLensConcurrency(opts.lensConcurrency);
+      const typeSafeMode = parseTypeSafeMode(opts.typesafeMode);
+      const typeSafeShadow = buildTypeSafeShadow(typeSafeMode, opts.typesafeCorpus);
       const refLabel =
         forgeSelection.kind === "gitlab"
           ? `${ref.owner}/${ref.repo}!${ref.number}`
@@ -118,23 +177,25 @@ program
       console.error(
         `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
-      const result = await reviewPr({
+      const review = await reviewPr({
         ref,
         forge: forgeSelection.backend,
         post: opts.post,
         substrate: selection.substrate,
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
+        ...(typeSafeShadow ? { completedReviewObserver: typeSafeShadow } : {}),
       });
-      const body = renderVerdict(result.verdict, selection.substrate.displayName);
+      const body = renderVerdict(review.verdict, selection.substrate.displayName);
       // The verdict block MUST be the terminal artefact: cortex's
       // extractVerdictBlock picks the LAST ```json fence in stdout.
       const out = opts.emitVerdictBlock
-        ? `${body}\n\n${renderVerdictBlock(result.verdict, result.blockMeta)}`
+        ? `${body}\n\n${renderVerdictBlock(review.verdict, review.blockMeta)}`
         : body;
       console.log(out);
-      console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
-      if (result.verdict.decision === "changes-requested") {
+      console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
+      await review.observerCompletion;
+      if (review.verdict.decision === "changes-requested") {
         process.exit(1);
       }
     },

@@ -10,6 +10,9 @@
   "scripts": {
     "sage": "bun run src/cli/index.ts",
     "review": "bun run src/cli/index.ts review",
+    "probe:typesafe": "bun run scripts/probe-typesafe-contract.ts",
+    "export:typesafe-evidence": "bun run scripts/export-typesafe-evidence.ts",
+    "report:typesafe": "bun run scripts/render-typesafe-report.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

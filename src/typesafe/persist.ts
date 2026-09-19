@@ -1,0 +1,31 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+import { safeRefSegment } from "../util/persistence.ts";
+import type { ShadowComparisonRecord, ShadowRecordSink } from "./types.ts";
+
+export function createFileShadowSink(
+  root = join(homedir(), ".config", "sage", "typesafe-shadow"),
+): ShadowRecordSink {
+  return {
+    async write(record: ShadowComparisonRecord): Promise<string> {
+      await mkdir(root, { recursive: true });
+      const timestamp = record.createdAt.replace(/[:.]/g, "-");
+      const slug = [
+        safeRefSegment(record.ref.owner),
+        safeRefSegment(record.ref.repo),
+        record.ref.number,
+        record.headSha.slice(0, 12) || "no-head",
+        `repeat-${record.repeatIndex}`,
+        safeRefSegment(record.recordId).slice(0, 16),
+        timestamp,
+        randomUUID(),
+      ].join("-");
+      const path = join(root, `${slug}.json`);
+      await writeFile(path, JSON.stringify(record, null, 2), { flag: "wx", mode: 0o600 });
+      return path;
+    },
+  };
+}

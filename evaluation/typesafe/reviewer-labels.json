@@ -1,0 +1,914 @@
+[
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "finding.evidence.v1.3c6351c18423",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "2b5c48d84a382c5ea94077304e2d1d119be4f93fee5e2ffc8fae598ddd049c6c",
+    "questionId": "finding.evidence.v1.709cdc073368",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "finding.evidence.v1.50992831b777",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "33c4425df8dfc090ef9ad6c011532d2a6f5ddd964553b784f106f3ff630c49f2",
+    "questionId": "finding.evidence.v1.702d056851fd",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "finding.evidence.v1.920a00d3cb7b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "524b677a58caa5b37dc09e9fe43f9294fbf2f86fde0cbb19fcac3ecd417a243d",
+    "questionId": "finding.evidence.v1.1201e559e7d9",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "finding.evidence.v1.50992831b777",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "5ca66d63e4aae5c038aa2462430bbe1c58ee1e90ef1427f30bdb6ea376ac3d61",
+    "questionId": "finding.evidence.v1.702d056851fd",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.611731e55552",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.574d82fcafd8",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.4074a43b71f0",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.2e8caa43ec8b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.4c2dfe5eaa4c",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "75ccae37498b5be6a0cd8413172579e3bd1a57b2f14cd7398bd5c372e336fb34",
+    "questionId": "finding.evidence.v1.936984df67b5",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.611731e55552",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.574d82fcafd8",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.4074a43b71f0",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.2e8caa43ec8b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.4c2dfe5eaa4c",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "78afc7d21c1b586ae95c7e47bbb0f3c51beb1590c29826a546d4cc807a9c5060",
+    "questionId": "finding.evidence.v1.936984df67b5",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "finding.evidence.v1.3c6351c18423",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "86974b6b2bfb56487d8445406869fa8b96479f91a90986a0a86e0cbeb786887d",
+    "questionId": "finding.evidence.v1.709cdc073368",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "finding.evidence.v1.50992831b777",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "953c70a4375d69855aa772c0e60b77d0345c1fae96469841aad5954e03b1d0b4",
+    "questionId": "finding.evidence.v1.702d056851fd",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "9c12033d35cfa721ae587f3aaee515e25fb30ebde6f286590e4b395099ff78b4",
+    "questionId": "finding.evidence.v1.666f78c97c05",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "a8276bf8ca7a207671761da8952ddc331f7da0c6d97f12346c0d9168805d72a6",
+    "questionId": "finding.evidence.v1.666f78c97c05",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "finding.evidence.v1.920a00d3cb7b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "b8800fc10368051b0ff4f8eab6670d6f03eed163e14198bc6d96bad78d3fee69",
+    "questionId": "finding.evidence.v1.1201e559e7d9",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.611731e55552",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.574d82fcafd8",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.4074a43b71f0",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.2e8caa43ec8b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.4c2dfe5eaa4c",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+    "questionId": "finding.evidence.v1.936984df67b5",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "bbc905ada3c969f9a679da95f000e7b87a82704291deef692d5b0a9fdd1182ca",
+    "questionId": "finding.evidence.v1.666f78c97c05",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "finding.evidence.v1.920a00d3cb7b",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "c6b5ac27cdeaa4472e026a278f878d930e4335061b164d6f2e42438e9467b15b",
+    "questionId": "finding.evidence.v1.1201e559e7d9",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "lens.security.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "lens.architecture.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "lens.ecosystem-compliance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "lens.performance.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "lens.maintainability.v1",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "not_useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": true
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "finding.evidence.v1.3c6351c18423",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  },
+  {
+    "recordId": "f65b77c8a6a6f5caa354492fd44994ed2c7f8f155f3815908f7af018165fa9c5",
+    "questionId": "finding.evidence.v1.709cdc073368",
+    "reviewer": "codex-independent-audit-2026-09-19",
+    "usefulness": "useful",
+    "evidenceSufficient": true,
+    "groundTruthPositive": false
+  }
+]

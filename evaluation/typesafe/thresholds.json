@@ -1,0 +1,14 @@
+{
+  "status": "approved",
+  "approvedBy": "Jens-Christian Fischer",
+  "approvedAt": "2026-09-18T21:35:17Z",
+  "minimumLabels": 75,
+  "stopBelowPrecision": 0.5,
+  "proposeMinimumPrecision": 0.8,
+  "proposeMinimumUsefulness": 0.75,
+  "proposeMaximumFailureRate": 0.05,
+  "proposeMaximumCostUsdPerRecord": 0.01,
+  "proposeMaximumP95LatencyMs": 10000,
+  "proposeMinimumRepeatAgreement": 0.9,
+  "proposeMaximumProbabilitySpread": 0.2
+}

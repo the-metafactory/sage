@@ -8,6 +8,7 @@ import type {
 import { createPriorFindings } from "../prior-findings/index.ts";
 import type {
   PriorFindings,
+  PriorFindingsResult,
   PriorFindingsStatus,
 } from "../prior-findings/index.ts";
 import type { Substrate } from "../substrate/types.ts";
@@ -40,6 +41,11 @@ import {
 } from "./scheduler.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensReport } from "./types.ts";
+import type {
+  CompletedReviewAnchor,
+  CompletedReviewObservation,
+  CompletedReviewObserver,
+} from "./completed-review-observer.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -81,6 +87,12 @@ export interface ReviewOptions {
   onPriorFindingsDegraded?: (status: PriorFindingsStatus, reason: string) => void | Promise<void>;
   /** Progress callback fired after each lens completes — envelope emission. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
+  /**
+   * Optional implementation-neutral observer for a completed Review. It receives a
+   * deep-frozen copy after persistence and Forge work, with no return channel
+   * into authoritative Review behavior. Failures are fail-open.
+   */
+  completedReviewObserver?: CompletedReviewObserver;
 }
 
 export interface ReviewResult {
@@ -106,6 +118,8 @@ export interface ReviewResult {
    * under `--emit-verdict-block`.
    */
   blockMeta: VerdictBlockMeta;
+  /** Advisory post-Review work; callers may await it before process exit. */
+  observerCompletion?: Promise<void>;
 }
 
 export interface PostError {
@@ -134,11 +148,34 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
-  const [pr, diff, priorResult] = await Promise.all([
-    opts.forge.prView(opts.ref),
-    opts.forge.prDiff(opts.ref),
-    priorFindingsModule.collect(opts.ref),
-  ]);
+  let pr: PrMetadata;
+  let diff: string;
+  let priorResult: PriorFindingsResult;
+  let observerAccepted = false;
+  let observerDiffHeadStable = true;
+  if (!opts.completedReviewObserver) {
+    [pr, diff, priorResult] = await Promise.all([
+      opts.forge.prView(opts.ref),
+      opts.forge.prDiff(opts.ref),
+      priorFindingsModule.collect(opts.ref),
+    ]);
+  } else {
+    const prPromise = opts.forge.prView(opts.ref);
+    const priorResultPromise = priorFindingsModule.collect(opts.ref);
+    pr = await prPromise;
+    observerAccepted = acceptsCompletedReviewObserver(opts.completedReviewObserver, {
+      ref: opts.ref,
+      headSha: pr.headRefOid,
+    });
+    diff = await opts.forge.prDiff(opts.ref);
+    observerDiffHeadStable = !observerAccepted || await observerHeadMatches(
+      opts.forge,
+      opts.ref,
+      pr.headRefOid,
+      "after diff retrieval",
+    );
+    priorResult = await priorResultPromise;
+  }
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
@@ -306,7 +343,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     inline_comments: posted ? inlineComments.length : 0,
   };
 
-  return {
+  const reviewResult: ReviewResult = {
     verdict,
     posted,
     blockMeta,
@@ -315,6 +352,88 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(downgraded !== undefined ? { downgraded } : {}),
     ...(postError !== undefined ? { postError } : {}),
   };
+
+  const completedObservation: CompletedReviewObservation | undefined =
+    observerAccepted && observerDiffHeadStable
+      ? {
+          ref: opts.ref,
+          pr,
+          diff,
+          selectedLensNames: applicableLenses.map((lens) => lens.name),
+          lensReports: enrichedLensReports,
+          verdict,
+          posted,
+        }
+      : undefined;
+  const observerCompletion = completedObservation
+    ? notifyCompletedReviewObserver(opts.completedReviewObserver!, opts.forge, completedObservation)
+    : Promise.resolve();
+  if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
+
+  return reviewResult;
+}
+
+function acceptsCompletedReviewObserver(
+  observer: CompletedReviewObserver | undefined,
+  anchor: CompletedReviewAnchor,
+): boolean {
+  if (!observer) return false;
+  try {
+    return !observer.accepts || observer.accepts(anchor);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
+    return false;
+  }
+}
+
+async function observerHeadMatches(
+  forge: ForgeBackend,
+  ref: PrRef,
+  expectedHeadSha: string,
+  stage: string,
+): Promise<boolean> {
+  try {
+    const currentHeadSha = (await forge.prView(ref)).headRefOid;
+    if (currentHeadSha === expectedHeadSha) return true;
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer skipped: PR head changed ${stage}`);
+    return false;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
+    return false;
+  }
+}
+
+async function notifyCompletedReviewObserver(
+  observer: CompletedReviewObserver,
+  forge: ForgeBackend,
+  input: CompletedReviewObservation,
+): Promise<void> {
+  try {
+    // Move snapshot work to a later event-loop turn so the caller receives
+    // the authoritative Review before observer allocation or traversal.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    if (!await observerHeadMatches(forge, input.ref, input.pr.headRefOid, "before observation")) return;
+    const copy = structuredClone(input);
+    deepFreeze(copy);
+    await observer.observe(copy);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
 }
 
 /**

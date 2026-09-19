@@ -105,7 +105,7 @@ export interface SubstrateRunOptions {
   model?: string;
   /** API-key override (passed as `--api-key` to substrates that accept one). */
   apiKey?: string;
-  /** Optional tool-list passthrough (pi.dev `--tools`). */
+  /** Optional tool-list passthrough (pi.dev / Claude Code `--tools`). */
   tools?: readonly string[];
   /** Extra env vars merged into the substrate child env. */
   env?: Record<string, string | undefined>;

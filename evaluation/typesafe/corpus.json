@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "authorizationMode": "frozen-corpus",
+  "frozenAt": "2026-09-18T21:35:17Z",
+  "dataProcessingApproval": {
+    "status": "approved",
+    "approvedBy": "Jens-Christian Fischer",
+    "approvedAt": "2026-09-18T21:35:17Z",
+    "scope": "Three shadow-only runs of the five named public non-critical Seelite PR heads, using only bounded and redacted state; excludes credentials, customer data, incidents, and sensitive security work. US processing and ordinary retention accepted for this corpus; zero retention is not assumed.",
+    "termsReviewedAt": "2026-09-18T21:35:17Z"
+  },
+  "entries": [
+    {
+      "url": "https://github.com/jcfischer/seelite/pull/336",
+      "owner": "jcfischer",
+      "repo": "seelite",
+      "number": 336,
+      "headSha": "f8190d2a2a6ad65918db24bec9b10ce3e7dcede4",
+      "classification": "non-critical-game",
+      "approvedBy": "Jens-Christian Fischer",
+      "approvedAt": "2026-09-18T21:35:17Z"
+    },
+    {
+      "url": "https://github.com/jcfischer/seelite/pull/347",
+      "owner": "jcfischer",
+      "repo": "seelite",
+      "number": 347,
+      "headSha": "a6995ab79d48286070823\u003914671e1ecf37444efe",
+      "classification": "non-critical-game",
+      "approvedBy": "Jens-Christian Fischer",
+      "approvedAt": "2026-09-18T21:35:17Z"
+    },
+    {
+      "url": "https://github.com/jcfischer/seelite/pull/354",
+      "owner": "jcfischer",
+      "repo": "seelite",
+      "number": 354,
+      "headSha": "f2297e371d2c9b608166742995069aafd29a5e4c",
+      "classification": "non-critical-game",
+      "approvedBy": "Jens-Christian Fischer",
+      "approvedAt": "2026-09-18T21:35:17Z"
+    },
+    {
+      "url": "https://github.com/jcfischer/seelite/pull/319",
+      "owner": "jcfischer",
+      "repo": "seelite",
+      "number": 319,
+      "headSha": "27608527de9de92ef2d8d66e832b62b20f5e1792",
+      "classification": "non-critical-game",
+      "approvedBy": "Jens-Christian Fischer",
+      "approvedAt": "2026-09-18T21:35:17Z"
+    },
+    {
+      "url": "https://github.com/jcfischer/seelite/pull/389",
+      "owner": "jcfischer",
+      "repo": "seelite",
+      "number": 389,
+      "headSha": "7c8a99cf9aaac6b1ad1cd9872b8e8d229ba9336e",
+      "classification": "non-critical-game",
+      "approvedBy": "Jens-Christian Fischer",
+      "approvedAt": "2026-09-18T21:35:17Z"
+    }
+  ]
+}

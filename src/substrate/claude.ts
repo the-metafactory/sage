@@ -23,9 +23,12 @@ import type {
  *     `src/substrate/json/`; the Pipeline falls back to text-extraction
  *     strategies on the same captured stdout if the envelope shape
  *     drifts (sage#57). Never re-spawns.
- *   - The `thinking`, `provider`, `apiKey`, and `tools`
- *     SubstrateRunOptions fields are ignored — Claude Code doesn't
- *     expose those knobs.
+ *   - `tools` maps to Claude Code's `--tools` option. An explicit empty list
+ *     selects a lean authenticated runtime: no settings, MCP servers, slash
+ *     commands, session persistence, Chrome, or built-in tools. This avoids
+ *     ambient hooks/context and side effects for untrusted-input callers
+ *     without `--bare`, which would also disable OAuth/keychain auth.
+ *     The remaining unsupported per-call options are ignored.
  *
  * Provider/model envs honored from the operator's shell:
  *   - `CLAUDE_BIN`             (binary path; default `claude`)
@@ -83,6 +86,22 @@ export class ClaudeSubstrate implements Substrate {
     const args = ["-p"];
     if (model) args.push("--model", model);
     if (permissionMode) args.push("--permission-mode", permissionMode);
+    if (opts.tools !== undefined) {
+      args.push(
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--no-chrome",
+      );
+      // `claude --help` defines an empty --tools value as disabling every
+      // built-in tool; this keeps ordinary authentication available, unlike
+      // --bare.
+      args.push("--tools", opts.tools.join(","));
+    }
     if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);
     // Native structured-output mode. The `CLAUDE_ENVELOPE` extractor
     // in `src/substrate/json/` pulls the lens body out of the envelope's
