@@ -35,12 +35,12 @@ Verdict, or Forge actions.
 Routing and finding-evidence signals only; candidate-selection helper signals
 are intentionally excluded because they do not count toward the production gate.
 
+This is an early operational signal over two immutable states, not evidence of
+general stability or value.
+
 - Repeated decision state/question groups: 14
 - Mean exact-choice agreement: 1.000
 - Maximum probability spread: 0.060
-
-This is an early operational signal over two immutable states, not evidence of
-general stability or value.
 
 Every repeated routing and finding-evidence Choice was identical across its
 three runs. The probability spread clears the predeclared 0.20 ceiling, and

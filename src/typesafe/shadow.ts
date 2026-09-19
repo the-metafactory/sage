@@ -389,9 +389,9 @@ function evidenceSignals(
   });
 }
 
-function skippedStage(reason: string): StageRecord {
+function emptyStage(status: "skipped" | "failed", reason: string): StageRecord {
   return {
-    status: "skipped",
+    status,
     latencyMs: 0,
     attempts: 0,
     retryCount: 0,
@@ -402,17 +402,12 @@ function skippedStage(reason: string): StageRecord {
   };
 }
 
+function skippedStage(reason: string): StageRecord {
+  return emptyStage("skipped", reason);
+}
+
 function failedStage(reason: string): StageRecord {
-  return {
-    status: "failed",
-    latencyMs: 0,
-    attempts: 0,
-    retryCount: 0,
-    usage: EMPTY_USAGE,
-    questionIds: [],
-    signals: [],
-    failureReason: reason,
-  };
+  return emptyStage("failed", reason);
 }
 
 function failureRecord(

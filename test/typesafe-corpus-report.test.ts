@@ -287,6 +287,11 @@ describe("TypeSafe evaluation report", () => {
     expect(report.labelCoverage.requiredSignals).toBe(2);
   });
 
+  test("renders a missing truncation rate as N/A when there are no records", () => {
+    const markdown = renderEvaluationReport(generateEvaluationReport([], []));
+    expect(markdown).toContain("State-truncated records: 0 / 0 (N/A)");
+  });
+
   test("excludes candidate helper choices from the repeatability gate", () => {
     const firstBase = record("r1", "recommend", 0.9);
     const secondBase = record("r2", "recommend", 0.7);

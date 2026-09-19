@@ -135,8 +135,8 @@ The *bounded typed-decision integration* under `src/typesafe/`. It sends a
 redacted, size-limited state to a pinned TypeSafe Jev endpoint and accepts only
 schema-validated choices and probabilities. It is not a Substrate: it cannot
 run a Lens, produce prose, add or suppress a Finding, change a Verdict, or
-  cause a Forge side effect. It is outside the Substrate boundary and never
-  runs a Lens. Direct HTTP is confined to this adapter, runs only
+cause a Forge side effect. It is outside the Substrate boundary and never
+runs a Lens. Direct HTTP is confined to this adapter, runs only
 after Sage has completed its ordinary Review, is authorization-gated and
 fail-open, and records advisory shadow evidence locally.
 _Avoid_: TypeSafe substrate, Jev lens, Jev peer
@@ -200,7 +200,7 @@ _Avoid_: direct subject, named subject
 
 ## Flagged ambiguities
 
-- **A Substrate and its upstream inference service are separate layers.** The Substrate is the harness subprocess Sage launches; the upstream service performs inference behind it. Sage speaks only to the Substrate.
+- **Substrate, Provider, and System One adapter are separate layers.** A Lens talks only to a Substrate; that Substrate talks to its Provider. Separately, the System One adapter directly calls its typed decision service after Review completion. This exception does not put typed decisions inside the Lens/Substrate boundary.
 - **`review` was overloaded** — the act, the artifact on the bus, the comment posted, the forge enum, the CLI subcommand. Resolved into **Review** (act), **Verdict** (decision), **Verdict envelope** (bus artifact), **Review comment** (forge body), **PostAction** (forge enum). The CLI subcommand `sage review` is named after the act.
 - **`ReviewEvent` was misleading.** It sounded like a bus event but is a forge-API enum mapping a Verdict to a Forge call. Resolved: **PostAction**.
 - **`lens` did two jobs** — concern category and per-PR execution. Resolved into **Lens** (static category) and **Lens run** (per-PR execution).
