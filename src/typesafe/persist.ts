@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +10,8 @@ export function createFileShadowSink(
   root = join(homedir(), ".config", "sage", "typesafe-shadow"),
 ): ShadowRecordSink {
   return {
-    write(record: ShadowComparisonRecord): string {
-      mkdirSync(root, { recursive: true });
+    async write(record: ShadowComparisonRecord): Promise<string> {
+      await mkdir(root, { recursive: true });
       const timestamp = record.createdAt.replace(/[:.]/g, "-");
       const slug = [
         safeRefSegment(record.ref.owner),
@@ -24,7 +24,7 @@ export function createFileShadowSink(
         randomUUID(),
       ].join("-");
       const path = join(root, `${slug}.json`);
-      writeFileSync(path, JSON.stringify(record, null, 2), { flag: "wx", mode: 0o600 });
+      await writeFile(path, JSON.stringify(record, null, 2), { flag: "wx", mode: 0o600 });
       return path;
     },
   };

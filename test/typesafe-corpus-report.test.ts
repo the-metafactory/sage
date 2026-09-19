@@ -406,13 +406,13 @@ describe("TypeSafe evaluation report", () => {
 });
 
 describe("TypeSafe record persistence", () => {
-  test("does not overwrite identical records created in the same millisecond", () => {
+  test("does not overwrite identical records created in the same millisecond", async () => {
     const root = mkdtempSync(join(tmpdir(), "sage-typesafe-records-"));
     try {
       const sink = createFileShadowSink(root);
       const sameRecord = record("record-one", "recommend", 0.9);
-      sink.write(sameRecord);
-      sink.write(sameRecord);
+      await sink.write(sameRecord);
+      await sink.write(sameRecord);
       expect(readdirSync(root)).toHaveLength(2);
     } finally {
       rmSync(root, { recursive: true, force: true });

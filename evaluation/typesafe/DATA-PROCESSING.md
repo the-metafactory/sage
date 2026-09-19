@@ -5,9 +5,13 @@ five-entry corpus in `corpus.json`, with three shadow-only runs per immutable
 head**. The continuing rollout authorization is recorded in the
 [issue #125 principal approval receipt](https://github.com/the-metafactory/sage/issues/125#issuecomment-5740115643).
 
-The proof of value is restricted to immutable heads of explicitly approved,
-non-critical game PRs listed in `corpus.json`. The runtime rejects any PR or
-head SHA absent from that frozen manifest before calling TypeSafe.
+The proof-of-value evaluation is restricted to immutable heads of explicitly
+approved, non-critical game PRs listed in `corpus.json`. In the default
+`frozen-corpus` authorization mode, the runtime rejects any PR or head SHA
+absent from that frozen manifest before calling TypeSafe. The separately
+approved persistent rollout described below uses
+`approved-repositories-until-revoked` instead and authorizes current heads only
+within its local repository allowlist.
 
 The bounded payload contains the PR title, changed paths and line counts,
 redacted/truncated diff candidates, and—for existing blocker or important
