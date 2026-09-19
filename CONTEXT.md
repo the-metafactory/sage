@@ -114,6 +114,10 @@ _Avoid_: model, LLM, runner, harness (bare)
 A *concrete impl* of the Substrate interface — `PiSubstrate`, `ClaudeSubstrate`, `CodexSubstrate`. Each wraps one harness binary and absorbs its JSON-extraction quirks.
 _Avoid_: substrate client, substrate driver
 
+**Tool-free Lens run**:
+The *execution boundary for untrusted PR content*. Every Lens explicitly requests no tools. A Substrate adapter must prevent PR titles, bodies, diffs, and repository context from activating local settings, MCP servers, browser integration, sessions, slash commands, or built-in tools. The Claude adapter applies that isolated runtime whenever a caller supplies an explicit tool selection, including the empty selection used by Lenses.
+_Avoid_: sandboxed review, bare mode
+
 **Process-level substrate**:
 The *binding rule*: Substrate is resolved once at host startup (CLI flag > env > config > pi) and applies to every Review this process handles. Per-task Substrate selection is deliberately out of scope — same Persona on different Substrates must produce envelopes that differ only in `extensions.substrate`, so A/B comparison stays clean.
 _Avoid_: per-task substrate (the rejected alternative)
