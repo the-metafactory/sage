@@ -127,7 +127,7 @@ The *Substrate input* — composed inside a Lens run from a shared system prompt
 _Avoid_: query, request, message (those are bus terms)
 
 **Provider**:
-The *LLM vendor* behind a Substrate (Anthropic, OpenAI, OpenRouter, Gemini, …). Sage forwards Provider API keys to the Substrate subprocess via an explicit env allow-list (`src/substrate/env.ts`) and never sees Provider responses directly — the Substrate is the only consumer.
+The *LLM vendor* behind a Substrate (Anthropic, OpenAI, OpenRouter, Gemini, …). Sage forwards Provider API keys to the Substrate subprocess via an explicit env allow-list (`src/substrate/env.ts`) and never sees Provider responses directly — within generative Lens execution, the Substrate is the only consumer. The TypeSafe decision service is not a Provider in this vocabulary because it does not back Lens execution.
 _Avoid_: vendor, model provider, API
 
 **System One adapter**:

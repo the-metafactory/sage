@@ -146,11 +146,36 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
-  const [pr, diff, priorResult] = await Promise.all([
-    opts.forge.prView(opts.ref),
-    opts.forge.prDiff(opts.ref),
-    priorFindingsModule.collect(opts.ref),
-  ]);
+  const initial = await (async () => {
+    if (!opts.completedReviewObserver) {
+      const [pr, diff, priorResult] = await Promise.all([
+        opts.forge.prView(opts.ref),
+        opts.forge.prDiff(opts.ref),
+        priorFindingsModule.collect(opts.ref),
+      ]);
+      return { pr, diff, priorResult, completedReviewObserver: undefined };
+    }
+
+    const [pr, priorResult] = await Promise.all([
+      opts.forge.prView(opts.ref),
+      priorFindingsModule.collect(opts.ref),
+    ]);
+    const observerAccepted = opts.completedReviewObserver.accepts?.({
+      ref: opts.ref,
+      headSha: pr.headRefOid,
+    }) ?? true;
+    const diff = await opts.forge.prDiff(opts.ref);
+    if (!observerAccepted) {
+      return { pr, diff, priorResult, completedReviewObserver: undefined };
+    }
+    const headAfterDiff = (await opts.forge.prView(opts.ref)).headRefOid;
+    if (headAfterDiff !== pr.headRefOid) {
+      console.error("[workflow] completed Review observer skipped: PR head changed while fetching diff");
+      return { pr, diff, priorResult, completedReviewObserver: undefined };
+    }
+    return { pr, diff, priorResult, completedReviewObserver: opts.completedReviewObserver };
+  })();
+  const { pr, diff, priorResult, completedReviewObserver } = initial;
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
@@ -328,7 +353,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(postError !== undefined ? { postError } : {}),
   };
 
-  const observerCompletion = notifyCompletedReviewObserver(opts.completedReviewObserver, {
+  const observerCompletion = notifyCompletedReviewObserver(completedReviewObserver, {
     ref: opts.ref,
     pr,
     diff,
@@ -337,7 +362,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     verdict,
     posted,
   });
-  if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
+  if (completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
 
   return reviewResult;
 }
@@ -351,9 +376,9 @@ async function notifyCompletedReviewObserver(
     if (observer.accepts && !observer.accepts({ ref: input.ref, headSha: input.pr.headRefOid })) {
       return;
     }
-    // Yield before the full snapshot copy so authoritative Review completion
-    // is never charged for observer allocation or traversal.
-    await Promise.resolve();
+    // Move snapshot work to a later event-loop turn so the caller receives
+    // the authoritative Review before observer allocation or traversal.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const copy = structuredClone(input);
     deepFreeze(copy);
     await observer.observe(copy);

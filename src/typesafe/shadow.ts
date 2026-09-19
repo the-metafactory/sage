@@ -304,7 +304,7 @@ function evidenceState(subjects: readonly EvidenceSubject[]) {
 function boundedEvidenceSubjects(
   subjects: readonly EvidenceSubject[],
   policy: TypeSafePolicy,
-): EvidenceSubject[] {
+): { subjects: EvidenceSubject[]; omittedQuestionCount: number } {
   const bounded = subjects.map((subject) => ({
     ...subject,
     lens: redactTypeSafeText(subject.lens).slice(0, 100),
@@ -315,12 +315,13 @@ function boundedEvidenceSubjects(
       : {}),
   }));
 
-  while (JSON.stringify(evidenceState(bounded)).length > policy.bounds.maxStateChars) {
+  let serializedLength = JSON.stringify(evidenceState(bounded)).length;
+  while (serializedLength > policy.bounds.maxStateChars) {
     const subject = bounded.at(-1);
     if (!subject) {
       throw new Error("TypeSafe maxStateChars is too small for the fixed evidence-state schema");
     }
-    const excess = JSON.stringify(evidenceState(bounded)).length - policy.bounds.maxStateChars;
+    const excess = serializedLength - policy.bounds.maxStateChars;
     const fields: Array<[Record<string, unknown>, string]> = [
       [subject.finding as unknown as Record<string, unknown>, "suggestion"],
       [subject.finding as unknown as Record<string, unknown>, "rationale"],
@@ -333,11 +334,16 @@ function boundedEvidenceSubjects(
       const [object, key] = field;
       const value = object[key] as string;
       object[key] = value.slice(0, Math.max(0, value.length - Math.max(1, excess)));
+      serializedLength = JSON.stringify(evidenceState(bounded)).length;
       continue;
     }
     bounded.pop();
+    serializedLength = JSON.stringify(evidenceState(bounded)).length;
   }
-  return bounded;
+  return {
+    subjects: bounded,
+    omittedQuestionCount: subjects.length - bounded.length,
+  };
 }
 
 function evidenceRequest(
@@ -503,9 +509,9 @@ export function createTypeSafeShadowObserver(
   const now = options.now ?? (() => new Date());
   const authorizationMode = options.corpus.authorizationMode ?? "frozen-corpus";
   return {
-    accepts(identity): boolean {
+    accepts(anchor): boolean {
       if (options.mode === "off") return false;
-      return authorizeCorpusInput(options.corpus, identity).ok;
+      return authorizeCorpusInput(options.corpus, anchor).ok;
     },
     async observe(input: ShadowReviewInput): Promise<void> {
       if (options.mode === "off") return;
@@ -534,10 +540,11 @@ export function createTypeSafeShadowObserver(
       }
 
       const state = buildBoundedReviewState(input.pr, input.diff, policy);
-      const subjects = boundedEvidenceSubjects(
+      const evidenceBatch = boundedEvidenceSubjects(
         evidenceSubjects(input.lensReports, state, policy),
         policy,
       );
+      const subjects = evidenceBatch.subjects;
       for (let repeatIndex = 1; repeatIndex <= repeatCount; repeatIndex++) {
         const repeatTimestamp = repeatIndex === 1 ? timestamp : now();
         const evidencePromise =
@@ -566,7 +573,10 @@ export function createTypeSafeShadowObserver(
             repeatTimestamp,
             state,
             routing.record,
-            evidence.record,
+            {
+              ...evidence.record,
+              omittedQuestionCount: evidenceBatch.omittedQuestionCount,
+            },
             modelReturned,
             repeatIndex,
             repeatCount,

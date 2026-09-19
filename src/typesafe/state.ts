@@ -5,9 +5,9 @@ import type { BoundedReviewState, DiffCandidate } from "./types.ts";
 import type { TypeSafePolicy } from "./policy.ts";
 
 const SECRET_ASSIGNMENT =
-  /(["']?)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
+  /(["']?)((?:[a-z0-9]+[_-])*(?:password|passwd|secret|token|(?:api|access|private|secret|signing)[_-]?key)|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
 const YAML_SECRET_BLOCK =
-  /^(\s*["']?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
+  /^(\s*["']?(?:(?:[a-z0-9]+[_-])*(?:password|passwd|secret|token|(?:api|access|private|secret|signing)[_-]?key)|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
 const CREDENTIAL_URI = /\b([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^@\s/]+@/gi;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const AUTHORIZATION_CREDENTIAL =
@@ -147,14 +147,16 @@ export function buildBoundedReviewState(
   // maxStateChars is a bound on the complete serialized request state, not
   // merely the sum of excerpts. Trim data fields deterministically until the
   // actual JSON payload fits; fixed counters and fingerprints remain intact.
-  while (JSON.stringify(state).length > policy.bounds.maxStateChars) {
-    const excess = JSON.stringify(state).length - policy.bounds.maxStateChars;
+  let serializedLength = JSON.stringify(state).length;
+  while (serializedLength > policy.bounds.maxStateChars) {
+    const excess = serializedLength - policy.bounds.maxStateChars;
     const candidate = [...state.candidates].reverse().find((item) => item.excerpt.length > 0);
     if (candidate) {
       const cut = Math.min(candidate.excerpt.length, Math.max(1, excess));
       candidate.excerpt = candidate.excerpt.slice(0, candidate.excerpt.length - cut);
       candidate.retainedChars = candidate.excerpt.length;
       candidate.truncated = true;
+      serializedLength = JSON.stringify(state).length;
       continue;
     }
     if (state.candidates.length > 0) {
@@ -162,21 +164,31 @@ export function buildBoundedReviewState(
       state.discardedCandidateSummary.count++;
       removedCandidates++;
       metadataTruncated = true;
+      serializedLength = JSON.stringify(state).length;
       continue;
     }
     if (state.discardedCandidateSummary.paths.length > 0) {
-      state.discardedCandidateSummary.paths.pop();
+      let removedChars = 0;
+      while (state.discardedCandidateSummary.paths.length > 0 && removedChars < excess) {
+        removedChars += state.discardedCandidateSummary.paths.pop()!.length + 3;
+      }
       metadataTruncated = true;
+      serializedLength = JSON.stringify(state).length;
       continue;
     }
     if (state.pr.changedPaths.length > 0) {
-      state.pr.changedPaths.pop();
+      let removedChars = 0;
+      while (state.pr.changedPaths.length > 0 && removedChars < excess) {
+        removedChars += state.pr.changedPaths.pop()!.length + 3;
+      }
       metadataTruncated = true;
+      serializedLength = JSON.stringify(state).length;
       continue;
     }
     if (state.pr.title.length > 0) {
       state.pr.title = state.pr.title.slice(0, Math.max(0, state.pr.title.length - Math.max(1, excess)));
       metadataTruncated = true;
+      serializedLength = JSON.stringify(state).length;
       continue;
     }
     throw new Error("TypeSafe maxStateChars is too small for the fixed bounded-state schema");

@@ -13,13 +13,13 @@ export interface CompletedReviewObservation {
   readonly posted: boolean;
 }
 
-export interface CompletedReviewIdentity {
+export interface CompletedReviewAnchor {
   readonly ref: Readonly<PrRef>;
   readonly headSha: string;
 }
 
 /** Implementation-neutral, fail-open port for advisory work after a completed Review. */
 export interface CompletedReviewObserver {
-  accepts?(identity: CompletedReviewIdentity): boolean;
+  accepts?(anchor: CompletedReviewAnchor): boolean;
   observe(input: CompletedReviewObservation): Promise<void>;
 }

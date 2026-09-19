@@ -46,6 +46,21 @@ bun run report:typesafe \
   evaluation/typesafe/thresholds.json
 ```
 
+For a reviewable operational snapshot, export only records matching immutable
+heads in the checked-in corpus. The exporter validates the full record schema,
+removes PR titles, paths, excerpts, finding subjects, and selection prose, and
+keeps only the public review anchor plus the metrics needed to reproduce the
+report:
+
+```sh
+bun run export:typesafe-evidence
+bun run report:typesafe evaluation/typesafe/live-evidence
+```
+
+The checked-in `live-evidence/` cohort is therefore not a second source of
+review content; it is a sanitized, immutable audit input for the published
+operational measurements. Original records remain local with mode `0600`.
+
 Removal is one isolated change: delete `src/typesafe/`, `evaluation/typesafe/`,
 the TypeSafe tests and report script, then remove the optional observer field,
 CLI flags, and package script. No Verdict, Lens, Forge, or bus contract stores a

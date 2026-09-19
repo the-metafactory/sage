@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -20,9 +21,10 @@ export function createFileShadowSink(
         `repeat-${record.repeatIndex}`,
         safeRefSegment(record.recordId).slice(0, 16),
         timestamp,
+        randomUUID(),
       ].join("-");
       const path = join(root, `${slug}.json`);
-      writeFileSync(path, JSON.stringify(record, null, 2), { mode: 0o600 });
+      writeFileSync(path, JSON.stringify(record, null, 2), { flag: "wx", mode: 0o600 });
       return path;
     },
   };

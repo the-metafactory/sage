@@ -21,8 +21,10 @@ Verdict, or Forge actions.
 - Completed baseline Lens runs observed: 14
 - Failed baseline lens runs: 0
 - Independently labeled decision signals: 0 / 42 (42 missing)
+- Decision signals with ground truth: 0 / 42 (42 missing)
 - Failed records: 0
 - State-truncated records: 6
+- Evidence questions omitted by request bounds: 0
 - Provider request attempts / retries: 12 / 0
 - Pre-fix recorded stage-total latency p50 / p95: 577 ms / 1172 ms
 - Usage: 69,345 input tokens, 6,588 output tokens
@@ -30,15 +32,25 @@ Verdict, or Forge actions.
 
 ## Repeatability
 
-- Repeated state/question groups: 24
+- Repeated state/question groups: 14
 - Mean exact-choice agreement: 1.000
-- Maximum probability spread: 0.090
+- Maximum probability spread: 0.060
 
 Every repeated routing and finding-evidence Choice was identical across its
 three runs. The probability spread clears the predeclared 0.20 ceiling, and
 the conservative pre-fix stage-total latency, failure rate, and cost clear
 their operational thresholds. New records use concurrent wall-clock latency
 (the slower stage), not the sum of the two parallel stages.
+
+These measurements are reproducible from the schema-validated, content-
+sanitized records in `live-evidence/` with:
+
+```sh
+bun run report:typesafe evaluation/typesafe/live-evidence
+```
+
+The artifact retains metrics and public immutable review anchors but removes
+PR titles, paths, excerpts, finding subjects, and candidate-selection prose.
 
 ## Early qualitative observations
 

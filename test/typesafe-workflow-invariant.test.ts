@@ -244,8 +244,8 @@ describe("review workflow TypeSafe authority boundary", () => {
       substrate,
       post: false,
       completedReviewObserver: {
-        accepts: (identity) => {
-          expect(identity).toEqual({
+        accepts: (anchor) => {
+          expect(anchor).toEqual({
             ref: { owner: "x", repo: "y", number: 125 },
             headSha: pr.headRefOid,
           });

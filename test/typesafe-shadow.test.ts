@@ -166,6 +166,9 @@ describe("TypeSafe bounded state", () => {
       "https://user:password@example.test/private",
       "Authorization: Basic dXNlcjpwYXNzd29yZA==",
       "curl -u admin:curl-password https://example.test/private",
+      "SECRET_KEY=top-level-secret-key",
+      "STRIPE_SECRET_KEY=stripe-secret-value",
+      "APP_SIGNING_KEY=signing-secret-value",
     ].join("\n"));
 
     expect(redacted).not.toContain("secret value with spaces");
@@ -177,6 +180,9 @@ describe("TypeSafe bounded state", () => {
     expect(redacted).not.toContain("user:password");
     expect(redacted).not.toContain("dXNlcjpwYXNzd29yZA==");
     expect(redacted).not.toContain("admin:curl-password");
+    expect(redacted).not.toContain("top-level-secret-key");
+    expect(redacted).not.toContain("stripe-secret-value");
+    expect(redacted).not.toContain("signing-secret-value");
   });
 
   test("bounds the entire serialized state including paths and metadata", () => {
@@ -313,6 +319,42 @@ describe("TypeSafe shadow observer", () => {
     expect(JSON.stringify(request!.state)).not.toContain("title-password");
     expect(JSON.stringify(request!.state)).not.toContain("finding secret with spaces");
     expect(JSON.stringify(request!.state)).not.toContain("suggestion-password");
+  });
+
+  test("records evidence questions omitted by the hard request bound", async () => {
+    const records: ShadowComparisonRecord[] = [];
+    const requests: SystemOneRequest[] = [];
+    const findingCount = 30;
+    const boundedPolicy = {
+      ...TYPESAFE_POLICY,
+      bounds: { ...TYPESAFE_POLICY.bounds, maxStateChars: 2_500 },
+    };
+    const crowdedInput: ShadowReviewInput = {
+      ...input,
+      lensReports: [{
+        ...input.lensReports[0]!,
+        findings: Array.from({ length: findingCount }, (_, index) => ({
+          ...input.lensReports[0]!.findings[0]!,
+          title: `Finding ${index} ${"title ".repeat(80)}`,
+          rationale: `Rationale ${index} ${"context ".repeat(200)}`,
+        })),
+      }],
+    };
+    const observer = createTypeSafeShadowObserver({
+      mode: "shadow",
+      corpus: manifest(),
+      policy: boundedPolicy,
+      transport: successfulTransport(requests),
+      sink: { write: (record) => records.push(record) },
+    });
+
+    await observer.observe(crowdedInput);
+
+    const record = records[0]!;
+    expect(record.evidence.omittedQuestionCount).toBeGreaterThan(0);
+    expect(record.evidence.questionIds.length).toBeLessThan(findingCount);
+    const evidenceRequest = requests.find((request) => "findings" in (request.state as object));
+    expect(JSON.stringify(evidenceRequest!.state).length).toBeLessThanOrEqual(2_500);
   });
 
   test("records failed baseline lenses but does not triage their synthetic diagnostics", async () => {

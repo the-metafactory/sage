@@ -58,6 +58,7 @@ export interface EvaluationReport {
   };
   failedRecords: number;
   truncatedRecords: number;
+  omittedEvidenceQuestions: number;
   requests: number;
   retries: number;
   latencyMs: { p50: number; p95: number };
@@ -254,6 +255,10 @@ export function generateEvaluationReport(
     (sum, record) => sum + record.baseline.erroredLenses.length,
     0,
   );
+  const omittedEvidenceQuestions = records.reduce(
+    (sum, record) => sum + (record.evidence.omittedQuestionCount ?? 0),
+    0,
+  );
 
   let recommendation: EvaluationReport["recommendation"] = "iterate";
   let recommendationReason =
@@ -282,7 +287,8 @@ export function generateEvaluationReport(
     decisionSignalKeys.size > 0 &&
     unlabeledSignals === 0 &&
     missingGroundTruthSignals === 0 &&
-    baselineFailedLensRuns === 0
+    baselineFailedLensRuns === 0 &&
+    omittedEvidenceQuestions === 0
   ) {
     recommendation = "propose_separately_authorized_integration";
     recommendationReason =
@@ -309,6 +315,7 @@ export function generateEvaluationReport(
     },
     failedRecords,
     truncatedRecords: records.filter((record) => record.state.truncation.stateTruncated).length,
+    omittedEvidenceQuestions,
     requests: records.reduce(
       (sum, record) => sum + record.routing.attempts + record.evidence.attempts,
       0,
@@ -357,6 +364,7 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 - Decision signals with ground truth: ${report.labelCoverage.groundTruthSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.missingGroundTruthSignals} missing)
 - Failed records: ${report.failedRecords}
 - State-truncated records: ${report.truncatedRecords}
+- Evidence questions omitted by request bounds: ${report.omittedEvidenceQuestions}
 - Provider request attempts / retries: ${report.requests} / ${report.retries}
 - Latency p50 / p95: ${report.latencyMs.p50} ms / ${report.latencyMs.p95} ms
 - Usage: ${report.usage.inputTokens} input tokens, ${report.usage.outputTokens} output tokens

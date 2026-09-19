@@ -16,6 +16,7 @@ import {
   type ReviewerLabel,
 } from "../src/typesafe/report.ts";
 import type { ShadowComparisonRecord } from "../src/typesafe/types.ts";
+import { ShadowComparisonRecordSchema } from "../src/typesafe/types.ts";
 
 function record(id: string, choice: "recommend" | "do_not_recommend", probability: number): ShadowComparisonRecord {
   return {
@@ -356,6 +357,14 @@ describe("TypeSafe evaluation report", () => {
     const baselineReport = generateEvaluationReport(incompleteBaseline, labels, approvedThresholds);
     expect(baselineReport.baselineFailedLensRuns).toBe(1);
     expect(baselineReport.recommendation).toBe("iterate");
+
+    const omittedEvidence = records.map((item) => ({
+      ...item,
+      evidence: { ...item.evidence, omittedQuestionCount: 1 },
+    }));
+    const omittedReport = generateEvaluationReport(omittedEvidence, labels, approvedThresholds);
+    expect(omittedReport.omittedEvidenceQuestions).toBe(2);
+    expect(omittedReport.recommendation).toBe("iterate");
   });
 
   test("rejects mixed cohorts and duplicate signal labels", () => {
@@ -373,15 +382,28 @@ describe("TypeSafe evaluation report", () => {
     };
     expect(() => generateEvaluationReport([first], [label, label])).toThrow(/duplicate reviewer label/);
   });
+
+  test("strictly validates persisted records at the report boundary", () => {
+    expect(ShadowComparisonRecordSchema.parse(record("r1", "recommend", 0.9)).recordId).toBe("r1");
+    expect(() => ShadowComparisonRecordSchema.parse({
+      ...record("r1", "recommend", 0.9),
+      unexpected: true,
+    })).toThrow();
+    expect(() => ShadowComparisonRecordSchema.parse({
+      ...record("r1", "recommend", 0.9),
+      routing: { ...record("r1", "recommend", 0.9).routing, latencyMs: "fast" },
+    })).toThrow();
+  });
 });
 
 describe("TypeSafe record persistence", () => {
-  test("does not overwrite records created in the same millisecond", () => {
+  test("does not overwrite identical records created in the same millisecond", () => {
     const root = mkdtempSync(join(tmpdir(), "sage-typesafe-records-"));
     try {
       const sink = createFileShadowSink(root);
-      sink.write(record("record-one", "recommend", 0.9));
-      sink.write({ ...record("record-two", "recommend", 0.9), repeatIndex: 2 });
+      const sameRecord = record("record-one", "recommend", 0.9);
+      sink.write(sameRecord);
+      sink.write(sameRecord);
       expect(readdirSync(root)).toHaveLength(2);
     } finally {
       rmSync(root, { recursive: true, force: true });

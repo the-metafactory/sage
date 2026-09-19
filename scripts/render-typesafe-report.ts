@@ -8,7 +8,7 @@ import {
   renderEvaluationReport,
   ReviewerLabelSchema,
   EvaluationThresholdsSchema,
-  type ShadowComparisonRecord,
+  ShadowComparisonRecordSchema,
 } from "../src/typesafe/index.ts";
 
 const recordsDir = process.argv[2] ?? join(homedir(), ".config", "sage", "typesafe-shadow");
@@ -20,7 +20,9 @@ const thresholdsPath =
 const records = readdirSync(recordsDir)
   .filter((name) => name.endsWith(".json"))
   .sort()
-  .map((name) => JSON.parse(readFileSync(join(recordsDir, name), "utf8")) as ShadowComparisonRecord);
+  .map((name) => ShadowComparisonRecordSchema.parse(
+    JSON.parse(readFileSync(join(recordsDir, name), "utf8")),
+  ));
 const rawLabels: unknown = JSON.parse(readFileSync(labelsPath, "utf8"));
 if (!Array.isArray(rawLabels)) throw new Error("reviewer labels must be a JSON array");
 const labels = rawLabels.map((label) => ReviewerLabelSchema.parse(label));

@@ -101,6 +101,8 @@ export interface StageRecord {
   readonly questionIds: readonly string[];
   readonly signals: readonly RecordedSignal[];
   readonly failureReason: string | null;
+  /** Findings excluded because the bounded evidence request reached its hard size limit. */
+  readonly omittedQuestionCount?: number;
 }
 
 export interface ShadowComparisonRecord {
@@ -133,6 +135,108 @@ export interface ShadowComparisonRecord {
   readonly estimatedCostUsd: number;
   readonly failureReason: string | null;
 }
+
+const PrRefSchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  number: z.number().int(),
+  kind: z.enum(["github", "gitlab"]).optional(),
+  host: z.string().optional(),
+}).strict();
+
+const DiffCandidateSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  startLine: z.number().int(),
+  excerpt: z.string(),
+  selectionReason: z.string(),
+  originalChars: z.number().int().nonnegative(),
+  retainedChars: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+}).strict();
+
+const BoundedReviewStateSchema = z.object({
+  pr: z.object({
+    title: z.string(),
+    changedPaths: z.array(z.string()),
+    additions: z.number().int(),
+    deletions: z.number().int(),
+    headSha: z.string(),
+  }).strict(),
+  candidates: z.array(DiffCandidateSchema),
+  discardedCandidateSummary: z.object({
+    count: z.number().int().nonnegative(),
+    paths: z.array(z.string()),
+    reason: z.string(),
+  }).strict(),
+  truncation: z.object({
+    inputChars: z.number().int().nonnegative(),
+    retainedChars: z.number().int().nonnegative(),
+    candidatesTruncated: z.number().int().nonnegative(),
+    stateTruncated: z.boolean(),
+  }).strict(),
+}).strict();
+
+const RecordedSignalSchema = z.object({
+  questionId: z.string(),
+  policyQuestionId: z.string(),
+  family: z.enum(["routing", "candidate", "finding_evidence"]),
+  subject: z.string(),
+  answer: ChoiceAnswerSchema,
+  floor: z.number().min(0).max(1),
+  disposition: z.enum(["accepted", "low_confidence", "no_signal"]),
+  selectedCandidateId: z.string().optional(),
+}).strict();
+
+const StageRecordSchema = z.object({
+  status: z.enum(["ok", "failed", "skipped"]),
+  latencyMs: z.number().int().nonnegative(),
+  attempts: z.number().int().nonnegative(),
+  retryCount: z.number().int().nonnegative(),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+  }).strict(),
+  questionIds: z.array(z.string()),
+  signals: z.array(RecordedSignalSchema),
+  failureReason: z.string().nullable(),
+  omittedQuestionCount: z.number().int().nonnegative().optional(),
+}).strict();
+
+/** Runtime boundary for local and checked-in shadow evidence. */
+export const ShadowComparisonRecordSchema: z.ZodType<ShadowComparisonRecord> = z.object({
+  schemaVersion: z.literal(1),
+  recordId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  mode: z.literal("shadow"),
+  authorizationMode: z.enum(["frozen-corpus", "approved-repositories-until-revoked"]),
+  repeatIndex: z.number().int().positive(),
+  repeatCount: z.number().int().positive(),
+  ref: PrRefSchema,
+  headSha: z.string(),
+  modelRequested: z.string().min(1),
+  modelReturned: z.string().nullable(),
+  policyVersion: z.string().min(1),
+  policyHash: z.string().min(1),
+  stateFingerprint: z.string().min(1),
+  baseline: z.object({
+    selectedLenses: z.array(z.string()),
+    erroredLenses: z.array(z.string()),
+    findingFingerprint: z.string(),
+    verdictDecision: z.enum(["approved", "changes-requested", "commented"]),
+    posted: z.boolean(),
+  }).strict(),
+  state: BoundedReviewStateSchema,
+  routing: StageRecordSchema,
+  evidence: StageRecordSchema,
+  latencyMs: z.number().int().nonnegative(),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+  }).strict(),
+  estimatedCostUsd: z.number().nonnegative(),
+  failureReason: z.string().nullable(),
+}).strict();
 
 export interface ShadowRecordSink {
   write(record: ShadowComparisonRecord): Promise<string | void> | string | void;
