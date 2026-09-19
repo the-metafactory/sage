@@ -155,6 +155,43 @@ describe("TypeSafe bounded state", () => {
     expect(redacted).not.toContain("\nkey\n");
   });
 
+  test("redacts quoted assignments, YAML blocks, and provider token formats", () => {
+    const redacted = redactTypeSafeText([
+      `{"api_key": "secret value with spaces"}`,
+      "private_key: |\n  line-one\n  line-two",
+      "const openai = 'sk-abcdefghijklmnopqrstuv';",
+      "const github = 'github_pat_abcdefghijklmnopqrstuvwxyz123456';",
+      "const aws = 'AKIAABCDEFGHIJKLMNOP';",
+    ].join("\n"));
+
+    expect(redacted).not.toContain("secret value with spaces");
+    expect(redacted).not.toContain("line-one");
+    expect(redacted).not.toContain("sk-abcdefghijklmnopqrstuv");
+    expect(redacted).not.toContain("github_pat_abcdefghijklmnopqrstuvwxyz123456");
+    expect(redacted).not.toContain("AKIAABCDEFGHIJKLMNOP");
+  });
+
+  test("bounds the entire serialized state including paths and metadata", () => {
+    const manyFiles = Array.from({ length: 100 }, (_, index) => ({
+      path: `src/${"very-long-segment-".repeat(8)}${index}.ts`,
+      additions: 1,
+      deletions: 0,
+    }));
+    const boundedPolicy = {
+      ...TYPESAFE_POLICY,
+      bounds: { ...TYPESAFE_POLICY.bounds, maxStateChars: 1_200 },
+    };
+    const state = buildBoundedReviewState({
+      ...input.pr,
+      title: "large metadata ".repeat(100),
+      files: manyFiles,
+    } as never, input.diff.repeat(10), boundedPolicy);
+
+    expect(JSON.stringify(state).length).toBeLessThanOrEqual(1_200);
+    expect(state.truncation.stateTruncated).toBe(true);
+    expect(state.pr.changedPaths.length).toBeLessThan(manyFiles.length);
+  });
+
   test("adversarial content stays bounded data and cannot expand scope", () => {
     const diff = adversarial
       .map((fixture) => `diff --git a/${fixture.path} b/${fixture.path}\n@@ -1 +1 @@\n${fixture.text}`)
@@ -226,7 +263,8 @@ describe("TypeSafe shadow observer", () => {
 
     await observer.observe(multiHunk);
 
-    const evidenceState = requests[1]!.state as {
+    const evidenceRequest = requests.find((request) => "findings" in (request.state as object));
+    const evidenceState = evidenceRequest!.state as {
       findings: Array<{ selectedEvidence: { candidateId: string; excerpt: string } }>;
     };
     expect(evidenceState.findings[0]?.selectedEvidence.candidateId).toBe("candidate_2");

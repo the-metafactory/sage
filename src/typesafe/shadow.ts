@@ -464,22 +464,25 @@ export function createTypeSafeShadowObserver(
       for (let repeatIndex = 1; repeatIndex <= repeatCount; repeatIndex++) {
         const repeatTimestamp = repeatIndex === 1 ? timestamp : now();
         const state = buildBoundedReviewState(input.pr, input.diff, policy);
-        const routing = await runStage(
-          options.transport,
-          routingRequest(state, policy),
-          timeoutMs,
-          (response) => routingSignals(response, policy),
-        );
         const subjects = evidenceSubjects(input.lensReports, state, policy);
-        const evidence =
+        const evidencePromise =
           subjects.length === 0
-            ? { record: skippedStage("no blocker or important findings"), response: null }
-            : await runStage(
+            ? Promise.resolve({ record: skippedStage("no blocker or important findings"), response: null })
+            : runStage(
                 options.transport,
                 evidenceRequest(subjects, policy),
                 timeoutMs,
                 (response) => evidenceSignals(response, subjects, policy),
               );
+        const [routing, evidence] = await Promise.all([
+          runStage(
+            options.transport,
+            routingRequest(state, policy),
+            timeoutMs,
+            (response) => routingSignals(response, policy),
+          ),
+          evidencePromise,
+        ]);
         const modelReturned = routing.response?.model ?? evidence.response?.model ?? null;
         await options.sink.write(
           assembleRecord(

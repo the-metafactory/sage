@@ -5,18 +5,24 @@ import type { BoundedReviewState, DiffCandidate } from "./types.ts";
 import type { TypeSafePolicy } from "./policy.ts";
 
 const SECRET_ASSIGNMENT =
-  /\b(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\b(\s*[:=]\s*)([^\s,;]+)/gi;
+  /(["']?)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
+const YAML_SECRET_BLOCK =
+  /^(\s*["']?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const PRIVATE_KEY = /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g;
+const PROVIDER_TOKEN =
+  /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,})\b/g;
 
 export function redactTypeSafeText(value: string): string {
   return value
     .replace(PRIVATE_KEY, "[REDACTED_PRIVATE_KEY]")
+    .replace(YAML_SECRET_BLOCK, "$1\n  [REDACTED]\n")
     .replace(BEARER, "Bearer [REDACTED]")
     .replace(JWT, "[REDACTED_JWT]")
-    .replace(SECRET_ASSIGNMENT, (_match, name: string, separator: string) =>
-      `${name}${separator}[REDACTED]`,
+    .replace(PROVIDER_TOKEN, "[REDACTED_TOKEN]")
+    .replace(SECRET_ASSIGNMENT, (_match, quote: string, name: string, separator: string) =>
+      `${quote}${name}${quote}${separator}[REDACTED]`,
     );
 }
 
@@ -25,6 +31,8 @@ interface RawCandidate {
   startLine: number;
   excerpt: string;
 }
+
+type MutableDiffCandidate = { -readonly [K in keyof DiffCandidate]: DiffCandidate[K] };
 
 function parseDiffCandidates(diff: string): RawCandidate[] {
   const candidates: RawCandidate[] = [];
@@ -73,7 +81,7 @@ export function buildBoundedReviewState(
 ): BoundedReviewState {
   const inputChars = diff.length;
   const raw = parseDiffCandidates(diff);
-  const kept: DiffCandidate[] = [];
+  const kept: MutableDiffCandidate[] = [];
   let remaining = policy.bounds.maxStateChars;
   let candidatesTruncated = 0;
 
@@ -98,11 +106,12 @@ export function buildBoundedReviewState(
   }
 
   const discarded = raw.slice(kept.length);
-  const retainedChars = kept.reduce((sum, candidate) => sum + candidate.retainedChars, 0);
-  return {
+  let removedCandidates = 0;
+  let metadataTruncated = false;
+  const state = {
     pr: {
       title: redactTypeSafeText(pr.title).slice(0, 500),
-      changedPaths: pr.files.map((file) => file.path),
+      changedPaths: pr.files.map((file) => redactTypeSafeText(file.path)),
       additions: pr.additions,
       deletions: pr.deletions,
       headSha: pr.headRefOid,
@@ -110,7 +119,7 @@ export function buildBoundedReviewState(
     candidates: kept,
     discardedCandidateSummary: {
       count: discarded.length,
-      paths: [...new Set(discarded.map((candidate) => candidate.path))].slice(0, 24),
+      paths: [...new Set(discarded.map((candidate) => redactTypeSafeText(candidate.path)))].slice(0, 24),
       reason:
         discarded.length === 0
           ? "none"
@@ -118,11 +127,58 @@ export function buildBoundedReviewState(
     },
     truncation: {
       inputChars,
-      retainedChars,
+      retainedChars: kept.reduce((sum, candidate) => sum + candidate.retainedChars, 0),
       candidatesTruncated,
       stateTruncated: discarded.length > 0 || candidatesTruncated > 0,
     },
   };
+
+  // maxStateChars is a bound on the complete serialized request state, not
+  // merely the sum of excerpts. Trim data fields deterministically until the
+  // actual JSON payload fits; fixed counters and fingerprints remain intact.
+  while (JSON.stringify(state).length > policy.bounds.maxStateChars) {
+    const excess = JSON.stringify(state).length - policy.bounds.maxStateChars;
+    const candidate = [...state.candidates].reverse().find((item) => item.excerpt.length > 0);
+    if (candidate) {
+      const cut = Math.min(candidate.excerpt.length, Math.max(1, excess));
+      candidate.excerpt = candidate.excerpt.slice(0, candidate.excerpt.length - cut);
+      candidate.retainedChars = candidate.excerpt.length;
+      candidate.truncated = true;
+      continue;
+    }
+    if (state.candidates.length > 0) {
+      state.candidates.pop();
+      state.discardedCandidateSummary.count++;
+      removedCandidates++;
+      metadataTruncated = true;
+      continue;
+    }
+    if (state.discardedCandidateSummary.paths.length > 0) {
+      state.discardedCandidateSummary.paths.pop();
+      metadataTruncated = true;
+      continue;
+    }
+    if (state.pr.changedPaths.length > 0) {
+      state.pr.changedPaths.pop();
+      metadataTruncated = true;
+      continue;
+    }
+    if (state.pr.title.length > 0) {
+      state.pr.title = state.pr.title.slice(0, Math.max(0, state.pr.title.length - Math.max(1, excess)));
+      metadataTruncated = true;
+      continue;
+    }
+    throw new Error("TypeSafe maxStateChars is too small for the fixed bounded-state schema");
+  }
+
+  state.truncation.retainedChars = state.candidates.reduce(
+    (sum, candidate) => sum + candidate.retainedChars,
+    0,
+  );
+  state.truncation.candidatesTruncated =
+    removedCandidates + state.candidates.filter((candidate) => candidate.truncated).length;
+  state.truncation.stateTruncated ||= metadataTruncated;
+  return state;
 }
 
 export function fingerprint(value: unknown): string {

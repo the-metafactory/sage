@@ -17,6 +17,8 @@ export function createFileShadowSink(
         safeRefSegment(record.ref.repo),
         record.ref.number,
         record.headSha.slice(0, 12) || "no-head",
+        `repeat-${record.repeatIndex}`,
+        safeRefSegment(record.recordId).slice(0, 16),
         timestamp,
       ].join("-");
       const path = join(root, `${slug}.json`);

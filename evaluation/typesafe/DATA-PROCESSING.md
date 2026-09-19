@@ -23,13 +23,15 @@ is not assumed. This approval does not extend beyond the exact heads and
 three-run evaluation recorded in the manifest.
 
 On 2026-09-19, Jens-Christian Fischer separately authorized this machine to
-run the same bounded, redacted, shadow-only observer for every Sage review
-until he explicitly turns it off, noting that the active work for the next few
-days is game development. That broader authorization is stored in a local
-`0600` manifest with `authorizationMode: all-reviews-until-revoked`; it is not
-the shipped corpus default. New records identify which authorization mode was
-used. Revocation is performed by removing `~/.config/sage/typesafe.env` or
-setting `SAGE_TYPESAFE_MODE=off`.
+keep the same bounded, redacted, shadow-only observer enabled until he
+explicitly turns it off, noting that the active work for the next few days is
+game development. The local `0600` manifest uses
+`authorizationMode: approved-repositories-until-revoked` and names the
+approved non-critical game repositories. Sage still runs normally elsewhere,
+but reviews outside that allowlist never call TypeSafe. This authorization is
+not the shipped corpus default. New records identify which authorization mode
+was used. Revocation is performed by removing
+`~/.config/sage/typesafe.env` or setting `SAGE_TYPESAFE_MODE=off`.
 
 References reviewed: [model/data-handling documentation](https://docs.typesafe.ai/models),
 [privacy policy](https://typesafe.ai/legal/privacy-policy),

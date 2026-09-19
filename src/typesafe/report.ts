@@ -138,7 +138,10 @@ function questionEvaluations(
 function repeatability(records: readonly ShadowComparisonRecord[]): EvaluationReport["repeatability"] {
   const groups = new Map<string, RecordedSignal[]>();
   for (const record of records) {
-    for (const signal of allSignals(record)) {
+    for (const signal of allSignals(record).filter(
+      (candidate) =>
+        candidate.family === "routing" || candidate.family === "finding_evidence",
+    )) {
       const key = `${record.stateFingerprint}:${record.policyHash}:${record.modelRequested}:${signal.questionId}`;
       const values = groups.get(key) ?? [];
       values.push(signal);

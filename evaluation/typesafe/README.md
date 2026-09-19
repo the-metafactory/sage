@@ -7,9 +7,12 @@ principal approval.
 Sage's launcher also reads `~/.config/sage/typesafe.env` after its ordinary
 provider environment. This separate `0600` file is the persistent on/off
 switch for a machine-wide shadow rollout. A local manifest may set
-`authorizationMode` to `all-reviews-until-revoked` only with explicit
-principal approval; the shipped manifest remains `frozen-corpus`. Remove the
-file or set `SAGE_TYPESAFE_MODE=off` to revoke the rollout.
+`authorizationMode` to `approved-repositories-until-revoked` only with
+explicit principal approval and a `repositories` allowlist whose entries are
+classified `non-critical-game`; the shipped manifest remains `frozen-corpus`.
+Reviews outside that allowlist produce a local authorization-failure record
+without calling TypeSafe. Remove the file or set `SAGE_TYPESAFE_MODE=off` to
+revoke the rollout.
 
 For each approved immutable corpus entry, run Sage at that exact head:
 

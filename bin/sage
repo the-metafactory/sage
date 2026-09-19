@@ -48,13 +48,45 @@ fi
 # observer without touching substrate credentials or the TypeSafe key source.
 SAGE_TYPESAFE_ENV_FILE="${HOME}/.config/sage/typesafe.env"
 if [[ -f "$SAGE_TYPESAFE_ENV_FILE" ]]; then
-  if [[ "$(stat -f '%Mp%Lp' "$SAGE_TYPESAFE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then
-    echo "sage: warning — $SAGE_TYPESAFE_ENV_FILE is world/group-readable (chmod 600 recommended)" >&2
+  if TYPESAFE_ENV_OWNER="$(stat -f '%Su' "$SAGE_TYPESAFE_ENV_FILE" 2>/dev/null)"; then
+    TYPESAFE_ENV_MODE="$(stat -f '%Lp' "$SAGE_TYPESAFE_ENV_FILE")"
+  else
+    TYPESAFE_ENV_OWNER="$(stat -c '%U' "$SAGE_TYPESAFE_ENV_FILE")"
+    TYPESAFE_ENV_MODE="$(stat -c '%a' "$SAGE_TYPESAFE_ENV_FILE")"
   fi
-  set -a
-  # shellcheck disable=SC1090
-  source "$SAGE_TYPESAFE_ENV_FILE"
-  set +a
+  if [[ "$TYPESAFE_ENV_OWNER" != "$(id -un)" || "$TYPESAFE_ENV_MODE" != "600" ]]; then
+    echo "sage: refusing $SAGE_TYPESAFE_ENV_FILE — it must be owned by the current user with mode 600" >&2
+    exit 78
+  fi
+
+  # Parse only literal KEY=VALUE assignments for the five shadow settings.
+  # Deliberately do not `source` this file: configuration is data, not shell.
+  while IFS= read -r TYPESAFE_ENV_LINE || [[ -n "$TYPESAFE_ENV_LINE" ]]; do
+    TYPESAFE_ENV_LINE="${TYPESAFE_ENV_LINE%$'\r'}"
+    [[ -z "$TYPESAFE_ENV_LINE" || "$TYPESAFE_ENV_LINE" =~ ^[[:space:]]*# ]] && continue
+    if [[ ! "$TYPESAFE_ENV_LINE" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]]; then
+      echo "sage: invalid assignment in $SAGE_TYPESAFE_ENV_FILE" >&2
+      exit 78
+    fi
+    TYPESAFE_ENV_KEY="${BASH_REMATCH[1]}"
+    TYPESAFE_ENV_VALUE="${BASH_REMATCH[2]}"
+    case "$TYPESAFE_ENV_KEY" in
+      SAGE_TYPESAFE_MODE|SAGE_TYPESAFE_CORPUS|SAGE_TYPESAFE_TIMEOUT_MS|SAGE_TYPESAFE_REPEATS|TYPESAFE_API_KEY) ;;
+      *)
+        echo "sage: unsupported key $TYPESAFE_ENV_KEY in $SAGE_TYPESAFE_ENV_FILE" >&2
+        exit 78
+        ;;
+    esac
+    if (( ${#TYPESAFE_ENV_VALUE} >= 2 )); then
+      TYPESAFE_ENV_FIRST="${TYPESAFE_ENV_VALUE:0:1}"
+      TYPESAFE_ENV_LAST="${TYPESAFE_ENV_VALUE: -1}"
+      if [[ ( "$TYPESAFE_ENV_FIRST" == '"' && "$TYPESAFE_ENV_LAST" == '"' ) ||
+            ( "$TYPESAFE_ENV_FIRST" == "'" && "$TYPESAFE_ENV_LAST" == "'" ) ]]; then
+        TYPESAFE_ENV_VALUE="${TYPESAFE_ENV_VALUE:1:${#TYPESAFE_ENV_VALUE}-2}"
+      fi
+    fi
+    export "$TYPESAFE_ENV_KEY=$TYPESAFE_ENV_VALUE"
+  done < "$SAGE_TYPESAFE_ENV_FILE"
 fi
 
 # Guard the retired `serve` subcommand explicitly so an operator with

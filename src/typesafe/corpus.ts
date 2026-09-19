@@ -14,11 +14,19 @@ const CorpusEntrySchema = z.object({
   approvedAt: z.string().datetime(),
 });
 
+const RepositoryAuthorizationSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  classification: z.literal("non-critical-game"),
+  approvedBy: z.string().min(1),
+  approvedAt: z.string().datetime(),
+});
+
 export const CorpusManifestSchema = z
   .object({
     schemaVersion: z.literal(1),
     authorizationMode: z
-      .enum(["frozen-corpus", "all-reviews-until-revoked"])
+      .enum(["frozen-corpus", "approved-repositories-until-revoked"])
       .optional(),
     frozenAt: z.string().datetime().nullable(),
     dataProcessingApproval: z.discriminatedUnion("status", [
@@ -32,20 +40,39 @@ export const CorpusManifestSchema = z
       }),
     ]),
     entries: z.array(CorpusEntrySchema),
+    repositories: z.array(RepositoryAuthorizationSchema).optional(),
   })
   .superRefine((manifest, ctx) => {
-    if (manifest.dataProcessingApproval.status === "pending" && manifest.entries.length > 0) {
+    if (
+      manifest.dataProcessingApproval.status === "pending" &&
+      (manifest.entries.length > 0 || (manifest.repositories?.length ?? 0) > 0)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["entries"],
-        message: "pending data-processing approval requires an empty corpus",
+        path: ["dataProcessingApproval"],
+        message: "pending data-processing approval requires empty authorization scopes",
       });
     }
-    if (manifest.dataProcessingApproval.status === "approved" && manifest.frozenAt === null) {
+    const mode = manifest.authorizationMode ?? "frozen-corpus";
+    if (
+      manifest.dataProcessingApproval.status === "approved" &&
+      mode === "frozen-corpus" &&
+      manifest.frozenAt === null
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["frozenAt"],
         message: "an approved corpus must have a freeze timestamp",
+      });
+    }
+    if (
+      mode === "approved-repositories-until-revoked" &&
+      (manifest.repositories?.length ?? 0) === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["repositories"],
+        message: "until-revoked mode requires at least one approved repository",
       });
     }
     for (const [index, entry] of manifest.entries.entries()) {
@@ -73,7 +100,14 @@ export function authorizeCorpusInput(
   if (manifest.dataProcessingApproval.status !== "approved") {
     return { ok: false, reason: "data-processing approval is pending" };
   }
-  if (manifest.authorizationMode === "all-reviews-until-revoked") {
+  if (manifest.authorizationMode === "approved-repositories-until-revoked") {
+    const repository = manifest.repositories?.find(
+      (candidate) =>
+        candidate.owner === input.ref.owner && candidate.repo === input.ref.repo,
+    );
+    if (!repository) {
+      return { ok: false, reason: "repository is not in the until-revoked game allowlist" };
+    }
     return { ok: true };
   }
   const entry = manifest.entries.find(

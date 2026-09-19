@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { authorizeCorpusInput, CorpusManifestSchema } from "../src/typesafe/corpus.ts";
+import { createFileShadowSink } from "../src/typesafe/persist.ts";
 import {
   generateEvaluationReport,
   renderEvaluationReport,
@@ -97,24 +101,31 @@ describe("TypeSafe corpus manifest", () => {
     })).toThrow(/pending data-processing approval/);
   });
 
-  test("allows any review only under an explicit approved until-revoked mode", () => {
+  test("allows only explicitly approved game repositories in until-revoked mode", () => {
     const manifest = CorpusManifestSchema.parse({
       schemaVersion: 1,
-      authorizationMode: "all-reviews-until-revoked",
-      frozenAt: "2026-09-19T06:00:00.000Z",
+      authorizationMode: "approved-repositories-until-revoked",
+      frozenAt: null,
       dataProcessingApproval: {
         status: "approved",
         approvedBy: "principal",
         approvedAt: "2026-09-19T06:00:00.000Z",
-        scope: "all Sage reviews until revoked",
+        scope: "approved non-critical game repositories until revoked",
         termsReviewedAt: "2026-09-18T20:00:00.000Z",
       },
       entries: [],
+      repositories: [{
+        owner: "x",
+        repo: "game",
+        classification: "non-critical-game",
+        approvedBy: "principal",
+        approvedAt: "2026-09-19T06:00:00.000Z",
+      }],
     });
 
-    expect(manifest.authorizationMode).toBe("all-reviews-until-revoked");
-    expect(authorizeCorpusInput(manifest, {
-      ref: { owner: "any", repo: "game", number: 99 },
+    expect(manifest.authorizationMode).toBe("approved-repositories-until-revoked");
+    const approvedInput = {
+      ref: { owner: "x", repo: "game", number: 99 },
       pr: {
         number: 99,
         title: "game change",
@@ -129,14 +140,39 @@ describe("TypeSafe corpus manifest", () => {
         additions: 0,
         deletions: 0,
         files: [],
-        url: "https://github.com/any/game/pull/99",
+        url: "https://github.com/x/game/pull/99",
       },
       diff: "",
       baselineLensNames: [],
       lensReports: [],
       verdict: { decision: "approved", summary: "clean", lenses: [] },
       posted: false,
-    })).toEqual({ ok: true });
+    } as const;
+    expect(authorizeCorpusInput(manifest, approvedInput)).toEqual({ ok: true });
+    expect(authorizeCorpusInput(manifest, {
+      ...approvedInput,
+      ref: { ...approvedInput.ref, repo: "customer" },
+    })).toEqual({
+      ok: false,
+      reason: "repository is not in the until-revoked game allowlist",
+    });
+  });
+
+  test("rejects until-revoked mode without an explicit repository allowlist", () => {
+    expect(() => CorpusManifestSchema.parse({
+      schemaVersion: 1,
+      authorizationMode: "approved-repositories-until-revoked",
+      frozenAt: null,
+      dataProcessingApproval: {
+        status: "approved",
+        approvedBy: "principal",
+        approvedAt: "2026-09-19T06:00:00.000Z",
+        scope: "game repositories",
+        termsReviewedAt: "2026-09-18T20:00:00.000Z",
+      },
+      entries: [],
+      repositories: [],
+    })).toThrow(/requires at least one approved repository/);
   });
 });
 
@@ -200,6 +236,40 @@ describe("TypeSafe evaluation report", () => {
     expect(report.labelCoverage.requiredSignals).toBe(2);
   });
 
+  test("excludes candidate helper choices from the repeatability gate", () => {
+    const firstBase = record("r1", "recommend", 0.9);
+    const secondBase = record("r2", "recommend", 0.7);
+    const withCandidate = (
+      base: ShadowComparisonRecord,
+      choice: "candidate_1" | "candidate_2",
+    ): ShadowComparisonRecord => ({
+      ...base,
+      routing: {
+        ...base.routing,
+        signals: [...base.routing.signals, {
+          ...base.routing.signals[0]!,
+          questionId: "lens.security.v1.candidate",
+          family: "candidate",
+          answer: {
+            type: "choice",
+            choice,
+            probabilities: choice === "candidate_1"
+              ? { candidate_1: 0.99, candidate_2: 0.01 }
+              : { candidate_1: 0.01, candidate_2: 0.99 },
+            confidence: 0.99,
+          },
+        }],
+      },
+    });
+    const first = withCandidate(firstBase, "candidate_1");
+    const second = withCandidate(secondBase, "candidate_2");
+
+    const repeatability = generateEvaluationReport([first, second], []).repeatability;
+    expect(repeatability.repeatedGroups).toBe(1);
+    expect(repeatability.meanAgreement).toBe(1);
+    expect(repeatability.maxProbabilitySpread).toBeCloseTo(0.2);
+  });
+
   test("requires cost, latency, and repeatability gates before proposing integration", () => {
     const records = [record("r1", "recommend", 0.9), record("r2", "recommend", 0.8)];
     const labels: ReviewerLabel[] = records.map((item) => ({
@@ -233,5 +303,19 @@ describe("TypeSafe evaluation report", () => {
     const baselineReport = generateEvaluationReport(incompleteBaseline, labels, approvedThresholds);
     expect(baselineReport.baselineFailedLensRuns).toBe(1);
     expect(baselineReport.recommendation).toBe("iterate");
+  });
+});
+
+describe("TypeSafe record persistence", () => {
+  test("does not overwrite records created in the same millisecond", () => {
+    const root = mkdtempSync(join(tmpdir(), "sage-typesafe-records-"));
+    try {
+      const sink = createFileShadowSink(root);
+      sink.write(record("record-one", "recommend", 0.9));
+      sink.write({ ...record("record-two", "recommend", 0.9), repeatIndex: 2 });
+      expect(readdirSync(root)).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

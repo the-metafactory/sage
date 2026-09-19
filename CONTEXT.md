@@ -130,6 +130,16 @@ _Avoid_: query, request, message (those are bus terms)
 The *LLM vendor* behind a Substrate (Anthropic, OpenAI, OpenRouter, Gemini, …). Sage forwards Provider API keys to the Substrate subprocess via an explicit env allow-list (`src/substrate/env.ts`) and never sees Provider responses directly — the Substrate is the only consumer.
 _Avoid_: vendor, model provider, API
 
+**System One adapter**:
+The *bounded typed-decision integration* under `src/typesafe/`. It sends a
+redacted, size-limited state to a pinned TypeSafe Jev endpoint and accepts only
+schema-validated choices and probabilities. It is not a Substrate: it cannot
+run a Lens, produce prose, add or suppress a Finding, change a Verdict, or
+cause a Forge side effect. Direct HTTP is confined to this adapter, runs only
+after Sage has completed its ordinary Review, is authorization-gated and
+fail-open, and records advisory shadow evidence locally.
+_Avoid_: TypeSafe substrate, Jev lens, AI reviewer
+
 ### Sage-specific bus surfaces
 
 These specialize myelin Envelopes and cortex Subjects for Sage's role. The underlying Envelope schema, Subject grammar, and Dispatch modes are owned by **myelin** and **cortex** respectively — see Boundary section.
@@ -166,6 +176,9 @@ _Avoid_: direct subject, named subject
 - A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
+- A **System One adapter** may call its typed decision service directly, but it
+  observes only a completed Review and has no path back into Lens selection,
+  Findings, Verdict, Review comment, or Forge behavior.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review, and are what a **Restated Finding** is matched against.
 - **Checked claims** are what makes HonestOracle's description trigger settle: unchecked or unknown ⇒ the Lens runs; already checked ⇒ it does not.
 - A **Restated Finding** is counted in the convergence summary but never subtracted from it: a round whose restated count equals its Finding count produced no new information, which is a signal to the loop, not a reason to hide a Finding.
@@ -193,7 +206,11 @@ _Avoid_: direct subject, named subject
 - **"broadcast" Subject was a misread of cortex.** Sage README called the Offer Subject "broadcast"; cortex CONTEXT explicitly avoids that word because exactly one Assistant claims an offered task. Resolved: **Offer Dispatch** (cortex term) is canonical.
 - **`{org}` in subject templates.** Sage README uses `{org}` in the Subject pattern; ecosystem-wide that segment is **`{principal}`**, and `metafactory` is the **network**, never a Subject segment. Resolved: README needs updating to `{principal}`.
 - **`persona` is a sage concept, not a cortex one.** Cortex CONTEXT explicitly resolves `persona → assistant`. Within Sage's bounded context **Persona** is the voice/principles file (`persona.md`); the Assistant itself is *Sage*. The file `personas/sage.md` is "Sage's Persona file" — same shape cortex uses for filenames.
-- **`substrate` vs `provider`.** Two layers, often conflated. Substrate = the harness subprocess Sage launches. Provider = the LLM vendor the harness talks to. Sage never speaks Provider; the Substrate does.
+- **`substrate` vs `provider` vs `System One adapter`.** Three distinct
+  boundaries. Substrate = the coding-harness subprocess Sage launches for
+  generative Lens work. Provider = the LLM vendor behind that harness. System
+  One adapter = the separately authorized typed-decision observer; it is
+  neither a Lens runner nor a Provider route.
 - **"Bus" is informal.** myelin owns the formal term **Transport**. Sage docs may use "bus" colloquially; in any formal context use **Transport**.
 
 ## Boundary with adjacent contexts
