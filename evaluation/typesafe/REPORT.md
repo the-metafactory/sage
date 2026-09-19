@@ -1,91 +1,93 @@
 # TypeSafe shadow proof-of-value report
 
-Status: **partial live evaluation — iterate**.
+Status: **complete bounded evaluation — iterate**.
 
-This snapshot covers two of the five approved immutable Seelite corpus heads,
-each with one complete Sage baseline and three sequential Jev judgments over
+The approved public-game corpus covers all five immutable Seelite heads, each
+with one complete Claude Sage baseline and three sequential Jev judgments over
 the same bounded state:
 
+- `jcfischer/seelite#336` at `f8190d2a2a6ad65918db24bec9b10ce3e7dcede4`
 - `jcfischer/seelite#347` at `a6995ab79d48286070823<wbr>914671e1ecf37444efe`
 - `jcfischer/seelite#354` at `f2297e371d2c9b608166742995069aafd29a5e4c`
+- `jcfischer/seelite#319` at `27608527de9de92ef2d8d66e832b62b20f5e1792`
+- `jcfischer/seelite#389` at `7c8a99cf9aaac6b1ad1cd9872b8e8d229ba9336e`
 
-Both reviews ran through Claude Code without posting to GitHub. All 14 Sage
-lenses completed; none produced an errored baseline report. Jev was advisory
-only and had no return channel into lens selection, findings, severity, the
-Verdict, or Forge actions.
+No review was posted. Jev remained advisory and had no return channel into Lens
+selection, Findings, Severity, the Verdict, or Forge interactions.
 
 ## Coverage and operations
 
-- Records: 6
-- Immutable states: 2
-- Completed baseline Lens runs observed: 14
+- Records: 15
+- Immutable states: 5
+- Completed baseline Lens runs observed: 33
 - Failed baseline lens runs: 0
-- Independently labeled decision signals: 0 / 42 (42 missing)
-- Decision signals with ground truth: 0 / 42 (42 missing)
+- Independently labeled decision signals: 114 / 114 (0 missing)
+- Decision signals with ground truth: 114 / 114 (0 missing)
 - Failed records: 0
-- State-truncated records: 6 / 6 (1.000)
-- Evidence questions omitted by request bounds: 0
-- Provider request attempts / retries: 12 / 0
-- Pre-fix recorded stage-total latency p50 / p95: 577 ms / 1172 ms
-- Usage: 69,345 input tokens, 6,588 output tokens
-- Estimated provider cost: $0.002912 total, $0.000485 average per record
+- State-truncated records: 15 / 15 (1.000)
+- Evidence questions omitted by request bounds: 258
+- Provider request attempts / retries: 30 / 0
+- Latency p50 / p95: 561 ms / 1172 ms
+- Usage: 170,088 input tokens, 16,329 output tokens
+- Estimated provider cost: $0.007144 total, $0.000476 average per record
+
+The 258 omissions are 86 excess important Findings from `#389`, repeated over
+its three Jev judgments. The hard evidence-question bound worked as designed,
+but the resulting coverage gap independently prevents a production proposal.
 
 ## Decision-signal repeatability
 
 Routing and finding-evidence signals only; candidate-selection helper signals
-are intentionally excluded because they do not count toward the production gate.
+are intentionally excluded because they do not count toward the production
+gate.
 
-This is an early operational signal over two immutable states, not evidence of
-general stability or value.
+This is a bounded operational signal over five immutable states, not evidence
+of general stability or value.
 
-- Repeated decision state/question groups: 14
+- Repeated decision state/question groups: 38
 - Mean exact-choice agreement: 1.000
-- Maximum probability spread: 0.060
+- Maximum probability spread: 0.070
 
-Every repeated routing and finding-evidence Choice was identical across its
-three runs. The probability spread clears the predeclared 0.20 ceiling, and
-the conservative pre-fix stage-total latency, failure rate, and cost clear
-their operational thresholds. New records use concurrent wall-clock latency
-(the slower stage), not the sum of the two parallel stages.
-
-These measurements are reproducible from the schema-validated, content-
-sanitized records in `live-evidence/` with:
-
-```sh
-bun run report:typesafe evaluation/typesafe/live-evidence
-```
-
-The artifact retains metrics and public immutable review anchors but removes
-PR titles, paths, excerpts, finding subjects, and candidate-selection prose.
-
-## Early qualitative observations
-
-For PR #347, Jev recommended no additional conditional lens. It classified the
-Glossary finding about `slot` as supported and the HonestOracle `forceRaider`
-claim as insufficiently evidenced by the selected diff excerpt.
-
-For PR #354, Jev recommended Architecture, Performance, and Maintainability.
-It classified both important findings as insufficiently evidenced. This is a
-useful pressure point for labeling: findings grounded partly in repository
-context or mathematical prose may need more than the nearest bounded diff hunk,
-but expanding state would increase disclosure and cost.
-
-All six records report bounded-state truncation. That is expected for these
-large diffs and proves the size boundary is active, but independent review must
-decide whether the retained evidence is still useful enough.
+All repeated choices were identical across their three runs, and the maximum
+spread clears the predeclared 0.20 ceiling.
 
 ## Independent reviewer labels
 
-No independent labels have been supplied yet. Precision, recall, false-negative
-examples, and reviewer-validated usefulness therefore cannot be calculated.
-Candidate-selection helper signals do not count toward the production gate;
-every routing and finding-evidence decision does.
+The labels are an independent Codex agent audit, not a human or principal
+attestation. The rubric and the 38 state/question adjudications expanded across
+three repeats are documented in `LABELING.md`.
+
+| Question | Labeled | Useful | Not useful | Indeterminate | Evidence sufficient | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `finding.evidence.v1` | 39 | 30 | 9 | 0 | 39 | 0.000 | 0.000 |
+| `lens.architecture.v1` | 15 | 6 | 9 | 0 | 15 | 0.250 | 1.000 |
+| `lens.ecosystem-compliance.v1` | 15 | 15 | 0 | 0 | 15 | n/a | n/a |
+| `lens.maintainability.v1` | 15 | 3 | 12 | 0 | 15 | 1.000 | 0.200 |
+| `lens.performance.v1` | 15 | 12 | 3 | 0 | 15 | 1.000 | 0.500 |
+| `lens.security.v1` | 15 | 15 | 0 | 0 | 15 | n/a | n/a |
+
+Overall usefulness was 81 / 114 (0.711), below the approved 0.75 production-
+proposal threshold. Finding-evidence precision was 0.000, Architecture
+precision was 0.250, and Maintainability recall was 0.200. Stable repetition
+therefore did not translate into sufficient decision quality.
 
 ## Recommendation
 
 Threshold status: **approved**.
 
-**iterate** — Operational behavior is strong, but the proof of value has not
-cleared its evidence gate. Complete the remaining approved corpus runs and
-independently label all decision signals before proposing any separately
-authorized production integration.
+**Iterate. Do not propose production authority.** The corpus completed with
+excellent operational reliability and repeatability, but the independently
+labeled usefulness and question-level quality do not clear the approved gates,
+and the bounded evidence stage omitted part of one pathological baseline. The
+shadow observer remains suitable for continued non-authoritative measurement
+on the explicitly approved game repositories.
+
+The metrics reproduce offline from the schema-validated, content-sanitized
+records with:
+
+```sh
+bun run report:typesafe \
+  evaluation/typesafe/live-evidence \
+  evaluation/typesafe/reviewer-labels.json \
+  evaluation/typesafe/thresholds.json
+```

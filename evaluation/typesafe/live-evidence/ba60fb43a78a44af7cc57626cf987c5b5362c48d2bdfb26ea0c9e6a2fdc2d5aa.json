@@ -1,0 +1,577 @@
+{
+  "schemaVersion": 1,
+  "recordId": "ba60fb43a78a44af7cc57626cf987c5b5362c48d2bdfb26ea0c9e6a2fdc2d5aa",
+  "createdAt": "2026-09-19T15:32:05.902Z",
+  "mode": "shadow",
+  "authorizationMode": "frozen-corpus",
+  "repeatIndex": 3,
+  "repeatCount": 3,
+  "ref": {
+    "owner": "jcfischer",
+    "repo": "seelite",
+    "number": 389
+  },
+  "headSha": "7c8a99cf9aaac6b1ad1cd9872b8e8d229ba9336e",
+  "modelRequested": "jev-1.13.0",
+  "modelReturned": "jev-1.13.0",
+  "policyVersion": "sage-typesafe-shadow-v1",
+  "policyHash": "4d55d76cc436b77bdfb43f95d132686aaf1e4e6248439bbc4f6fc5ade17e921c",
+  "stateFingerprint": "2ef8ba8bad9f83eeedec7e23b5a1180512dcdd3e6246b06ce60917b17f88a1a3",
+  "baseline": {
+    "selectedLenses": [
+      "CodeQuality",
+      "Security",
+      "Architecture",
+      "ContextDrift",
+      "Performance",
+      "Maintainability",
+      "HonestOracle"
+    ],
+    "erroredLenses": [],
+    "findingFingerprint": "4e9c02f8597bc8b0d473147dd976bc16a62d59036a7cf8bbbe37f4b1165af53b",
+    "verdictDecision": "changes-requested",
+    "posted": false
+  },
+  "state": {
+    "pr": {
+      "title": "[REDACTED]",
+      "changedPaths": [],
+      "additions": 2291,
+      "deletions": 63,
+      "headSha": "7c8a99cf9aaac6b1ad1cd9872b8e8d229ba9336e"
+    },
+    "candidates": [
+      {
+        "id": "candidate_1",
+        "path": "[REDACTED]",
+        "startLine": 443,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 2829,
+        "retainedChars": 2400,
+        "truncated": true
+      },
+      {
+        "id": "candidate_2",
+        "path": "[REDACTED]",
+        "startLine": 141,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 393,
+        "retainedChars": 393,
+        "truncated": false
+      },
+      {
+        "id": "candidate_3",
+        "path": "[REDACTED]",
+        "startLine": 180,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 677,
+        "retainedChars": 677,
+        "truncated": false
+      },
+      {
+        "id": "candidate_4",
+        "path": "[REDACTED]",
+        "startLine": 192,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 132,
+        "retainedChars": 132,
+        "truncated": false
+      },
+      {
+        "id": "candidate_5",
+        "path": "[REDACTED]",
+        "startLine": 711,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 1112,
+        "retainedChars": 1112,
+        "truncated": false
+      },
+      {
+        "id": "candidate_6",
+        "path": "[REDACTED]",
+        "startLine": 958,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 488,
+        "retainedChars": 488,
+        "truncated": false
+      },
+      {
+        "id": "candidate_7",
+        "path": "[REDACTED]",
+        "startLine": 1,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 13584,
+        "retainedChars": 2400,
+        "truncated": true
+      },
+      {
+        "id": "candidate_8",
+        "path": "[REDACTED]",
+        "startLine": 1,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 17094,
+        "retainedChars": 2400,
+        "truncated": true
+      },
+      {
+        "id": "candidate_9",
+        "path": "[REDACTED]",
+        "startLine": 1,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 12382,
+        "retainedChars": 1619,
+        "truncated": true
+      },
+      {
+        "id": "candidate_10",
+        "path": "[REDACTED]",
+        "startLine": 22,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 494,
+        "retainedChars": 0,
+        "truncated": true
+      },
+      {
+        "id": "candidate_11",
+        "path": "[REDACTED]",
+        "startLine": 51,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 275,
+        "retainedChars": 0,
+        "truncated": true
+      },
+      {
+        "id": "candidate_12",
+        "path": "[REDACTED]",
+        "startLine": 64,
+        "excerpt": "",
+        "selectionReason": "[REDACTED]",
+        "originalChars": 552,
+        "retainedChars": 0,
+        "truncated": true
+      }
+    ],
+    "discardedCandidateSummary": {
+      "count": 21,
+      "paths": [],
+      "reason": "candidate count or bounded-state character limit reached"
+    },
+    "truncation": {
+      "inputChars": 98106,
+      "retainedChars": 11621,
+      "candidatesTruncated": 7,
+      "stateTruncated": true
+    }
+  },
+  "routing": {
+    "status": "ok",
+    "latencyMs": 386,
+    "attempts": 1,
+    "retryCount": 0,
+    "usage": {
+      "inputTokens": 8929,
+      "outputTokens": 961
+    },
+    "questionIds": [
+      "lens.security.v1",
+      "lens.security.v1.candidate",
+      "lens.architecture.v1",
+      "lens.architecture.v1.candidate",
+      "lens.ecosystem-compliance.v1",
+      "lens.ecosystem-compliance.v1.candidate",
+      "lens.performance.v1",
+      "lens.performance.v1.candidate",
+      "lens.maintainability.v1",
+      "lens.maintainability.v1.candidate"
+    ],
+    "signals": [
+      {
+        "questionId": "lens.security.v1",
+        "policyQuestionId": "lens.security.v1",
+        "family": "routing",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "do_not_recommend",
+          "probabilities": {
+            "recommend": 0,
+            "no_signal": 0.02,
+            "do_not_recommend": 0.98
+          },
+          "confidence": 0.97
+        },
+        "floor": 0.6,
+        "disposition": "accepted"
+      },
+      {
+        "questionId": "lens.security.v1.candidate",
+        "policyQuestionId": "lens.security.v1.candidate",
+        "family": "candidate",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "no_signal",
+          "probabilities": {
+            "candidate_3": 0,
+            "candidate_7": 0.09,
+            "candidate_11": 0,
+            "candidate_4": 0,
+            "no_signal": 0.85,
+            "candidate_6": 0.02,
+            "candidate_1": 0.03,
+            "candidate_9": 0.01,
+            "candidate_2": 0,
+            "candidate_10": 0,
+            "candidate_5": 0,
+            "candidate_12": 0,
+            "candidate_8": 0
+          },
+          "confidence": 0.84
+        },
+        "floor": 0.6,
+        "disposition": "no_signal"
+      },
+      {
+        "questionId": "lens.architecture.v1",
+        "policyQuestionId": "lens.architecture.v1",
+        "family": "routing",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "recommend",
+          "probabilities": {
+            "recommend": 0.99,
+            "no_signal": 0,
+            "do_not_recommend": 0.01
+          },
+          "confidence": 0.98
+        },
+        "floor": 0.6,
+        "disposition": "accepted"
+      },
+      {
+        "questionId": "lens.architecture.v1.candidate",
+        "policyQuestionId": "lens.architecture.v1.candidate",
+        "family": "candidate",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "candidate_8",
+          "probabilities": {
+            "candidate_3": 0.03,
+            "candidate_9": 0.16,
+            "candidate_11": 0,
+            "candidate_4": 0,
+            "candidate_10": 0,
+            "candidate_6": 0.01,
+            "candidate_2": 0,
+            "candidate_7": 0.07,
+            "candidate_1": 0.02,
+            "no_signal": 0.29,
+            "candidate_5": 0.03,
+            "candidate_12": 0,
+            "candidate_8": 0.39
+          },
+          "confidence": 0.34
+        },
+        "floor": 0.6,
+        "disposition": "low_confidence",
+        "selectedCandidateId": "candidate_8"
+      },
+      {
+        "questionId": "lens.ecosystem-compliance.v1",
+        "policyQuestionId": "lens.ecosystem-compliance.v1",
+        "family": "routing",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "do_not_recommend",
+          "probabilities": {
+            "recommend": 0,
+            "no_signal": 0.02,
+            "do_not_recommend": 0.98
+          },
+          "confidence": 0.96
+        },
+        "floor": 0.6,
+        "disposition": "accepted"
+      },
+      {
+        "questionId": "lens.ecosystem-compliance.v1.candidate",
+        "policyQuestionId": "lens.ecosystem-compliance.v1.candidate",
+        "family": "candidate",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "no_signal",
+          "probabilities": {
+            "candidate_3": 0.01,
+            "candidate_9": 0.01,
+            "candidate_11": 0,
+            "candidate_4": 0,
+            "no_signal": 0.88,
+            "candidate_6": 0.02,
+            "candidate_1": 0.01,
+            "candidate_2": 0,
+            "candidate_10": 0,
+            "candidate_7": 0.03,
+            "candidate_5": 0.01,
+            "candidate_12": 0,
+            "candidate_8": 0.03
+          },
+          "confidence": 0.89
+        },
+        "floor": 0.6,
+        "disposition": "no_signal"
+      },
+      {
+        "questionId": "lens.performance.v1",
+        "policyQuestionId": "lens.performance.v1",
+        "family": "routing",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "do_not_recommend",
+          "probabilities": {
+            "recommend": 0.03,
+            "no_signal": 0.1,
+            "do_not_recommend": 0.87
+          },
+          "confidence": 0.8
+        },
+        "floor": 0.6,
+        "disposition": "accepted"
+      },
+      {
+        "questionId": "lens.performance.v1.candidate",
+        "policyQuestionId": "lens.performance.v1.candidate",
+        "family": "candidate",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "no_signal",
+          "probabilities": {
+            "candidate_3": 0.02,
+            "candidate_7": 0.03,
+            "candidate_11": 0,
+            "candidate_4": 0,
+            "no_signal": 0.87,
+            "candidate_6": 0,
+            "candidate_1": 0.02,
+            "candidate_2": 0,
+            "candidate_10": 0,
+            "candidate_9": 0,
+            "candidate_12": 0,
+            "candidate_5": 0,
+            "candidate_8": 0.06
+          },
+          "confidence": 0.85
+        },
+        "floor": 0.6,
+        "disposition": "no_signal"
+      },
+      {
+        "questionId": "lens.maintainability.v1",
+        "policyQuestionId": "lens.maintainability.v1",
+        "family": "routing",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "recommend",
+          "probabilities": {
+            "recommend": 0.76,
+            "no_signal": 0.04,
+            "do_not_recommend": 0.2
+          },
+          "confidence": 0.63
+        },
+        "floor": 0.6,
+        "disposition": "accepted"
+      },
+      {
+        "questionId": "lens.maintainability.v1.candidate",
+        "policyQuestionId": "lens.maintainability.v1.candidate",
+        "family": "candidate",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "candidate_8",
+          "probabilities": {
+            "candidate_3": 0.05,
+            "candidate_7": 0.06,
+            "candidate_11": 0,
+            "candidate_4": 0,
+            "no_signal": 0.28,
+            "candidate_6": 0.09,
+            "candidate_1": 0.11,
+            "candidate_2": 0,
+            "candidate_10": 0,
+            "candidate_9": 0.06,
+            "candidate_12": 0,
+            "candidate_5": 0.03,
+            "candidate_8": 0.32
+          },
+          "confidence": 0.25
+        },
+        "floor": 0.6,
+        "disposition": "low_confidence",
+        "selectedCandidateId": "candidate_8"
+      }
+    ],
+    "failureReason": null
+  },
+  "evidence": {
+    "status": "ok",
+    "latencyMs": 316,
+    "attempts": 1,
+    "retryCount": 0,
+    "usage": {
+      "inputTokens": 6662,
+      "outputTokens": 391
+    },
+    "questionIds": [
+      "finding.evidence.v1.611731e55552",
+      "finding.evidence.v1.574d82fcafd8",
+      "finding.evidence.v1.4074a43b71f0",
+      "finding.evidence.v1.2e8caa43ec8b",
+      "finding.evidence.v1.4c2dfe5eaa4c",
+      "finding.evidence.v1.936984df67b5"
+    ],
+    "signals": [
+      {
+        "questionId": "finding.evidence.v1.611731e55552",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "insufficient_evidence",
+          "probabilities": {
+            "contradicted": 0,
+            "insufficient_evidence": 1,
+            "supported": 0
+          },
+          "confidence": 1
+        },
+        "floor": 0.65,
+        "disposition": "no_signal",
+        "selectedCandidateId": "candidate_12"
+      },
+      {
+        "questionId": "finding.evidence.v1.574d82fcafd8",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "supported",
+          "probabilities": {
+            "contradicted": 0.01,
+            "insufficient_evidence": 0.18,
+            "supported": 0.81
+          },
+          "confidence": 0.72
+        },
+        "floor": 0.65,
+        "disposition": "accepted",
+        "selectedCandidateId": "candidate_7"
+      },
+      {
+        "questionId": "finding.evidence.v1.4074a43b71f0",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "supported",
+          "probabilities": {
+            "contradicted": 0.02,
+            "insufficient_evidence": 0.26,
+            "supported": 0.72
+          },
+          "confidence": 0.57
+        },
+        "floor": 0.65,
+        "disposition": "low_confidence",
+        "selectedCandidateId": "candidate_7"
+      },
+      {
+        "questionId": "finding.evidence.v1.2e8caa43ec8b",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "insufficient_evidence",
+          "probabilities": {
+            "contradicted": 0.01,
+            "insufficient_evidence": 0.98,
+            "supported": 0.01
+          },
+          "confidence": 0.97
+        },
+        "floor": 0.65,
+        "disposition": "no_signal",
+        "selectedCandidateId": "candidate_7"
+      },
+      {
+        "questionId": "finding.evidence.v1.4c2dfe5eaa4c",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "insufficient_evidence",
+          "probabilities": {
+            "contradicted": 0.01,
+            "insufficient_evidence": 0.74,
+            "supported": 0.25
+          },
+          "confidence": 0.61
+        },
+        "floor": 0.65,
+        "disposition": "no_signal",
+        "selectedCandidateId": "candidate_7"
+      },
+      {
+        "questionId": "finding.evidence.v1.936984df67b5",
+        "policyQuestionId": "finding.evidence.v1",
+        "family": "finding_evidence",
+        "subject": "[REDACTED]",
+        "answer": {
+          "type": "choice",
+          "choice": "insufficient_evidence",
+          "probabilities": {
+            "contradicted": 0.01,
+            "insufficient_evidence": 0.77,
+            "supported": 0.22
+          },
+          "confidence": 0.65
+        },
+        "floor": 0.65,
+        "disposition": "no_signal",
+        "selectedCandidateId": "candidate_7"
+      }
+    ],
+    "failureReason": null,
+    "omittedQuestionCount": 86
+  },
+  "latencyMs": 386,
+  "usage": {
+    "inputTokens": 15591,
+    "outputTokens": 1352
+  },
+  "estimatedCostUsd": 0.000654822,
+  "failureReason": null
+}
