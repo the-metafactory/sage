@@ -10,9 +10,11 @@ switch for a machine-wide shadow rollout. A local manifest may set
 `authorizationMode` to `approved-repositories-until-revoked` only with
 explicit principal approval and a `repositories` allowlist whose entries are
 classified `non-critical-game`; the shipped manifest remains `frozen-corpus`.
-Reviews outside that allowlist are skipped before the full Review snapshot is
-cloned, persisted, or sent to TypeSafe. Remove the file or set
-`SAGE_TYPESAFE_MODE=off` to revoke the rollout.
+After the ordinary Review, the workflow assembles an in-memory observation
+envelope and checks this authorization before cloning it or performing any
+TypeSafe persistence or network call. Reviews outside the allowlist are
+skipped at that check. Remove the file or set `SAGE_TYPESAFE_MODE=off` to
+revoke the rollout.
 
 For each approved immutable corpus entry, run Sage at that exact head:
 
