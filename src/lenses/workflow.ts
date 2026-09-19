@@ -160,10 +160,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       priorFindingsModule.collect(opts.ref),
     ]);
   } else {
-    [pr, priorResult] = await Promise.all([
-      opts.forge.prView(opts.ref),
-      priorFindingsModule.collect(opts.ref),
-    ]);
+    const prPromise = opts.forge.prView(opts.ref);
+    const priorResultPromise = priorFindingsModule.collect(opts.ref);
+    pr = await prPromise;
     observerAccepted = acceptsCompletedReviewObserver(opts.completedReviewObserver, {
       ref: opts.ref,
       headSha: pr.headRefOid,
@@ -175,6 +174,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       pr.headRefOid,
       "after diff retrieval",
     );
+    priorResult = await priorResultPromise;
   }
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the

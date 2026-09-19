@@ -95,6 +95,47 @@ describe("review workflow TypeSafe authority boundary", () => {
     await pendingReview;
   });
 
+  test("does not wait for prior-review collection before fetching an observed diff", async () => {
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    let releasePrior!: () => void;
+    const blockedPrior = new Promise<void>((resolve) => { releasePrior = resolve; });
+    let diffStarted = false;
+    const observedForge = {
+      ...forge,
+      prDiff: async () => {
+        diffStarted = true;
+        return diff;
+      },
+    };
+    const priorFindings = {
+      collect: async () => {
+        await blockedPrior;
+        return {
+          status: "ok" as const,
+          findings: [],
+          identity: { login: "sage" },
+          reviewCount: 0,
+        };
+      },
+    };
+
+    const pendingReview = reviewPr({
+      ref: { owner: "x", repo: "y", number: 125 },
+      forge: observedForge,
+      substrate,
+      post: false,
+      priorFindings,
+      completedReviewObserver: {
+        accepts: () => false,
+        observe: async () => {},
+      },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(diffStarted).toBe(true);
+    releasePrior();
+    await pendingReview;
+  });
+
   test("observer runs after posting and cannot mutate or change the ordinary result", async () => {
     const events: string[] = [];
     const observingForge = makeStubForge({
