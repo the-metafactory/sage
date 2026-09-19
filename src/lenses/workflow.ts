@@ -86,7 +86,7 @@ export interface ReviewOptions {
   /** Progress callback fired after each lens completes — envelope emission. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
   /**
-   * Optional vendor-neutral observer for a completed Review. It receives a
+   * Optional implementation-neutral observer for a completed Review. It receives a
    * deep-frozen copy after persistence and Forge work, with no return channel
    * into authoritative Review behavior. Failures are fail-open.
    */
@@ -332,7 +332,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ref: opts.ref,
     pr,
     diff,
-    baselineLensNames: applicableLenses.map((lens) => lens.name),
+    selectedLensNames: applicableLenses.map((lens) => lens.name),
     lensReports: enrichedLensReports,
     verdict,
     posted,
@@ -348,6 +348,12 @@ async function notifyCompletedReviewObserver(
 ): Promise<void> {
   if (!observer) return;
   try {
+    if (observer.accepts && !observer.accepts({ ref: input.ref, headSha: input.pr.headRefOid })) {
+      return;
+    }
+    // Yield before the full snapshot copy so authoritative Review completion
+    // is never charged for observer allocation or traversal.
+    await Promise.resolve();
     const copy = structuredClone(input);
     deepFreeze(copy);
     await observer.observe(copy);

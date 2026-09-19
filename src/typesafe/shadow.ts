@@ -470,7 +470,7 @@ function assembleRecord(
     policyHash: fingerprint(policy),
     stateFingerprint,
     baseline: {
-      selectedLenses: [...input.baselineLensNames],
+      selectedLenses: [...input.selectedLensNames],
       erroredLenses: input.lensReports
         .filter((report) => report.errored)
         .map((report) => report.lens),
@@ -503,10 +503,17 @@ export function createTypeSafeShadowObserver(
   const now = options.now ?? (() => new Date());
   const authorizationMode = options.corpus.authorizationMode ?? "frozen-corpus";
   return {
+    accepts(identity): boolean {
+      if (options.mode === "off") return false;
+      return authorizeCorpusInput(options.corpus, identity).ok;
+    },
     async observe(input: ShadowReviewInput): Promise<void> {
       if (options.mode === "off") return;
       const timestamp = now();
-      const authorization = authorizeCorpusInput(options.corpus, input);
+      const authorization = authorizeCorpusInput(options.corpus, {
+        ref: input.ref,
+        headSha: input.pr.headRefOid,
+      });
       if (!authorization.ok) {
         await options.sink.write(
           failureRecord(input, policy, timestamp, authorization.reason, authorizationMode),
@@ -526,13 +533,13 @@ export function createTypeSafeShadowObserver(
         return;
       }
 
+      const state = buildBoundedReviewState(input.pr, input.diff, policy);
+      const subjects = boundedEvidenceSubjects(
+        evidenceSubjects(input.lensReports, state, policy),
+        policy,
+      );
       for (let repeatIndex = 1; repeatIndex <= repeatCount; repeatIndex++) {
         const repeatTimestamp = repeatIndex === 1 ? timestamp : now();
-        const state = buildBoundedReviewState(input.pr, input.diff, policy);
-        const subjects = boundedEvidenceSubjects(
-          evidenceSubjects(input.lensReports, state, policy),
-          policy,
-        );
         const evidencePromise =
           subjects.length === 0
             ? Promise.resolve({ record: skippedStage("no blocker or important findings"), response: null })

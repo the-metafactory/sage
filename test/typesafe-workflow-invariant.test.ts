@@ -234,4 +234,28 @@ describe("review workflow TypeSafe authority boundary", () => {
     await result.observerCompletion;
     expect(observerFinished).toBe(true);
   });
+
+  test("checks observer authorization before creating the completed Review snapshot", async () => {
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    let observed = false;
+    const review = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 125 },
+      forge,
+      substrate,
+      post: false,
+      completedReviewObserver: {
+        accepts: (identity) => {
+          expect(identity).toEqual({
+            ref: { owner: "x", repo: "y", number: 125 },
+            headSha: pr.headRefOid,
+          });
+          return false;
+        },
+        observe: async () => { observed = true; },
+      },
+    });
+
+    await review.observerCompletion;
+    expect(observed).toBe(false);
+  });
 });

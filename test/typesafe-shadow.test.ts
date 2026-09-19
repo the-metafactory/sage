@@ -43,7 +43,7 @@ const input: ShadowReviewInput = {
 diff --git a/test/game.test.ts b/test/game.test.ts
 @@ -1,1 +1,2 @@
 +test("fight", () => expect(fight()).toBe(true));`,
-  baselineLensNames: ["CodeQuality", "Architecture", "Maintainability"],
+  selectedLensNames: ["CodeQuality", "Architecture", "Maintainability"],
   lensReports: [
     {
       lens: "Architecture",
@@ -164,6 +164,8 @@ describe("TypeSafe bounded state", () => {
       "const aws = 'AKIAABCDEFGHIJKLMNOP';",
       "DATABASE_URL=postgres://app:database-password@example.test/game",
       "https://user:password@example.test/private",
+      "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+      "curl -u admin:curl-password https://example.test/private",
     ].join("\n"));
 
     expect(redacted).not.toContain("secret value with spaces");
@@ -173,6 +175,8 @@ describe("TypeSafe bounded state", () => {
     expect(redacted).not.toContain("AKIAABCDEFGHIJKLMNOP");
     expect(redacted).not.toContain("database-password");
     expect(redacted).not.toContain("user:password");
+    expect(redacted).not.toContain("dXNlcjpwYXNzd29yZA==");
+    expect(redacted).not.toContain("admin:curl-password");
   });
 
   test("bounds the entire serialized state including paths and metadata", () => {
@@ -356,6 +360,10 @@ describe("TypeSafe shadow observer", () => {
     expect(new Set(records.map((record) => record.recordId)).size).toBe(3);
     expect(new Set(records.map((record) => record.stateFingerprint)).size).toBe(1);
     expect(new Set(records.map((record) => record.baseline.findingFingerprint)).size).toBe(1);
+    const routingStates = requests
+      .filter((request) => Object.hasOwn(request.questions, "lens.security.v1"))
+      .map((request) => request.state);
+    expect(new Set(routingStates).size).toBe(1);
   });
 
   test("off mode performs no network or persistence", async () => {

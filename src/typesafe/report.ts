@@ -184,6 +184,17 @@ export function generateEvaluationReport(
   rawThresholds: EvaluationThresholds = { status: "pending" },
 ): EvaluationReport {
   const labels = rawLabels.map((label) => ReviewerLabelSchema.parse(label));
+  const cohorts = new Set(records.map((record) =>
+    `${record.modelRequested}:${record.policyHash}:${record.authorizationMode}`));
+  if (cohorts.size > 1) {
+    throw new Error("evaluation records must share one model, policy hash, and authorization mode");
+  }
+  const labelKeys = new Set<string>();
+  for (const label of labels) {
+    const key = `${label.recordId}:${label.questionId}`;
+    if (labelKeys.has(key)) throw new Error(`duplicate reviewer label for ${key}`);
+    labelKeys.add(key);
+  }
   const thresholds = EvaluationThresholdsSchema.parse(rawThresholds);
   const questions = questionEvaluations(records, labels);
   const signalByKey = new Map<string, RecordedSignal>();

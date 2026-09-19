@@ -7,13 +7,19 @@ export interface CompletedReviewObservation {
   readonly ref: Readonly<PrRef>;
   readonly pr: Readonly<PrMetadata>;
   readonly diff: string;
-  readonly baselineLensNames: readonly string[];
+  readonly selectedLensNames: readonly string[];
   readonly lensReports: readonly Readonly<LensReport>[];
   readonly verdict: Readonly<Verdict>;
   readonly posted: boolean;
 }
 
-/** Vendor-neutral, fail-open port for advisory work after a completed Review. */
+export interface CompletedReviewIdentity {
+  readonly ref: Readonly<PrRef>;
+  readonly headSha: string;
+}
+
+/** Implementation-neutral, fail-open port for advisory work after a completed Review. */
 export interface CompletedReviewObserver {
+  accepts?(identity: CompletedReviewIdentity): boolean;
   observe(input: CompletedReviewObservation): Promise<void>;
 }

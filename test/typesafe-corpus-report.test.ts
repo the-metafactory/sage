@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { authorizeCorpusInput, CorpusManifestSchema } from "../src/typesafe/corpus.ts";
+import {
+  authorizeCorpusInput,
+  CorpusManifestSchema,
+  loadCorpusManifest,
+} from "../src/typesafe/corpus.ts";
 import { createFileShadowSink } from "../src/typesafe/persist.ts";
 import {
   generateEvaluationReport,
@@ -143,15 +147,18 @@ describe("TypeSafe corpus manifest", () => {
         url: "https://github.com/x/game/pull/99",
       },
       diff: "",
-      baselineLensNames: [],
+      selectedLensNames: [],
       lensReports: [],
       verdict: { decision: "approved", summary: "clean", lenses: [] },
       posted: false,
     } as const;
-    expect(authorizeCorpusInput(manifest, approvedInput)).toEqual({ ok: true });
     expect(authorizeCorpusInput(manifest, {
-      ...approvedInput,
+      ref: approvedInput.ref,
+      headSha: approvedInput.pr.headRefOid,
+    })).toEqual({ ok: true });
+    expect(authorizeCorpusInput(manifest, {
       ref: { ...approvedInput.ref, repo: "customer" },
+      headSha: approvedInput.pr.headRefOid,
     })).toEqual({
       ok: false,
       reason: "repository is not in the until-revoked game allowlist",
@@ -173,6 +180,44 @@ describe("TypeSafe corpus manifest", () => {
       entries: [],
       repositories: [],
     })).toThrow(/requires at least one approved repository/);
+  });
+
+  test("requires an owner-only regular file for until-revoked authorization", () => {
+    const root = mkdtempSync(join(tmpdir(), "sage-typesafe-manifest-"));
+    const path = join(root, "authorization.json");
+    const link = join(root, "authorization-link.json");
+    const contents = JSON.stringify({
+      schemaVersion: 1,
+      authorizationMode: "approved-repositories-until-revoked",
+      frozenAt: null,
+      dataProcessingApproval: {
+        status: "approved",
+        approvedBy: "principal",
+        approvedAt: "2026-09-19T06:00:00.000Z",
+        scope: "approved game repositories",
+        termsReviewedAt: "2026-09-18T20:00:00.000Z",
+      },
+      entries: [],
+      repositories: [{
+        owner: "x",
+        repo: "game",
+        classification: "non-critical-game",
+        approvedBy: "principal",
+        approvedAt: "2026-09-19T06:00:00.000Z",
+      }],
+    });
+    try {
+      writeFileSync(path, contents);
+      chmodSync(path, 0o640);
+      expect(() => loadCorpusManifest(path)).toThrow(/mode 600/);
+      chmodSync(path, 0o600);
+      expect(loadCorpusManifest(path).authorizationMode)
+        .toBe("approved-repositories-until-revoked");
+      symlinkSync(path, link);
+      expect(() => loadCorpusManifest(link)).toThrow(/must not be a symbolic link/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -311,6 +356,22 @@ describe("TypeSafe evaluation report", () => {
     const baselineReport = generateEvaluationReport(incompleteBaseline, labels, approvedThresholds);
     expect(baselineReport.baselineFailedLensRuns).toBe(1);
     expect(baselineReport.recommendation).toBe("iterate");
+  });
+
+  test("rejects mixed cohorts and duplicate signal labels", () => {
+    const first = record("r1", "recommend", 0.9);
+    const second = { ...record("r2", "recommend", 0.8), policyHash: "different-policy" };
+    expect(() => generateEvaluationReport([first, second], [])).toThrow(/share one model/);
+
+    const label: ReviewerLabel = {
+      recordId: first.recordId,
+      questionId: "lens.security.v1",
+      reviewer: "independent-reviewer",
+      usefulness: "useful",
+      evidenceSufficient: true,
+      groundTruthPositive: true,
+    };
+    expect(() => generateEvaluationReport([first], [label, label])).toThrow(/duplicate reviewer label/);
   });
 });
 

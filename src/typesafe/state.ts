@@ -10,6 +10,11 @@ const YAML_SECRET_BLOCK =
   /^(\s*["']?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
 const CREDENTIAL_URI = /\b([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^@\s/]+@/gi;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
+const AUTHORIZATION_CREDENTIAL =
+  /\b(Authorization\s*:\s*(?:Basic|Digest|Token|ApiKey)\s+)[^\s,;]+/gi;
+const CURL_USER = /(\bcurl\b[^\r\n]*?\s-u\s+)(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
+const RESIDUAL_AUTHORIZATION_LINE = /^.*\bAuthorization\s*:.*$/gim;
+const RESIDUAL_CURL_CREDENTIAL_LINE = /^.*\bcurl\b.*(?:--user|-u)\s+.*$/gim;
 const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const PRIVATE_KEY = /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g;
 const PROVIDER_TOKEN =
@@ -20,6 +25,10 @@ export function redactTypeSafeText(value: string): string {
     .replace(PRIVATE_KEY, "[REDACTED_PRIVATE_KEY]")
     .replace(YAML_SECRET_BLOCK, "$1\n  [REDACTED]\n")
     .replace(CREDENTIAL_URI, "$1[REDACTED]@")
+    .replace(AUTHORIZATION_CREDENTIAL, "$1[REDACTED]")
+    .replace(CURL_USER, "$1[REDACTED]")
+    .replace(RESIDUAL_AUTHORIZATION_LINE, "[REDACTED_AUTHORIZATION_LINE]")
+    .replace(RESIDUAL_CURL_CREDENTIAL_LINE, "[REDACTED_CURL_CREDENTIAL_LINE]")
     .replace(BEARER, "Bearer [REDACTED]")
     .replace(JWT, "[REDACTED_JWT]")
     .replace(PROVIDER_TOKEN, "[REDACTED_TOKEN]")

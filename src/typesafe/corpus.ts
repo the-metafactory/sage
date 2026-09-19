@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
-import type { ShadowReviewInput } from "./types.ts";
+import type { PrRef } from "../forge/types.ts";
 
 const CorpusEntrySchema = z.object({
   url: z.string().url(),
@@ -90,12 +90,30 @@ export const CorpusManifestSchema = z
 export type CorpusManifest = z.infer<typeof CorpusManifestSchema>;
 
 export function loadCorpusManifest(path: string): CorpusManifest {
-  return CorpusManifestSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  const manifest = CorpusManifestSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+  if (manifest.authorizationMode === "approved-repositories-until-revoked") {
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink()) {
+      throw new Error("until-revoked authorization manifest must not be a symbolic link");
+    }
+    if (typeof process.getuid === "function" && metadata.uid !== process.getuid()) {
+      throw new Error("until-revoked authorization manifest must be owned by the current user");
+    }
+    if ((metadata.mode & 0o777) !== 0o600) {
+      throw new Error("until-revoked authorization manifest must have mode 600");
+    }
+  }
+  return manifest;
+}
+
+export interface CorpusAuthorizationInput {
+  readonly ref: Readonly<PrRef>;
+  readonly headSha: string;
 }
 
 export function authorizeCorpusInput(
   manifest: CorpusManifest,
-  input: ShadowReviewInput,
+  input: CorpusAuthorizationInput,
 ): { ok: true } | { ok: false; reason: string } {
   if (manifest.dataProcessingApproval.status !== "approved") {
     return { ok: false, reason: "data-processing approval is pending" };
@@ -117,7 +135,7 @@ export function authorizeCorpusInput(
       candidate.number === input.ref.number,
   );
   if (!entry) return { ok: false, reason: "PR is not present in the approved frozen corpus" };
-  if (entry.headSha !== input.pr.headRefOid) {
+  if (entry.headSha !== input.headSha) {
     return { ok: false, reason: "PR head does not match the approved immutable corpus SHA" };
   }
   return { ok: true };

@@ -2,16 +2,21 @@
 
 Status: **approved by Jens-Christian Fischer on 2026-09-18 for the exact
 five-entry corpus in `corpus.json`, with three shadow-only runs per immutable
-head**.
+head**. The continuing rollout authorization is recorded in the
+[issue #125 principal approval receipt](https://github.com/the-metafactory/sage/issues/125#issuecomment-5740115643).
 
 The proof of value is restricted to immutable heads of explicitly approved,
 non-critical game PRs listed in `corpus.json`. The runtime rejects any PR or
 head SHA absent from that frozen manifest before calling TypeSafe.
 
-The bounded payload contains only the PR title, changed paths and line counts,
-and redacted/truncated diff candidates. It excludes credentials, API keys,
-private customer data, incident material, sensitive security work, full large
-diffs, review-posting credentials, and unrestricted repository content.
+The bounded payload contains the PR title, changed paths and line counts,
+redacted/truncated diff candidates, and—for existing blocker or important
+Findings only—redacted/truncated Lens name and purpose plus the Finding path,
+line, Severity, impact, title, rationale, and optional suggestion. Routing and
+evidence payloads are each independently capped by `maxStateChars`. It excludes
+credentials, API keys, private customer data, incident material, sensitive
+security work, full large diffs, review-posting credentials, and unrestricted
+repository content.
 
 As reviewed on 2026-09-18, TypeSafe's public documentation says customer
 requests are not used to train Jev. Its public privacy terms describe US

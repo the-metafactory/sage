@@ -177,7 +177,7 @@ program
       console.error(
         `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
-      const result = await reviewPr({
+      const review = await reviewPr({
         ref,
         forge: forgeSelection.backend,
         post: opts.post,
@@ -186,16 +186,16 @@ program
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
         ...(typeSafeShadow ? { completedReviewObserver: typeSafeShadow } : {}),
       });
-      const body = renderVerdict(result.verdict, selection.substrate.displayName);
+      const body = renderVerdict(review.verdict, selection.substrate.displayName);
       // The verdict block MUST be the terminal artefact: cortex's
       // extractVerdictBlock picks the LAST ```json fence in stdout.
       const out = opts.emitVerdictBlock
-        ? `${body}\n\n${renderVerdictBlock(result.verdict, result.blockMeta)}`
+        ? `${body}\n\n${renderVerdictBlock(review.verdict, review.blockMeta)}`
         : body;
       console.log(out);
-      console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
-      await result.observerCompletion;
-      if (result.verdict.decision === "changes-requested") {
+      console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
+      await review.observerCompletion;
+      if (review.verdict.decision === "changes-requested") {
         process.exit(1);
       }
     },
