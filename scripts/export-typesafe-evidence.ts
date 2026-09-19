@@ -27,9 +27,21 @@ const SourceAnchorSchema = z.object({
 }).passthrough();
 
 function sanitize(record: ShadowComparisonRecord): ShadowComparisonRecord {
+  const roundAuditNumber = (value: number): number =>
+    Number.isInteger(value) ? value : Number(value.toFixed(12));
   const sanitizeStage = (stage: ShadowComparisonRecord["routing"]) => ({
     ...stage,
-    signals: stage.signals.map((signal) => ({ ...signal, subject: "[REDACTED]" })),
+    signals: stage.signals.map((signal) => ({
+      ...signal,
+      subject: "[REDACTED]",
+      floor: roundAuditNumber(signal.floor),
+      answer: {
+        ...signal.answer,
+        probabilities: Object.fromEntries(Object.entries(signal.answer.probabilities)
+          .map(([choice, probability]) => [choice, roundAuditNumber(probability)])),
+        confidence: roundAuditNumber(signal.answer.confidence),
+      },
+    })),
   });
   return {
     ...record,
@@ -49,6 +61,7 @@ function sanitize(record: ShadowComparisonRecord): ShadowComparisonRecord {
     },
     routing: sanitizeStage(record.routing),
     evidence: sanitizeStage(record.evidence),
+    estimatedCostUsd: roundAuditNumber(record.estimatedCostUsd),
   };
 }
 

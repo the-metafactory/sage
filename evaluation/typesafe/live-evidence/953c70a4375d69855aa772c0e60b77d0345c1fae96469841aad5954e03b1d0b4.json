@@ -409,7 +409,7 @@
           "type": "choice",
           "choice": "candidate_6",
           "probabilities": {
-            "no_signal": 0.21000000000000002,
+            "no_signal": 0.21,
             "candidate_12": 0.04,
             "candidate_5": 0.01,
             "candidate_3": 0.06,
