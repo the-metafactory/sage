@@ -328,15 +328,19 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(postError !== undefined ? { postError } : {}),
   };
 
-  const observerCompletion = notifyCompletedReviewObserver(opts.completedReviewObserver, {
-    ref: opts.ref,
-    pr,
-    diff,
-    selectedLensNames: applicableLenses.map((lens) => lens.name),
-    lensReports: enrichedLensReports,
-    verdict,
-    posted,
-  });
+  const observerCompletion = notifyCompletedReviewObserver(
+    opts.completedReviewObserver,
+    opts.forge,
+    {
+      ref: opts.ref,
+      pr,
+      diff,
+      selectedLensNames: applicableLenses.map((lens) => lens.name),
+      lensReports: enrichedLensReports,
+      verdict,
+      posted,
+    },
+  );
   if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
 
   return reviewResult;
@@ -344,6 +348,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
 async function notifyCompletedReviewObserver(
   observer: CompletedReviewObserver | undefined,
+  forge: ForgeBackend,
   input: CompletedReviewObservation,
 ): Promise<void> {
   if (!observer) return;
@@ -354,6 +359,12 @@ async function notifyCompletedReviewObserver(
     // Move snapshot work to a later event-loop turn so the caller receives
     // the authoritative Review before observer allocation or traversal.
     await new Promise<void>((resolve) => setImmediate(resolve));
+    const headAfterDiff = (await forge.prView(input.ref)).headRefOid;
+    if (headAfterDiff !== input.pr.headRefOid) {
+      // eslint-disable-next-line no-console
+      console.error("[workflow] completed Review observer skipped: PR head changed after diff retrieval");
+      return;
+    }
     const copy = structuredClone(input);
     deepFreeze(copy);
     await observer.observe(copy);

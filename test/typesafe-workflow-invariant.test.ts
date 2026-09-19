@@ -235,7 +235,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(observerFinished).toBe(true);
   });
 
-  test("does not add Forge reads for advisory observation", async () => {
+  test("revalidates the PR head once before advisory observation", async () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     let prViewCalls = 0;
     let observed = false;
@@ -260,8 +260,37 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(prViewCalls).toBe(1);
     expect(observed).toBe(false);
     await result.observerCompletion;
-    expect(prViewCalls).toBe(1);
+    expect(prViewCalls).toBe(2);
     expect(observed).toBe(true);
+  });
+
+  test("skips observation when the PR head changes after diff retrieval", async () => {
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    let prViewCalls = 0;
+    let observed = false;
+    const changingForge = {
+      ...forge,
+      prView: async () => {
+        prViewCalls++;
+        return prViewCalls === 1
+          ? pr
+          : { ...pr, headRefOid: "b".repeat(40) };
+      },
+    };
+
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 125 },
+      forge: changingForge,
+      substrate,
+      post: false,
+      completedReviewObserver: {
+        observe: async () => { observed = true; },
+      },
+    });
+
+    await result.observerCompletion;
+    expect(prViewCalls).toBe(2);
+    expect(observed).toBe(false);
   });
 
   test("checks observer authorization before creating the completed Review snapshot", async () => {

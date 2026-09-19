@@ -17,10 +17,13 @@ The bounded payload contains the PR title, changed paths and line counts,
 redacted/truncated diff candidates, and—for existing blocker or important
 Findings only—redacted/truncated Lens name and purpose plus the Finding path,
 line, Severity, impact, title, rationale, and optional suggestion. Routing and
-evidence payloads are each independently capped by `maxStateChars`. It excludes
-credentials, API keys, private customer data, incident material, sensitive
-security work, full large diffs, review-posting credentials, and unrestricted
-repository content.
+evidence payloads are each independently capped by `maxStateChars`; full large
+diffs, review-posting credentials, and unrestricted repository content are not
+included. The runtime redactor removes recognized credential patterns, but it
+is not a universal sensitive-content classifier. The exclusion of customer
+data, incident material, sensitive security work, and unrecognized secrets is
+therefore enforced by the principal's prior classification and explicit
+authorization of only non-critical game repositories or immutable PR heads.
 
 As reviewed on 2026-09-18, TypeSafe's public documentation says customer
 requests are not used to train Jev. Its public privacy terms describe US
