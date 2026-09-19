@@ -3,8 +3,9 @@
 Status: **complete bounded evaluation — iterate**.
 
 The approved public-game corpus covers all five immutable Seelite heads, each
-with one complete Claude Sage baseline and three sequential Jev judgments over
-the same bounded state:
+with one complete fixed Sage baseline and three sequential Jev judgments over
+the same bounded state. The committed evidence records baseline lenses,
+findings, and Verdict, but not the Sage substrate:
 
 - `jcfischer/seelite#336` at `f8190d2a2a6ad65918db24bec9b10ce3e7dcede4`
 - `jcfischer/seelite#347` at `a6995ab79d48286070823<wbr>914671e1ecf37444efe`

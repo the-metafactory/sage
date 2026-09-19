@@ -328,34 +328,48 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(postError !== undefined ? { postError } : {}),
   };
 
-  const observerCompletion = notifyCompletedReviewObserver(
+  const completedObservation: CompletedReviewObservation = {
+    ref: opts.ref,
+    pr,
+    diff,
+    selectedLensNames: applicableLenses.map((lens) => lens.name),
+    lensReports: enrichedLensReports,
+    verdict,
+    posted,
+  };
+  const observerAccepted = acceptsCompletedReviewObserver(
     opts.completedReviewObserver,
-    opts.forge,
-    {
-      ref: opts.ref,
-      pr,
-      diff,
-      selectedLensNames: applicableLenses.map((lens) => lens.name),
-      lensReports: enrichedLensReports,
-      verdict,
-      posted,
-    },
+    completedObservation,
   );
+  const observerCompletion = observerAccepted
+    ? notifyCompletedReviewObserver(opts.completedReviewObserver!, opts.forge, completedObservation)
+    : Promise.resolve();
   if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
 
   return reviewResult;
 }
 
-async function notifyCompletedReviewObserver(
+function acceptsCompletedReviewObserver(
   observer: CompletedReviewObserver | undefined,
+  input: CompletedReviewObservation,
+): boolean {
+  if (!observer) return false;
+  try {
+    return !observer.accepts || observer.accepts({ ref: input.ref, headSha: input.pr.headRefOid });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // eslint-disable-next-line no-console
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
+    return false;
+  }
+}
+
+async function notifyCompletedReviewObserver(
+  observer: CompletedReviewObserver,
   forge: ForgeBackend,
   input: CompletedReviewObservation,
 ): Promise<void> {
-  if (!observer) return;
   try {
-    if (observer.accepts && !observer.accepts({ ref: input.ref, headSha: input.pr.headRefOid })) {
-      return;
-    }
     // Move snapshot work to a later event-loop turn so the caller receives
     // the authoritative Review before observer allocation or traversal.
     await new Promise<void>((resolve) => setImmediate(resolve));
