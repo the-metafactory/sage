@@ -379,6 +379,9 @@ are intentionally excluded because they do not count toward the production gate.
 - Mean exact-choice agreement: ${formatMetric(report.repeatability.meanAgreement)}
 - Maximum probability spread: ${formatMetric(report.repeatability.maxProbabilitySpread)}
 
+This repeatability result covers ${report.immutableStates} immutable state(s);
+interpret it at that sample size rather than as evidence of general stability.
+
 ## Independent reviewer labels
 
 | Question | Labeled | Useful | Not useful | Indeterminate | Evidence sufficient | Precision | Recall |

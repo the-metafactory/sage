@@ -200,6 +200,7 @@ _Avoid_: direct subject, named subject
 
 ## Flagged ambiguities
 
+- **A Substrate and its upstream inference service are separate layers.** The Substrate is the harness subprocess Sage launches; the upstream service performs inference behind it. Sage speaks only to the Substrate.
 - **`review` was overloaded** — the act, the artifact on the bus, the comment posted, the forge enum, the CLI subcommand. Resolved into **Review** (act), **Verdict** (decision), **Verdict envelope** (bus artifact), **Review comment** (forge body), **PostAction** (forge enum). The CLI subcommand `sage review` is named after the act.
 - **`ReviewEvent` was misleading.** It sounded like a bus event but is a forge-API enum mapping a Verdict to a Forge call. Resolved: **PostAction**.
 - **`lens` did two jobs** — concern category and per-PR execution. Resolved into **Lens** (static category) and **Lens run** (per-PR execution).

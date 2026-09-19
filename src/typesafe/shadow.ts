@@ -423,32 +423,45 @@ function failureRecord(
   authorizationMode: ShadowComparisonRecord["authorizationMode"],
 ): ShadowComparisonRecord {
   const state = buildBoundedReviewState(input.pr, input.diff, policy);
-  return assembleRecord(
+  return assembleRecord({
     input,
     policy,
     now,
     state,
-    failedStage(reason),
-    skippedStage("routing stage unavailable"),
-    null,
-    1,
-    1,
+    routing: failedStage(reason),
+    evidence: skippedStage("routing stage unavailable"),
+    modelReturned: null,
+    repeatIndex: 1,
+    repeatCount: 1,
     authorizationMode,
-  );
+  });
 }
 
-function assembleRecord(
-  input: ShadowReviewInput,
-  policy: TypeSafePolicy,
-  now: Date,
-  state: ReturnType<typeof buildBoundedReviewState>,
-  routing: StageRecord,
-  evidence: StageRecord,
-  modelReturned: string | null,
-  repeatIndex: number,
-  repeatCount: number,
-  authorizationMode: ShadowComparisonRecord["authorizationMode"],
-): ShadowComparisonRecord {
+interface AssembleRecordInput {
+  input: ShadowReviewInput;
+  policy: TypeSafePolicy;
+  now: Date;
+  state: ReturnType<typeof buildBoundedReviewState>;
+  routing: StageRecord;
+  evidence: StageRecord;
+  modelReturned: string | null;
+  repeatIndex: number;
+  repeatCount: number;
+  authorizationMode: ShadowComparisonRecord["authorizationMode"];
+}
+
+function assembleRecord({
+  input,
+  policy,
+  now,
+  state,
+  routing,
+  evidence,
+  modelReturned,
+  repeatIndex,
+  repeatCount,
+  authorizationMode,
+}: AssembleRecordInput): ShadowComparisonRecord {
   const usage = {
     inputTokens: routing.usage.inputTokens + evidence.usage.inputTokens,
     outputTokens: routing.usage.outputTokens + evidence.usage.outputTokens,
@@ -567,13 +580,13 @@ export function createTypeSafeShadowObserver(
         ]);
         const modelReturned = routing.response?.model ?? evidence.response?.model ?? null;
         await options.sink.write(
-          assembleRecord(
+          assembleRecord({
             input,
             policy,
-            repeatTimestamp,
+            now: repeatTimestamp,
             state,
-            routing.record,
-            {
+            routing: routing.record,
+            evidence: {
               ...evidence.record,
               omittedQuestionCount: evidenceBatch.omittedQuestionCount,
             },
@@ -581,7 +594,7 @@ export function createTypeSafeShadowObserver(
             repeatIndex,
             repeatCount,
             authorizationMode,
-          ),
+          }),
         );
       }
     },

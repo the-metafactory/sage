@@ -272,6 +272,7 @@ describe("TypeSafe evaluation report", () => {
     expect(markdown).toContain("Maximum probability spread");
     expect(markdown).toContain("Estimated provider cost");
     expect(markdown).toContain("candidate-selection helper signals");
+    expect(markdown).toContain("covers 1 immutable state(s)");
     expect(markdown).toContain("State-truncated records: 0 / 2 (0.000)");
   });
 
