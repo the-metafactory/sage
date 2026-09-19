@@ -115,7 +115,7 @@ A *concrete impl* of the Substrate interface — `PiSubstrate`, `ClaudeSubstrate
 _Avoid_: substrate client, substrate driver
 
 **Lens tool selection**:
-The *explicit tool request attached to a Lens run*. Every Lens requests an empty tool set. The Claude adapter enforces that request and prevents PR titles, bodies, diffs, and repository context from activating local settings, MCP servers, browser integration, sessions, slash commands, or built-in tools. Pi and Codex retain their existing adapter-specific safety behavior; this contract does not claim they enforce an empty tool set.
+The *explicit tool selection attached to a Lens run*. Every Lens selects an empty tool set. The Claude adapter enforces that selection and prevents PR titles, bodies, diffs, and repository context from activating local settings, MCP servers, browser integration, sessions, slash commands, or built-in tools. Pi and Codex retain their existing adapter-specific safety behavior; this contract does not claim they enforce an empty tool set.
 _Avoid_: sandboxed review, bare mode
 
 **Process-level substrate**:

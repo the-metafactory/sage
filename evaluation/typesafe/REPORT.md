@@ -21,7 +21,7 @@ selection, Findings, Severity, the Verdict, or Forge interactions.
 - Immutable states: 5
 - Completed baseline Lens runs observed: 33
 - Failed baseline lens runs: 0
-- Independently labeled decision signals: 114 / 114 (0 missing)
+- Labeled decision-record signals: 114 / 114 (0 missing; 38 unique state/question adjudications applied to three repeats)
 - Decision signals with ground truth: 114 / 114 (0 missing)
 - Failed records: 0
 - State-truncated records: 15 / 15 (1.000)

@@ -414,7 +414,7 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 - Immutable states: ${report.immutableStates}
 - Completed baseline Lens runs observed: ${report.baselineLensRuns}
 - Failed baseline lens runs: ${report.baselineFailedLensRuns}
-- Independently labeled decision signals: ${report.labelCoverage.labeledSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.unlabeledSignals} missing)
+- Labeled decision-record signals: ${report.labelCoverage.labeledSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.unlabeledSignals} missing)
 - Decision signals with ground truth: ${report.labelCoverage.groundTruthSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.missingGroundTruthSignals} missing)
 - Failed records: ${report.failedRecords}
 - State-truncated records: ${report.truncatedRecords} / ${report.records} (${report.records > 0 ? formatMetric(report.truncatedRecords / report.records) : "N/A"})
