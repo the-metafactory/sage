@@ -74,6 +74,62 @@ export interface EvaluationReport {
   thresholdStatus: EvaluationThresholds["status"];
 }
 
+interface ProposalMetrics {
+  groundTruthLabels: number;
+  meanPrecision: number | null;
+  usefulnessRate: number;
+  failureRate: number;
+  averageCostUsd: number;
+  p95LatencyMs: number;
+  repeat: EvaluationReport["repeatability"];
+  decisionSignals: number;
+  unlabeledSignals: number;
+  missingGroundTruthSignals: number;
+  baselineFailedLensRuns: number;
+  omittedEvidenceQuestions: number;
+}
+
+interface ProposalGate {
+  name: string;
+  met: boolean;
+}
+
+function proposalThresholdGates(
+  metrics: ProposalMetrics,
+  thresholds: EvaluationThresholds,
+): ProposalGate[] {
+  if (thresholds.status !== "approved") {
+    return [{ name: "thresholds approved", met: false }];
+  }
+  return [
+    { name: "minimum ground-truth labels", met: metrics.groundTruthLabels >= thresholds.minimumLabels },
+    { name: "precision threshold", met: (metrics.meanPrecision ?? 0) >= thresholds.proposeMinimumPrecision },
+    { name: "usefulness threshold", met: metrics.usefulnessRate >= thresholds.proposeMinimumUsefulness },
+    { name: "failure-rate threshold", met: metrics.failureRate <= thresholds.proposeMaximumFailureRate },
+    { name: "cost threshold", met: metrics.averageCostUsd <= thresholds.proposeMaximumCostUsdPerRecord },
+    { name: "latency threshold", met: metrics.p95LatencyMs <= thresholds.proposeMaximumP95LatencyMs },
+    { name: "repeat agreement measured", met: metrics.repeat.meanAgreement !== null },
+    {
+      name: "repeat-agreement threshold",
+      met: (metrics.repeat.meanAgreement ?? 0) >= thresholds.proposeMinimumRepeatAgreement,
+    },
+    { name: "probability spread measured", met: metrics.repeat.maxProbabilitySpread !== null },
+    {
+      name: "probability-spread threshold",
+      met: (metrics.repeat.maxProbabilitySpread ?? Number.POSITIVE_INFINITY) <=
+        thresholds.proposeMaximumProbabilitySpread,
+    },
+    { name: "decision signals present", met: metrics.decisionSignals > 0 },
+    { name: "all decision signals labeled", met: metrics.unlabeledSignals === 0 },
+    {
+      name: "all decision signals have ground truth",
+      met: metrics.missingGroundTruthSignals === 0,
+    },
+    { name: "all baseline Lens runs completed", met: metrics.baselineFailedLensRuns === 0 },
+    { name: "all evidence questions represented", met: metrics.omittedEvidenceQuestions === 0 },
+  ];
+}
+
 function allSignals(record: ShadowComparisonRecord): RecordedSignal[] {
   return [...record.routing.signals, ...record.evidence.signals];
 }
@@ -259,6 +315,21 @@ export function generateEvaluationReport(
     (sum, record) => sum + (record.evidence.omittedQuestionCount ?? 0),
     0,
   );
+  const proposalGates = proposalThresholdGates({
+    groundTruthLabels: groundTruthDecisionKeys.size,
+    meanPrecision,
+    usefulnessRate,
+    failureRate,
+    averageCostUsd,
+    p95LatencyMs,
+    repeat,
+    decisionSignals: decisionSignalKeys.size,
+    unlabeledSignals,
+    missingGroundTruthSignals,
+    baselineFailedLensRuns,
+    omittedEvidenceQuestions,
+  }, thresholds);
+  const unmetProposalGates = proposalGates.filter((gate) => !gate.met).map((gate) => gate.name);
 
   let recommendation: EvaluationReport["recommendation"] = "iterate";
   let recommendationReason =
@@ -272,30 +343,13 @@ export function generateEvaluationReport(
   ) {
     recommendation = "stop";
     recommendationReason = "Reviewer-validated mean precision is below the stop threshold.";
-  } else if (
-    thresholds.status === "approved" &&
-    groundTruthDecisionKeys.size >= thresholds.minimumLabels &&
-    (meanPrecision ?? 0) >= thresholds.proposeMinimumPrecision &&
-    usefulnessRate >= thresholds.proposeMinimumUsefulness &&
-    failureRate <= thresholds.proposeMaximumFailureRate &&
-    averageCostUsd <= thresholds.proposeMaximumCostUsdPerRecord &&
-    p95LatencyMs <= thresholds.proposeMaximumP95LatencyMs &&
-    repeat.meanAgreement !== null &&
-    repeat.meanAgreement >= thresholds.proposeMinimumRepeatAgreement &&
-    repeat.maxProbabilitySpread !== null &&
-    repeat.maxProbabilitySpread <= thresholds.proposeMaximumProbabilitySpread &&
-    decisionSignalKeys.size > 0 &&
-    unlabeledSignals === 0 &&
-    missingGroundTruthSignals === 0 &&
-    baselineFailedLensRuns === 0 &&
-    omittedEvidenceQuestions === 0
-  ) {
+  } else if (proposalGates.every((gate) => gate.met)) {
     recommendation = "propose_separately_authorized_integration";
     recommendationReason =
       "The bounded corpus cleared the predeclared precision, usefulness, failure, cost, latency, and repeatability thresholds.";
   } else if (thresholds.status === "approved" && labeled > 0) {
     recommendationReason =
-      "The labeled evidence does not yet clear either the stop or production-proposal threshold.";
+      `The labeled evidence does not yet clear either the stop or production-proposal threshold. Unmet proposal gates: ${unmetProposalGates.join(", ")}.`;
   }
 
   return {

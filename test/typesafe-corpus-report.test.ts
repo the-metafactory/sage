@@ -341,8 +341,9 @@ describe("TypeSafe evaluation report", () => {
       .toBe("propose_separately_authorized_integration");
 
     const expensive = records.map((item) => ({ ...item, estimatedCostUsd: 1 }));
-    expect(generateEvaluationReport(expensive, labels, approvedThresholds).recommendation)
-      .toBe("iterate");
+    const expensiveReport = generateEvaluationReport(expensive, labels, approvedThresholds);
+    expect(expensiveReport.recommendation).toBe("iterate");
+    expect(expensiveReport.recommendationReason).toContain("cost threshold");
 
     const inconsistent = [record("r1", "recommend", 0.9), record("r2", "do_not_recommend", 0.9)];
     expect(generateEvaluationReport(inconsistent, labels, approvedThresholds).recommendation)
