@@ -48,6 +48,22 @@ describe("ClaudeSubstrate", () => {
       "review",
     ]);
   });
+
+  test("keeps the lean runtime when a caller explicitly allows selected tools", async () => {
+    const substrate = new ClaudeSubstrate({ bin: writeRecorder() });
+
+    const raw = await substrate.run({
+      prompt: "review",
+      tools: ["Read"],
+      timeoutMs: 5_000,
+    });
+
+    const captured = JSON.parse(raw.stdout) as { argv: string[] };
+    expect(captured.argv).toContain("--setting-sources");
+    expect(captured.argv).toContain("--strict-mcp-config");
+    expect(captured.argv).toContain("--no-session-persistence");
+    expect(captured.argv).toContain("Read");
+  });
 });
 
 function writeRecorder(): string {

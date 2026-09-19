@@ -23,16 +23,19 @@ Verdict, or Forge actions.
 - Independently labeled decision signals: 0 / 42 (42 missing)
 - Decision signals with ground truth: 0 / 42 (42 missing)
 - Failed records: 0
-- State-truncated records: 6
+- State-truncated records: 6 / 6 (1.000)
 - Evidence questions omitted by request bounds: 0
 - Provider request attempts / retries: 12 / 0
 - Pre-fix recorded stage-total latency p50 / p95: 577 ms / 1172 ms
 - Usage: 69,345 input tokens, 6,588 output tokens
 - Estimated provider cost: $0.002912 total, $0.000485 average per record
 
-## Repeatability
+## Decision-signal repeatability
 
-- Repeated state/question groups: 14
+Routing and finding-evidence signals only; candidate-selection helper signals
+are intentionally excluded because they do not count toward the production gate.
+
+- Repeated decision state/question groups: 14
 - Mean exact-choice agreement: 1.000
 - Maximum probability spread: 0.060
 

@@ -363,16 +363,19 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 - Independently labeled decision signals: ${report.labelCoverage.labeledSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.unlabeledSignals} missing)
 - Decision signals with ground truth: ${report.labelCoverage.groundTruthSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.missingGroundTruthSignals} missing)
 - Failed records: ${report.failedRecords}
-- State-truncated records: ${report.truncatedRecords}
+- State-truncated records: ${report.truncatedRecords} / ${report.records} (${formatMetric(report.records > 0 ? report.truncatedRecords / report.records : 0)})
 - Evidence questions omitted by request bounds: ${report.omittedEvidenceQuestions}
 - Provider request attempts / retries: ${report.requests} / ${report.retries}
 - Latency p50 / p95: ${report.latencyMs.p50} ms / ${report.latencyMs.p95} ms
 - Usage: ${report.usage.inputTokens} input tokens, ${report.usage.outputTokens} output tokens
 - Estimated provider cost: $${report.usage.estimatedCostUsd.toFixed(6)}
 
-## Repeatability
+## Decision-signal repeatability
 
-- Repeated state/question groups: ${report.repeatability.repeatedGroups}
+Routing and finding-evidence signals only; candidate-selection helper signals
+are intentionally excluded because they do not count toward the production gate.
+
+- Repeated decision state/question groups: ${report.repeatability.repeatedGroups}
 - Mean exact-choice agreement: ${formatMetric(report.repeatability.meanAgreement)}
 - Maximum probability spread: ${formatMetric(report.repeatability.maxProbabilitySpread)}
 

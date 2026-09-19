@@ -28,7 +28,7 @@ import type {
  *     commands, session persistence, Chrome, or built-in tools. This avoids
  *     ambient hooks/context and side effects for untrusted-input callers
  *     without `--bare`, which would also disable OAuth/keychain auth.
- *     `thinking`, `provider`, and `apiKey` are ignored.
+ *     The remaining unsupported per-call options are ignored.
  *
  * Provider/model envs honored from the operator's shell:
  *   - `CLAUDE_BIN`             (binary path; default `claude`)
@@ -87,18 +87,16 @@ export class ClaudeSubstrate implements Substrate {
     if (model) args.push("--model", model);
     if (permissionMode) args.push("--permission-mode", permissionMode);
     if (opts.tools !== undefined) {
-      if (opts.tools.length === 0) {
-        args.push(
-          "--setting-sources",
-          "",
-          "--strict-mcp-config",
-          "--mcp-config",
-          '{"mcpServers":{}}',
-          "--disable-slash-commands",
-          "--no-session-persistence",
-          "--no-chrome",
-        );
-      }
+      args.push(
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--disable-slash-commands",
+        "--no-session-persistence",
+        "--no-chrome",
+      );
       args.push("--tools", opts.tools.join(","));
     }
     if (opts.systemPrompt) args.push("--system-prompt", opts.systemPrompt);

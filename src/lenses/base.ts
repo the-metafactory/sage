@@ -276,7 +276,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
       // it and still emit text (the Pipeline handles both shapes).
       responseFormat: "json",
       // PR content is untrusted. The Lens receives every artifact it needs on
-      // stdin, so model-side tools add side-effect risk without review value.
+      // stdin, so Substrate-side tools add side-effect risk without review value.
       tools: [],
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
     });

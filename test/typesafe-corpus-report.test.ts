@@ -271,6 +271,8 @@ describe("TypeSafe evaluation report", () => {
     expect(markdown).toContain("Independent reviewer labels");
     expect(markdown).toContain("Maximum probability spread");
     expect(markdown).toContain("Estimated provider cost");
+    expect(markdown).toContain("candidate-selection helper signals");
+    expect(markdown).toContain("State-truncated records: 0 / 2 (0.000)");
   });
 
   test("counts one fixed Sage baseline once across repeated Jev judgments", () => {
