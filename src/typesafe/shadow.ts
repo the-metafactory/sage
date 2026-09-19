@@ -7,7 +7,7 @@ import {
   TYPESAFE_POLICY,
   type TypeSafePolicy,
 } from "./policy.ts";
-import { buildBoundedReviewState, fingerprint } from "./state.ts";
+import { buildBoundedReviewState, fingerprint, redactTypeSafeText } from "./state.ts";
 import {
   SystemOneResponseSchema,
   type ChoiceAnswer,
@@ -264,11 +264,30 @@ function evidenceSubjects(
   });
 }
 
-function evidenceRequest(
-  subjects: EvidenceSubject[],
-  policy: TypeSafePolicy,
-): SystemOneRequest {
-  const state = {
+function redactedFinding(finding: Finding): Finding {
+  return {
+    path: redactTypeSafeText(finding.path).slice(0, 500),
+    line: finding.line,
+    severity: finding.severity,
+    ...(finding.impact ? { impact: finding.impact } : {}),
+    ...(finding.impactFallback ? { impactFallback: true as const } : {}),
+    title: redactTypeSafeText(finding.title).slice(0, 500),
+    rationale: redactTypeSafeText(finding.rationale).slice(0, 2_000),
+    ...(finding.suggestion
+      ? { suggestion: redactTypeSafeText(finding.suggestion).slice(0, 2_000) }
+      : {}),
+    ...(finding.sourceLenses
+      ? { sourceLenses: finding.sourceLenses.slice(0, 8).map((lens) => redactTypeSafeText(lens).slice(0, 100)) }
+      : {}),
+    ...(finding.previousRoundSurface ? { previousRoundSurface: true } : {}),
+    ...(finding.repeatOfPriorFinding
+      ? { repeatOfPriorFinding: redactTypeSafeText(finding.repeatOfPriorFinding).slice(0, 500) }
+      : {}),
+  };
+}
+
+function evidenceState(subjects: readonly EvidenceSubject[]) {
+  return {
     findings: subjects.map((subject) => ({
       questionId: subject.questionId,
       lens: subject.lens,
@@ -280,6 +299,52 @@ function evidenceRequest(
       },
     })),
   };
+}
+
+function boundedEvidenceSubjects(
+  subjects: readonly EvidenceSubject[],
+  policy: TypeSafePolicy,
+): EvidenceSubject[] {
+  const bounded = subjects.map((subject) => ({
+    ...subject,
+    lens: redactTypeSafeText(subject.lens).slice(0, 100),
+    lensRule: redactTypeSafeText(subject.lensRule).slice(0, 1_000),
+    finding: redactedFinding(subject.finding),
+    ...(subject.candidateExcerpt
+      ? { candidateExcerpt: redactTypeSafeText(subject.candidateExcerpt).slice(0, policy.bounds.maxCandidateChars) }
+      : {}),
+  }));
+
+  while (JSON.stringify(evidenceState(bounded)).length > policy.bounds.maxStateChars) {
+    const subject = bounded.at(-1);
+    if (!subject) {
+      throw new Error("TypeSafe maxStateChars is too small for the fixed evidence-state schema");
+    }
+    const excess = JSON.stringify(evidenceState(bounded)).length - policy.bounds.maxStateChars;
+    const fields: Array<[Record<string, unknown>, string]> = [
+      [subject.finding as unknown as Record<string, unknown>, "suggestion"],
+      [subject.finding as unknown as Record<string, unknown>, "rationale"],
+      [subject as unknown as Record<string, unknown>, "candidateExcerpt"],
+      [subject.finding as unknown as Record<string, unknown>, "title"],
+      [subject as unknown as Record<string, unknown>, "lensRule"],
+    ];
+    const field = fields.find(([object, key]) => typeof object[key] === "string" && (object[key] as string).length > 0);
+    if (field) {
+      const [object, key] = field;
+      const value = object[key] as string;
+      object[key] = value.slice(0, Math.max(0, value.length - Math.max(1, excess)));
+      continue;
+    }
+    bounded.pop();
+  }
+  return bounded;
+}
+
+function evidenceRequest(
+  subjects: EvidenceSubject[],
+  policy: TypeSafePolicy,
+): SystemOneRequest {
+  const state = evidenceState(subjects);
   const questions = Object.fromEntries(
     subjects.map((subject) => [
       subject.questionId,
@@ -416,7 +481,7 @@ function assembleRecord(
     state,
     routing,
     evidence,
-    latencyMs: routing.latencyMs + evidence.latencyMs,
+    latencyMs: Math.max(routing.latencyMs, evidence.latencyMs),
     usage,
     estimatedCostUsd:
       (usage.inputTokens * policy.pricing.inputUsdPerMillionTokens +
@@ -464,7 +529,10 @@ export function createTypeSafeShadowObserver(
       for (let repeatIndex = 1; repeatIndex <= repeatCount; repeatIndex++) {
         const repeatTimestamp = repeatIndex === 1 ? timestamp : now();
         const state = buildBoundedReviewState(input.pr, input.diff, policy);
-        const subjects = evidenceSubjects(input.lensReports, state, policy);
+        const subjects = boundedEvidenceSubjects(
+          evidenceSubjects(input.lensReports, state, policy),
+          policy,
+        );
         const evidencePromise =
           subjects.length === 0
             ? Promise.resolve({ record: skippedStage("no blocker or important findings"), response: null })

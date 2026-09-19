@@ -90,7 +90,7 @@ describe("review workflow TypeSafe authority boundary", () => {
       forge: observingForge,
       substrate,
       post: true,
-      typeSafeShadow: {
+      completedReviewObserver: {
         observe: async (copy) => {
           events.push("shadow");
           expect(Object.isFrozen(copy)).toBe(true);
@@ -99,6 +99,7 @@ describe("review workflow TypeSafe authority boundary", () => {
         },
       },
     });
+    await observed.observerCompletion;
     expect(events).toEqual(["post", "shadow"]);
     expect(postCalls).toBe(1);
     expect(withoutRuntimeDurations(observed.verdict)).toEqual(withoutRuntimeDurations(baseline.verdict));
@@ -175,8 +176,9 @@ describe("review workflow TypeSafe authority boundary", () => {
       forge,
       substrate,
       post: false,
-      typeSafeShadow: observer,
+      completedReviewObserver: observer,
     });
+    await observed.observerCompletion;
     expect(records).toHaveLength(1);
     expect(records[0]?.routing.signals.filter((signal) => signal.family === "routing").every(
       (signal) => signal.answer.choice === "recommend" && signal.disposition === "accepted",
@@ -199,10 +201,37 @@ describe("review workflow TypeSafe authority boundary", () => {
       forge,
       substrate,
       post: true,
-      typeSafeShadow: { observe: async () => { throw new Error("provider unavailable"); } },
+      completedReviewObserver: { observe: async () => { throw new Error("service unavailable"); } },
     });
+    await result.observerCompletion;
     expect(result.posted).toBe(true);
     expect(withoutRuntimeDurations(result.verdict)).toEqual(withoutRuntimeDurations(baseline.verdict));
     expect(postCalls).toBe(1);
+  });
+
+  test("returns the completed Review before advisory observation finishes", async () => {
+    const { reviewPr } = await import("../src/lenses/workflow.ts");
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    let observerFinished = false;
+
+    const result = await reviewPr({
+      ref: { owner: "x", repo: "y", number: 125 },
+      forge,
+      substrate,
+      post: false,
+      completedReviewObserver: {
+        observe: async () => {
+          await blocked;
+          observerFinished = true;
+        },
+      },
+    });
+
+    expect(result.verdict).toBeDefined();
+    expect(observerFinished).toBe(false);
+    release();
+    await result.observerCompletion;
+    expect(observerFinished).toBe(true);
   });
 });

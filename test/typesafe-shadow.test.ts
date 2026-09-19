@@ -162,6 +162,8 @@ describe("TypeSafe bounded state", () => {
       "const openai = 'sk-abcdefghijklmnopqrstuv';",
       "const github = 'github_pat_abcdefghijklmnopqrstuvwxyz123456';",
       "const aws = 'AKIAABCDEFGHIJKLMNOP';",
+      "DATABASE_URL=postgres://app:database-password@example.test/game",
+      "https://user:password@example.test/private",
     ].join("\n"));
 
     expect(redacted).not.toContain("secret value with spaces");
@@ -169,6 +171,8 @@ describe("TypeSafe bounded state", () => {
     expect(redacted).not.toContain("sk-abcdefghijklmnopqrstuv");
     expect(redacted).not.toContain("github_pat_abcdefghijklmnopqrstuvwxyz123456");
     expect(redacted).not.toContain("AKIAABCDEFGHIJKLMNOP");
+    expect(redacted).not.toContain("database-password");
+    expect(redacted).not.toContain("user:password");
   });
 
   test("bounds the entire serialized state including paths and metadata", () => {
@@ -269,6 +273,42 @@ describe("TypeSafe shadow observer", () => {
     };
     expect(evidenceState.findings[0]?.selectedEvidence.candidateId).toBe("candidate_2");
     expect(evidenceState.findings[0]?.selectedEvidence.excerpt).toContain("relevant");
+  });
+
+  test("redacts and bounds the complete finding-evidence state", async () => {
+    const requests: SystemOneRequest[] = [];
+    const boundedPolicy = {
+      ...TYPESAFE_POLICY,
+      bounds: { ...TYPESAFE_POLICY.bounds, maxStateChars: 3_000 },
+    };
+    const sensitiveInput: ShadowReviewInput = {
+      ...input,
+      lensReports: [{
+        ...input.lensReports[0]!,
+        findings: [{
+          ...input.lensReports[0]!.findings[0]!,
+          title: "DATABASE_URL=postgres://app:title-password@example.test/game",
+          rationale: `token="finding secret with spaces" ${"context ".repeat(2_000)}`,
+          suggestion: "https://user:suggestion-password@example.test/private",
+        }],
+      }],
+    };
+    const observer = createTypeSafeShadowObserver({
+      mode: "shadow",
+      corpus: manifest(),
+      policy: boundedPolicy,
+      transport: successfulTransport(requests),
+      sink: { write: () => undefined },
+    });
+
+    await observer.observe(sensitiveInput);
+
+    const request = requests.find((candidate) => "findings" in (candidate.state as object));
+    expect(request).toBeDefined();
+    expect(JSON.stringify(request!.state).length).toBeLessThanOrEqual(3_000);
+    expect(JSON.stringify(request!.state)).not.toContain("title-password");
+    expect(JSON.stringify(request!.state)).not.toContain("finding secret with spaces");
+    expect(JSON.stringify(request!.state)).not.toContain("suggestion-password");
   });
 
   test("records failed baseline lenses but does not triage their synthetic diagnostics", async () => {

@@ -184,7 +184,7 @@ program
         substrate: selection.substrate,
         timeoutMs: opts.timeout * 1000,
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
-        ...(typeSafeShadow ? { typeSafeShadow } : {}),
+        ...(typeSafeShadow ? { completedReviewObserver: typeSafeShadow } : {}),
       });
       const body = renderVerdict(result.verdict, selection.substrate.displayName);
       // The verdict block MUST be the terminal artefact: cortex's
@@ -194,6 +194,7 @@ program
         : body;
       console.log(out);
       console.error(`[sage] verdict: ${result.verdict.decision} (posted=${result.posted})`);
+      await result.observerCompletion;
       if (result.verdict.decision === "changes-requested") {
         process.exit(1);
       }

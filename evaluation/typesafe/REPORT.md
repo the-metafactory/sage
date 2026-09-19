@@ -18,13 +18,13 @@ Verdict, or Forge actions.
 
 - Records: 6
 - Immutable states: 2
-- Deterministic baseline lens runs observed: 14
+- Completed baseline Lens runs observed: 14
 - Failed baseline lens runs: 0
 - Independently labeled decision signals: 0 / 42 (42 missing)
 - Failed records: 0
 - State-truncated records: 6
 - Provider request attempts / retries: 12 / 0
-- Latency p50 / p95: 577 ms / 1172 ms
+- Pre-fix recorded stage-total latency p50 / p95: 577 ms / 1172 ms
 - Usage: 69,345 input tokens, 6,588 output tokens
 - Estimated provider cost: $0.002912 total, $0.000485 average per record
 
@@ -36,7 +36,9 @@ Verdict, or Forge actions.
 
 Every repeated routing and finding-evidence Choice was identical across its
 three runs. The probability spread clears the predeclared 0.20 ceiling, and
-latency, failure rate, and cost clear their operational thresholds.
+the conservative pre-fix stage-total latency, failure rate, and cost clear
+their operational thresholds. New records use concurrent wall-clock latency
+(the slower stage), not the sum of the two parallel stages.
 
 ## Early qualitative observations
 

@@ -53,6 +53,8 @@ export interface EvaluationReport {
     requiredSignals: number;
     labeledSignals: number;
     unlabeledSignals: number;
+    groundTruthSignals: number;
+    missingGroundTruthSignals: number;
   };
   failedRecords: number;
   truncatedRecords: number;
@@ -200,6 +202,11 @@ export function generateEvaluationReport(
   const labeledDecisionKeys = new Set(
     decisionLabels.map((label) => `${label.recordId}:${label.questionId}`),
   );
+  const groundTruthDecisionKeys = new Set(
+    decisionLabels
+      .filter((label) => label.groundTruthPositive !== undefined)
+      .map((label) => `${label.recordId}:${label.questionId}`),
+  );
   const decisionQuestionIds = new Set(
     [...signalByKey.values()]
       .filter((signal) => signal.family === "routing" || signal.family === "finding_evidence")
@@ -227,6 +234,7 @@ export function generateEvaluationReport(
   const repeat = repeatability(records);
   const p95LatencyMs = percentile(records.map((record) => record.latencyMs), 0.95);
   const unlabeledSignals = decisionSignalKeys.size - labeledDecisionKeys.size;
+  const missingGroundTruthSignals = decisionSignalKeys.size - groundTruthDecisionKeys.size;
   // repeatIndex > 1 reuses the exact same completed Sage baseline. Count the
   // baseline once per observer invocation while still counting every Jev
   // decision above for label coverage and repeatability.
@@ -243,14 +251,14 @@ export function generateEvaluationReport(
       : "More independently labeled corpus evidence is required.";
   if (
     thresholds.status === "approved" &&
-    labeled >= thresholds.minimumLabels &&
+    groundTruthDecisionKeys.size >= thresholds.minimumLabels &&
     (meanPrecision ?? 0) < thresholds.stopBelowPrecision
   ) {
     recommendation = "stop";
     recommendationReason = "Reviewer-validated mean precision is below the stop threshold.";
   } else if (
     thresholds.status === "approved" &&
-    labeled >= thresholds.minimumLabels &&
+    groundTruthDecisionKeys.size >= thresholds.minimumLabels &&
     (meanPrecision ?? 0) >= thresholds.proposeMinimumPrecision &&
     usefulnessRate >= thresholds.proposeMinimumUsefulness &&
     failureRate <= thresholds.proposeMaximumFailureRate &&
@@ -262,6 +270,7 @@ export function generateEvaluationReport(
     repeat.maxProbabilitySpread <= thresholds.proposeMaximumProbabilitySpread &&
     decisionSignalKeys.size > 0 &&
     unlabeledSignals === 0 &&
+    missingGroundTruthSignals === 0 &&
     baselineFailedLensRuns === 0
   ) {
     recommendation = "propose_separately_authorized_integration";
@@ -284,6 +293,8 @@ export function generateEvaluationReport(
       requiredSignals: decisionSignalKeys.size,
       labeledSignals: labeledDecisionKeys.size,
       unlabeledSignals,
+      groundTruthSignals: groundTruthDecisionKeys.size,
+      missingGroundTruthSignals,
     },
     failedRecords,
     truncatedRecords: records.filter((record) => record.state.truncation.stateTruncated).length,
@@ -329,9 +340,10 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 
 - Records: ${report.records}
 - Immutable states: ${report.immutableStates}
-- Deterministic baseline lens runs observed: ${report.baselineLensRuns}
+- Completed baseline Lens runs observed: ${report.baselineLensRuns}
 - Failed baseline lens runs: ${report.baselineFailedLensRuns}
 - Independently labeled decision signals: ${report.labelCoverage.labeledSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.unlabeledSignals} missing)
+- Decision signals with ground truth: ${report.labelCoverage.groundTruthSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.missingGroundTruthSignals} missing)
 - Failed records: ${report.failedRecords}
 - State-truncated records: ${report.truncatedRecords}
 - Provider request attempts / retries: ${report.requests} / ${report.retries}

@@ -210,6 +210,8 @@ describe("TypeSafe evaluation report", () => {
       requiredSignals: 2,
       labeledSignals: 2,
       unlabeledSignals: 0,
+      groundTruthSignals: 2,
+      missingGroundTruthSignals: 0,
     });
     expect(report.repeatability.repeatedGroups).toBe(1);
     expect(report.repeatability.meanAgreement).toBe(1);
@@ -296,6 +298,12 @@ describe("TypeSafe evaluation report", () => {
     const incomplete = generateEvaluationReport(records, labels.slice(0, 1), incompleteThresholds);
     expect(incomplete.labelCoverage.unlabeledSignals).toBe(1);
     expect(incomplete.recommendation).toBe("iterate");
+
+    const labelsWithoutGroundTruth = labels.map(({ groundTruthPositive: _removed, ...label }) => label);
+    const unscored = generateEvaluationReport(records, labelsWithoutGroundTruth, approvedThresholds);
+    expect(unscored.labelCoverage.labeledSignals).toBe(2);
+    expect(unscored.labelCoverage.groundTruthSignals).toBe(0);
+    expect(unscored.recommendation).toBe("iterate");
 
     const incompleteBaseline = records.map((item, index) => index === 0
       ? { ...item, baseline: { ...item.baseline, erroredLenses: ["CodeQuality"] } }

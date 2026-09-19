@@ -5,9 +5,10 @@ import type { BoundedReviewState, DiffCandidate } from "./types.ts";
 import type { TypeSafePolicy } from "./policy.ts";
 
 const SECRET_ASSIGNMENT =
-  /(["']?)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
+  /(["']?)(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)\1(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
 const YAML_SECRET_BLOCK =
-  /^(\s*["']?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
+  /^(\s*["']?(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|(?:database|redis|mongodb|amqp)[_-]?(?:url|uri)|connection[_-]?string)["']?\s*:\s*[>|][-+]?\s*)\n(?:[ \t]+.*(?:\n|$))+/gim;
+const CREDENTIAL_URI = /\b([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^@\s/]+@/gi;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const PRIVATE_KEY = /-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g;
@@ -18,6 +19,7 @@ export function redactTypeSafeText(value: string): string {
   return value
     .replace(PRIVATE_KEY, "[REDACTED_PRIVATE_KEY]")
     .replace(YAML_SECRET_BLOCK, "$1\n  [REDACTED]\n")
+    .replace(CREDENTIAL_URI, "$1[REDACTED]@")
     .replace(BEARER, "Bearer [REDACTED]")
     .replace(JWT, "[REDACTED_JWT]")
     .replace(PROVIDER_TOKEN, "[REDACTED_TOKEN]")

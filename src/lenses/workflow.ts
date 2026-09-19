@@ -40,7 +40,10 @@ import {
 } from "./scheduler.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
 import type { LensReport } from "./types.ts";
-import type { TypeSafeShadowObserver } from "../typesafe/types.ts";
+import type {
+  CompletedReviewObservation,
+  CompletedReviewObserver,
+} from "./completed-review-observer.ts";
 
 export interface ReviewOptions {
   ref: PrRef;
@@ -83,12 +86,11 @@ export interface ReviewOptions {
   /** Progress callback fired after each lens completes — envelope emission. */
   onLensComplete?: (report: LensReport) => void | Promise<void>;
   /**
-   * Optional TypeSafe proof-of-value observer (sage#125). The workflow invokes
-   * it only after Sage has selected lenses, decided the Verdict, persisted it,
-   * and completed any Forge post. It receives a deep-frozen copy and has no
-   * return channel into review behavior. Observer failures are fail-open.
+   * Optional vendor-neutral observer for a completed Review. It receives a
+   * deep-frozen copy after persistence and Forge work, with no return channel
+   * into authoritative Review behavior. Failures are fail-open.
    */
-  typeSafeShadow?: TypeSafeShadowObserver;
+  completedReviewObserver?: CompletedReviewObserver;
 }
 
 export interface ReviewResult {
@@ -114,6 +116,8 @@ export interface ReviewResult {
    * under `--emit-verdict-block`.
    */
   blockMeta: VerdictBlockMeta;
+  /** Advisory post-Review work; callers may await it before process exit. */
+  observerCompletion?: Promise<void>;
 }
 
 export interface PostError {
@@ -324,7 +328,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...(postError !== undefined ? { postError } : {}),
   };
 
-  await notifyTypeSafeShadow(opts.typeSafeShadow, {
+  const observerCompletion = notifyCompletedReviewObserver(opts.completedReviewObserver, {
     ref: opts.ref,
     pr,
     diff,
@@ -333,13 +337,14 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     verdict,
     posted,
   });
+  if (opts.completedReviewObserver) reviewResult.observerCompletion = observerCompletion;
 
   return reviewResult;
 }
 
-async function notifyTypeSafeShadow(
-  observer: TypeSafeShadowObserver | undefined,
-  input: Parameters<TypeSafeShadowObserver["observe"]>[0],
+async function notifyCompletedReviewObserver(
+  observer: CompletedReviewObserver | undefined,
+  input: CompletedReviewObservation,
 ): Promise<void> {
   if (!observer) return;
   try {
@@ -349,7 +354,7 @@ async function notifyTypeSafeShadow(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     // eslint-disable-next-line no-console
-    console.error(`[workflow] TypeSafe shadow observer failed open: ${detail.slice(0, 500)}`);
+    console.error(`[workflow] completed Review observer failed open: ${detail.slice(0, 500)}`);
   }
 }
 

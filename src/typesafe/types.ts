@@ -1,24 +1,16 @@
 import { z } from "zod";
 
-import type { PrMetadata, PrRef } from "../forge/types.ts";
-import type { LensReport } from "../lenses/types.ts";
+import type {
+  CompletedReviewObservation,
+  CompletedReviewObserver,
+} from "../lenses/completed-review-observer.ts";
+import type { PrRef } from "../forge/types.ts";
 import type { Verdict } from "../verdict/types.ts";
 
 export type TypeSafeMode = "off" | "shadow";
 
-export interface ShadowReviewInput {
-  readonly ref: Readonly<PrRef>;
-  readonly pr: Readonly<PrMetadata>;
-  readonly diff: string;
-  readonly baselineLensNames: readonly string[];
-  readonly lensReports: readonly Readonly<LensReport>[];
-  readonly verdict: Readonly<Verdict>;
-  readonly posted: boolean;
-}
-
-export interface TypeSafeShadowObserver {
-  observe(input: ShadowReviewInput): Promise<void>;
-}
+export type ShadowReviewInput = CompletedReviewObservation;
+export type TypeSafeShadowObserver = CompletedReviewObserver;
 
 export interface ChoiceQuestion {
   readonly type: "choice";

@@ -24,8 +24,11 @@ TYPESAFE_API_KEY=... \
 bun run review OWNER/REPO#NUMBER --substrate codex
 ```
 
-The ordinary Sage review is computed, persisted, and optionally posted before
-the observer runs. Structured shadow records are written with mode `0600` under
+The ordinary Sage Review is computed, persisted, and optionally posted before
+the observer starts. `reviewPr` returns the authoritative Verdict without
+waiting for advisory work; the CLI prints that Verdict and then awaits the
+observer-completion handle so local records survive process exit. Structured
+shadow records are written with mode `0600` under
 `~/.config/sage/typesafe-shadow/`. The API key is read only by the HTTP
 transport and is never included in the request state or record.
 Each record includes the authorization mode so frozen-corpus and until-revoked
