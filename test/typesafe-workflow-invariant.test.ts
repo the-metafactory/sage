@@ -235,7 +235,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(observerFinished).toBe(true);
   });
 
-  test("performs the observer head check after returning the completed Review", async () => {
+  test("does not add Forge reads for advisory observation", async () => {
     const { reviewPr } = await import("../src/lenses/workflow.ts");
     let prViewCalls = 0;
     let observed = false;
@@ -260,7 +260,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(prViewCalls).toBe(1);
     expect(observed).toBe(false);
     await result.observerCompletion;
-    expect(prViewCalls).toBe(2);
+    expect(prViewCalls).toBe(1);
     expect(observed).toBe(true);
   });
 

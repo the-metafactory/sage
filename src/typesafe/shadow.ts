@@ -432,6 +432,7 @@ function failureRecord(
   });
 }
 
+/** Named inputs for assembling one immutable shadow comparison record. */
 interface AssembleRecordInput {
   input: ShadowReviewInput;
   policy: TypeSafePolicy;

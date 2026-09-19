@@ -200,7 +200,7 @@ _Avoid_: direct subject, named subject
 
 ## Flagged ambiguities
 
-- **Substrate, Provider, and System One adapter are separate layers.** A Lens talks only to a Substrate; that Substrate talks to its Provider. Separately, the System One adapter directly calls its typed decision service after Review completion. This exception does not put typed decisions inside the Lens/Substrate boundary.
+- **`substrate` vs upstream inference service.** Two layers, often conflated. A Substrate is the coding-tool subprocess Sage launches; its upstream service performs inference. A Lens speaks only to the Substrate. The System One adapter is a documented exception outside the Lens/Substrate boundary: it calls a typed-decision service directly only after Review completion.
 - **`review` was overloaded** — the act, the artifact on the bus, the comment posted, the forge enum, the CLI subcommand. Resolved into **Review** (act), **Verdict** (decision), **Verdict envelope** (bus artifact), **Review comment** (forge body), **PostAction** (forge enum). The CLI subcommand `sage review` is named after the act.
 - **`ReviewEvent` was misleading.** It sounded like a bus event but is a forge-API enum mapping a Verdict to a Forge call. Resolved: **PostAction**.
 - **`lens` did two jobs** — concern category and per-PR execution. Resolved into **Lens** (static category) and **Lens run** (per-PR execution).

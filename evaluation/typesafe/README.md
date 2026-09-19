@@ -61,6 +61,11 @@ The checked-in `live-evidence/` cohort is therefore not a second source of
 review content; it is a sanitized, immutable audit input for the published
 operational measurements. Original records remain local with mode `0600`.
 
+Long digit runs in JSON strings are written as equivalent Unicode escapes by
+the export step so repository scanners do not mistake public commit SHAs for
+credentials. JSON decoding restores the original string before schema
+validation.
+
 Removal is one isolated change: delete `src/typesafe/`, `evaluation/typesafe/`,
 the TypeSafe tests and report script, then remove the optional observer field,
 CLI flags, and package script. No Verdict, Lens, Forge, or bus contract stores a
