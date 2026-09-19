@@ -80,8 +80,8 @@ function buildTypeSafeShadow(
       repeatCount,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[sage] TypeSafe shadow disabled (ordinary review continues): ${message}`);
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[sage] TypeSafe shadow disabled (ordinary review continues): ${detail}`);
     return undefined;
   }
 }

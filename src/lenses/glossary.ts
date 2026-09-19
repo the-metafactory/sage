@@ -252,6 +252,11 @@ function parseAddedLines(diff: string): DiffAddedLine[] {
   return added;
 }
 
+/** External TypeSafe contract paths use TypeSafe's vocabulary, not Sage's. */
+function isTypeSafeBoundaryPath(path: string): boolean {
+  return /(?:^|[./-])typesafe(?:[./-]|$)/i.test(path);
+}
+
 /**
  * Deterministic (non-model) `_Avoid_`-alias violations on added diff
  * lines. Severity `important` — same rank as a model-authored finding —
@@ -267,6 +272,7 @@ export function findGlossaryViolations(
   const seen = new Set<string>();
 
   for (const { path, lineNumber, text } of addedLines) {
+    if (isTypeSafeBoundaryPath(path)) continue;
     for (const entry of entries) {
       for (const alias of entry.avoid) {
         if (!literallyAppears(alias, text)) continue;

@@ -44,8 +44,8 @@ if [[ -f "$SAGE_ENV_FILE" ]]; then
 fi
 
 # Optional, separately revocable TypeSafe shadow configuration. Keeping this
-# apart from the general provider file lets an operator disable the observer
-# without touching substrate credentials or the TypeSafe API key source.
+# apart from the general substrate environment lets an operator disable the
+# observer without touching substrate credentials or the TypeSafe key source.
 SAGE_TYPESAFE_ENV_FILE="${HOME}/.config/sage/typesafe.env"
 if [[ -f "$SAGE_TYPESAFE_ENV_FILE" ]]; then
   if [[ "$(stat -f '%Mp%Lp' "$SAGE_TYPESAFE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then

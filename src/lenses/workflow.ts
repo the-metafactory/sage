@@ -314,7 +314,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     inline_comments: posted ? inlineComments.length : 0,
   };
 
-  const result: ReviewResult = {
+  const reviewResult: ReviewResult = {
     verdict,
     posted,
     blockMeta,
@@ -334,7 +334,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     posted,
   });
 
-  return result;
+  return reviewResult;
 }
 
 async function notifyTypeSafeShadow(
@@ -347,9 +347,9 @@ async function notifyTypeSafeShadow(
     deepFreeze(copy);
     await observer.observe(copy);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const detail = error instanceof Error ? error.message : String(error);
     // eslint-disable-next-line no-console
-    console.error(`[workflow] TypeSafe shadow observer failed open: ${message.slice(0, 500)}`);
+    console.error(`[workflow] TypeSafe shadow observer failed open: ${detail.slice(0, 500)}`);
   }
 }
 

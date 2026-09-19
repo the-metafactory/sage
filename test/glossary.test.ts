@@ -210,6 +210,17 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findGlossaryViolations(entries, diff)).toEqual([]);
   });
 
+  test("does not reinterpret external TypeSafe contract vocabulary as Sage aliases", () => {
+    const diff = `diff --git a/src/typesafe/transport.ts b/src/typesafe/transport.ts
+--- a/src/typesafe/transport.ts
++++ b/src/typesafe/transport.ts
+@@ -1,1 +1,2 @@
+ const endpoint = "/api/v1/system-one/run";
++const request = { model: "jev-1.13.0", status: "ready" };
+`;
+    expect(findGlossaryViolations(entries, diff)).toEqual([]);
+  });
+
   test("computes correct new-revision line numbers across multiple hunks", () => {
     const diff = `diff --git a/a.ts b/a.ts
 --- a/a.ts
