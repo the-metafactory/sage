@@ -116,6 +116,9 @@ export interface ShadowComparisonRecord {
   readonly recordId: string;
   readonly createdAt: string;
   readonly mode: "shadow";
+  readonly authorizationMode: "frozen-corpus" | "all-reviews-until-revoked";
+  readonly repeatIndex: number;
+  readonly repeatCount: number;
   readonly ref: Readonly<PrRef>;
   readonly headSha: string;
   readonly modelRequested: string;
@@ -125,6 +128,7 @@ export interface ShadowComparisonRecord {
   readonly stateFingerprint: string;
   readonly baseline: {
     readonly selectedLenses: readonly string[];
+    readonly erroredLenses: readonly string[];
     readonly findingFingerprint: string;
     readonly verdictDecision: Verdict["decision"];
     readonly posted: boolean;

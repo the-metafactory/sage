@@ -4,11 +4,19 @@ The proof of value is disabled by default. Do not enable it until
 `DATA-PROCESSING.md`, `corpus.json`, and `thresholds.json` carry explicit
 principal approval.
 
+Sage's launcher also reads `~/.config/sage/typesafe.env` after its ordinary
+provider environment. This separate `0600` file is the persistent on/off
+switch for a machine-wide shadow rollout. A local manifest may set
+`authorizationMode` to `all-reviews-until-revoked` only with explicit
+principal approval; the shipped manifest remains `frozen-corpus`. Remove the
+file or set `SAGE_TYPESAFE_MODE=off` to revoke the rollout.
+
 For each approved immutable corpus entry, run Sage at that exact head:
 
 ```sh
 SAGE_TYPESAFE_MODE=shadow \
 SAGE_TYPESAFE_CORPUS=evaluation/typesafe/corpus.json \
+SAGE_TYPESAFE_REPEATS=3 \
 TYPESAFE_API_KEY=... \
 bun run review OWNER/REPO#NUMBER --substrate codex
 ```
@@ -17,9 +25,13 @@ The ordinary Sage review is computed, persisted, and optionally posted before
 the observer runs. Structured shadow records are written with mode `0600` under
 `~/.config/sage/typesafe-shadow/`. The API key is read only by the HTTP
 transport and is never included in the request state or record.
+Each record includes the authorization mode so frozen-corpus and until-revoked
+runs remain distinguishable during evaluation.
 
-Repeat every immutable state as required by the study, then have an independent
-reviewer fill `reviewer-labels.json`. Render the report without network access:
+`SAGE_TYPESAFE_REPEATS=3` reuses the single completed Sage baseline and records
+three sequential TypeSafe judgments over exactly the same state. Then have an
+independent reviewer fill `reviewer-labels.json`. Render the report without
+network access:
 
 ```sh
 bun run report:typesafe \

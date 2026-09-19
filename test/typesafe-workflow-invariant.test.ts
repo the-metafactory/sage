@@ -4,6 +4,7 @@ import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
 import { createTypeSafeShadowObserver } from "../src/typesafe/shadow.ts";
 import type { ShadowComparisonRecord } from "../src/typesafe/types.ts";
 import { renderVerdictBlock } from "../src/verdict/index.ts";
+import type { Verdict } from "../src/verdict/types.ts";
 import { makeStubForge } from "./forge-stub.ts";
 
 const pr = {
@@ -46,6 +47,13 @@ const substrate = {
     durationMs: 1,
   }),
 };
+
+function withoutRuntimeDurations(verdict: Verdict): Verdict {
+  return {
+    ...verdict,
+    lenses: verdict.lenses.map((lens) => ({ ...lens, durationMs: 0 })),
+  };
+}
 
 beforeEach(() => {
   postCalls = 0;
@@ -93,7 +101,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     });
     expect(events).toEqual(["post", "shadow"]);
     expect(postCalls).toBe(1);
-    expect(observed.verdict).toEqual(baseline.verdict);
+    expect(withoutRuntimeDurations(observed.verdict)).toEqual(withoutRuntimeDurations(baseline.verdict));
     expect(observed.posted).toBe(baseline.posted);
     expect(observed.postedEvent).toBe(baseline.postedEvent);
     expect(observed.blockMeta.commit_id).toBe(baseline.blockMeta.commit_id);
@@ -173,7 +181,7 @@ describe("review workflow TypeSafe authority boundary", () => {
     expect(records[0]?.routing.signals.filter((signal) => signal.family === "routing").every(
       (signal) => signal.answer.choice === "recommend" && signal.disposition === "accepted",
     )).toBe(true);
-    expect(observed.verdict).toEqual(baseline.verdict);
+    expect(withoutRuntimeDurations(observed.verdict)).toEqual(withoutRuntimeDurations(baseline.verdict));
     expect(observed.posted).toBe(false);
     expect(postCalls).toBe(0);
   });
@@ -194,7 +202,7 @@ describe("review workflow TypeSafe authority boundary", () => {
       typeSafeShadow: { observe: async () => { throw new Error("provider unavailable"); } },
     });
     expect(result.posted).toBe(true);
-    expect(result.verdict).toEqual(baseline.verdict);
+    expect(withoutRuntimeDurations(result.verdict)).toEqual(withoutRuntimeDurations(baseline.verdict));
     expect(postCalls).toBe(1);
   });
 });

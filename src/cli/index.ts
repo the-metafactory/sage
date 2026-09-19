@@ -64,8 +64,12 @@ function buildTypeSafeShadow(
     const corpus = loadCorpusManifest(corpusPath);
     const apiKey = process.env.TYPESAFE_API_KEY;
     const timeoutMs = Number(process.env.SAGE_TYPESAFE_TIMEOUT_MS ?? 5_000);
+    const repeatCount = Number(process.env.SAGE_TYPESAFE_REPEATS ?? 1);
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
       throw new Error("SAGE_TYPESAFE_TIMEOUT_MS must be a positive integer");
+    }
+    if (!Number.isInteger(repeatCount) || repeatCount <= 0 || repeatCount > 10) {
+      throw new Error("SAGE_TYPESAFE_REPEATS must be an integer from 1 to 10");
     }
     return createTypeSafeShadowObserver({
       mode,
@@ -73,6 +77,7 @@ function buildTypeSafeShadow(
       sink: createFileShadowSink(),
       ...(apiKey ? { transport: createHttpTypeSafeTransport({ apiKey }) } : {}),
       timeoutMs,
+      repeatCount,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

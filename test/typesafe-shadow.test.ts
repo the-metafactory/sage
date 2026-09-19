@@ -185,18 +185,99 @@ describe("TypeSafe shadow observer", () => {
     expect(requests).toHaveLength(2);
     expect(records).toHaveLength(1);
     const record = records[0]!;
+    expect(record.authorizationMode).toBe("frozen-corpus");
     expect(record.modelRequested).toBe("jev-1.13.0");
+    expect(record.repeatIndex).toBe(1);
+    expect(record.repeatCount).toBe(1);
     expect(record.modelReturned).toBe("jev-1.13.0");
     expect(record.policyHash).toBe(TYPESAFE_POLICY_HASH);
     expect(record.stateFingerprint).toHaveLength(64);
     expect(record.routing.questionIds).toHaveLength(10);
     expect(record.evidence.questionIds).toHaveLength(1);
+    expect(record.baseline.erroredLenses).toEqual([]);
     expect(record.routing.signals.every((signal) => signal.answer.confidence === 0.9)).toBe(true);
     expect(record.usage).toEqual({ inputTokens: 200, outputTokens: 20 });
     expect(record.state.candidates.some((candidate) => candidate.path === "src/game.ts")).toBe(true);
     expect(record.state.discardedCandidateSummary).toBeDefined();
     expect(JSON.stringify(record)).not.toContain("super-secret-value");
     expect(JSON.stringify(requests)).not.toContain("TYPESAFE_API_KEY");
+  });
+
+  test("selects the nearest preceding hunk for a finding in a multi-hunk file", async () => {
+    const requests: SystemOneRequest[] = [];
+    const multiHunk: ShadowReviewInput = {
+      ...input,
+      diff: `diff --git a/src/game.ts b/src/game.ts
+@@ -1 +1 @@
++const first = true;
+@@ -20 +20 @@
++const relevant = false;`,
+      lensReports: [{
+        ...input.lensReports[0]!,
+        findings: [{ ...input.lensReports[0]!.findings[0]!, line: 20 }],
+      }],
+    };
+    const observer = createTypeSafeShadowObserver({
+      mode: "shadow",
+      corpus: manifest(),
+      transport: successfulTransport(requests),
+      sink: { write: () => undefined },
+    });
+
+    await observer.observe(multiHunk);
+
+    const evidenceState = requests[1]!.state as {
+      findings: Array<{ selectedEvidence: { candidateId: string; excerpt: string } }>;
+    };
+    expect(evidenceState.findings[0]?.selectedEvidence.candidateId).toBe("candidate_2");
+    expect(evidenceState.findings[0]?.selectedEvidence.excerpt).toContain("relevant");
+  });
+
+  test("records failed baseline lenses but does not triage their synthetic diagnostics", async () => {
+    const records: ShadowComparisonRecord[] = [];
+    const requests: SystemOneRequest[] = [];
+    const erroredInput: ShadowReviewInput = {
+      ...input,
+      lensReports: [{
+        ...input.lensReports[0]!,
+        errored: true,
+      }],
+    };
+    const observer = createTypeSafeShadowObserver({
+      mode: "shadow",
+      corpus: manifest(),
+      transport: successfulTransport(requests),
+      sink: { write: (record) => records.push(record) },
+    });
+
+    await observer.observe(erroredInput);
+
+    expect(requests).toHaveLength(1);
+    expect(records[0]?.baseline.erroredLenses).toEqual(["Architecture"]);
+    expect(records[0]?.evidence.status).toBe("skipped");
+    expect(records[0]?.evidence.signals).toEqual([]);
+  });
+
+  test("repeats TypeSafe judgments over one fixed Sage baseline", async () => {
+    const records: ShadowComparisonRecord[] = [];
+    const requests: SystemOneRequest[] = [];
+    const observer = createTypeSafeShadowObserver({
+      mode: "shadow",
+      corpus: manifest(),
+      transport: successfulTransport(requests),
+      sink: { write: (record) => records.push(record) },
+      repeatCount: 3,
+      now: () => new Date("2026-09-18T21:00:00.000Z"),
+    });
+
+    await observer.observe(input);
+
+    expect(requests).toHaveLength(6);
+    expect(records.map((record) => record.repeatIndex)).toEqual([1, 2, 3]);
+    expect(records.every((record) => record.repeatCount === 3)).toBe(true);
+    expect(new Set(records.map((record) => record.recordId)).size).toBe(3);
+    expect(new Set(records.map((record) => record.stateFingerprint)).size).toBe(1);
+    expect(new Set(records.map((record) => record.baseline.findingFingerprint)).size).toBe(1);
   });
 
   test("off mode performs no network or persistence", async () => {

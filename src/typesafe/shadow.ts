@@ -32,6 +32,7 @@ export interface CreateTypeSafeShadowOptions {
   sink: ShadowRecordSink;
   corpus: CorpusManifest;
   timeoutMs?: number;
+  repeatCount?: number;
   policy?: TypeSafePolicy;
   now?: () => Date;
 }
@@ -226,7 +227,7 @@ interface EvidenceSubject {
 }
 
 function majorFindings(reports: readonly Readonly<LensReport>[]): Array<{ lens: string; finding: Finding }> {
-  return reports.flatMap((report) =>
+  return reports.filter((report) => !report.errored).flatMap((report) =>
     report.findings
       .filter((finding) => finding.severity === "blocker" || finding.severity === "important")
       .map((finding) => ({ lens: report.lens, finding })),
@@ -239,7 +240,14 @@ function evidenceSubjects(
   policy: TypeSafePolicy,
 ): EvidenceSubject[] {
   return majorFindings(reports).map(({ lens, finding }) => {
-    const candidate = state.candidates.find((entry) => entry.path === finding.path);
+    const samePath = state.candidates.filter((entry) => entry.path === finding.path);
+    const preceding = finding.line > 0
+      ? samePath.filter((entry) => entry.startLine <= finding.line)
+      : [];
+    const candidate = preceding.length > 0
+      ? preceding.reduce((nearest, entry) =>
+          entry.startLine > nearest.startLine ? entry : nearest)
+      : samePath[0];
     const policyRule = policy.routing.find((entry) => entry.lens === lens)?.purpose;
     const digest = createHash("sha256")
       .update(JSON.stringify({ lens, finding }))
@@ -341,6 +349,7 @@ function failureRecord(
   policy: TypeSafePolicy,
   now: Date,
   reason: string,
+  authorizationMode: ShadowComparisonRecord["authorizationMode"],
 ): ShadowComparisonRecord {
   const state = buildBoundedReviewState(input.pr, input.diff, policy);
   return assembleRecord(
@@ -351,6 +360,9 @@ function failureRecord(
     failedStage(reason),
     skippedStage("routing stage unavailable"),
     null,
+    1,
+    1,
+    authorizationMode,
   );
 }
 
@@ -362,6 +374,9 @@ function assembleRecord(
   routing: StageRecord,
   evidence: StageRecord,
   modelReturned: string | null,
+  repeatIndex: number,
+  repeatCount: number,
+  authorizationMode: ShadowComparisonRecord["authorizationMode"],
 ): ShadowComparisonRecord {
   const usage = {
     inputTokens: routing.usage.inputTokens + evidence.usage.inputTokens,
@@ -373,12 +388,15 @@ function assembleRecord(
     .filter((value): value is string => Boolean(value))
     .join("; ") || null;
   const stateFingerprint = fingerprint(state);
-  const recordSeed = `${input.ref.owner}/${input.ref.repo}#${input.ref.number}:${input.pr.headRefOid}:${stateFingerprint}:${now.toISOString()}`;
+  const recordSeed = `${input.ref.owner}/${input.ref.repo}#${input.ref.number}:${input.pr.headRefOid}:${stateFingerprint}:${now.toISOString()}:${repeatIndex}/${repeatCount}`;
   return {
     schemaVersion: 1,
     recordId: fingerprint(recordSeed),
     createdAt: now.toISOString(),
     mode: "shadow",
+    authorizationMode,
+    repeatIndex,
+    repeatCount,
     ref: input.ref,
     headSha: input.pr.headRefOid,
     modelRequested: policy.model,
@@ -388,6 +406,9 @@ function assembleRecord(
     stateFingerprint,
     baseline: {
       selectedLenses: [...input.baselineLensNames],
+      erroredLenses: input.lensReports
+        .filter((report) => report.errored)
+        .map((report) => report.lens),
       findingFingerprint: fingerprint(input.lensReports),
       verdictDecision: input.verdict.decision,
       posted: input.posted,
@@ -410,52 +431,71 @@ export function createTypeSafeShadowObserver(
 ): TypeSafeShadowObserver {
   const policy = options.policy ?? TYPESAFE_POLICY;
   const timeoutMs = options.timeoutMs ?? 5_000;
+  const repeatCount = options.repeatCount ?? 1;
+  if (!Number.isInteger(repeatCount) || repeatCount <= 0 || repeatCount > 10) {
+    throw new Error("TypeSafe repeatCount must be an integer from 1 to 10");
+  }
   const now = options.now ?? (() => new Date());
+  const authorizationMode = options.corpus.authorizationMode ?? "frozen-corpus";
   return {
     async observe(input: ShadowReviewInput): Promise<void> {
       if (options.mode === "off") return;
       const timestamp = now();
       const authorization = authorizeCorpusInput(options.corpus, input);
       if (!authorization.ok) {
-        await options.sink.write(failureRecord(input, policy, timestamp, authorization.reason));
+        await options.sink.write(
+          failureRecord(input, policy, timestamp, authorization.reason, authorizationMode),
+        );
         return;
       }
       if (!options.transport) {
         await options.sink.write(
-          failureRecord(input, policy, timestamp, "TYPESAFE_API_KEY is unavailable"),
+          failureRecord(
+            input,
+            policy,
+            timestamp,
+            "TYPESAFE_API_KEY is unavailable",
+            authorizationMode,
+          ),
         );
         return;
       }
 
-      const state = buildBoundedReviewState(input.pr, input.diff, policy);
-      const routing = await runStage(
-        options.transport,
-        routingRequest(state, policy),
-        timeoutMs,
-        (response) => routingSignals(response, policy),
-      );
-      const subjects = evidenceSubjects(input.lensReports, state, policy);
-      const evidence =
-        subjects.length === 0
-          ? { record: skippedStage("no blocker or important findings"), response: null }
-          : await runStage(
-              options.transport,
-              evidenceRequest(subjects, policy),
-              timeoutMs,
-              (response) => evidenceSignals(response, subjects, policy),
-            );
-      const modelReturned = routing.response?.model ?? evidence.response?.model ?? null;
-      await options.sink.write(
-        assembleRecord(
-          input,
-          policy,
-          timestamp,
-          state,
-          routing.record,
-          evidence.record,
-          modelReturned,
-        ),
-      );
+      for (let repeatIndex = 1; repeatIndex <= repeatCount; repeatIndex++) {
+        const repeatTimestamp = repeatIndex === 1 ? timestamp : now();
+        const state = buildBoundedReviewState(input.pr, input.diff, policy);
+        const routing = await runStage(
+          options.transport,
+          routingRequest(state, policy),
+          timeoutMs,
+          (response) => routingSignals(response, policy),
+        );
+        const subjects = evidenceSubjects(input.lensReports, state, policy);
+        const evidence =
+          subjects.length === 0
+            ? { record: skippedStage("no blocker or important findings"), response: null }
+            : await runStage(
+                options.transport,
+                evidenceRequest(subjects, policy),
+                timeoutMs,
+                (response) => evidenceSignals(response, subjects, policy),
+              );
+        const modelReturned = routing.response?.model ?? evidence.response?.model ?? null;
+        await options.sink.write(
+          assembleRecord(
+            input,
+            policy,
+            repeatTimestamp,
+            state,
+            routing.record,
+            evidence.record,
+            modelReturned,
+            repeatIndex,
+            repeatCount,
+            authorizationMode,
+          ),
+        );
+      }
     },
   };
 }

@@ -43,6 +43,20 @@ if [[ -f "$SAGE_ENV_FILE" ]]; then
   set +a
 fi
 
+# Optional, separately revocable TypeSafe shadow configuration. Keeping this
+# apart from the general provider file lets an operator disable the observer
+# without touching substrate credentials or the TypeSafe API key source.
+SAGE_TYPESAFE_ENV_FILE="${HOME}/.config/sage/typesafe.env"
+if [[ -f "$SAGE_TYPESAFE_ENV_FILE" ]]; then
+  if [[ "$(stat -f '%Mp%Lp' "$SAGE_TYPESAFE_ENV_FILE" 2>/dev/null)" =~ [4567]$ ]]; then
+    echo "sage: warning — $SAGE_TYPESAFE_ENV_FILE is world/group-readable (chmod 600 recommended)" >&2
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$SAGE_TYPESAFE_ENV_FILE"
+  set +a
+fi
+
 # Guard the retired `serve` subcommand explicitly so an operator with
 # muscle memory from the pre-sage#40 shape gets a clear pointer rather
 # than commander's generic "unknown command".

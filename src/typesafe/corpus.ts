@@ -17,6 +17,9 @@ const CorpusEntrySchema = z.object({
 export const CorpusManifestSchema = z
   .object({
     schemaVersion: z.literal(1),
+    authorizationMode: z
+      .enum(["frozen-corpus", "all-reviews-until-revoked"])
+      .optional(),
     frozenAt: z.string().datetime().nullable(),
     dataProcessingApproval: z.discriminatedUnion("status", [
       z.object({ status: z.literal("pending") }),
@@ -69,6 +72,9 @@ export function authorizeCorpusInput(
 ): { ok: true } | { ok: false; reason: string } {
   if (manifest.dataProcessingApproval.status !== "approved") {
     return { ok: false, reason: "data-processing approval is pending" };
+  }
+  if (manifest.authorizationMode === "all-reviews-until-revoked") {
+    return { ok: true };
   }
   const entry = manifest.entries.find(
     (candidate) =>

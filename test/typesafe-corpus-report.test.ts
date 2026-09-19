@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { CorpusManifestSchema } from "../src/typesafe/corpus.ts";
+import { authorizeCorpusInput, CorpusManifestSchema } from "../src/typesafe/corpus.ts";
 import {
   generateEvaluationReport,
   renderEvaluationReport,
@@ -15,6 +15,9 @@ function record(id: string, choice: "recommend" | "do_not_recommend", probabilit
     recordId: id,
     createdAt: "2026-09-18T20:00:00.000Z",
     mode: "shadow",
+    authorizationMode: "frozen-corpus",
+    repeatIndex: 1,
+    repeatCount: 2,
     ref: { owner: "x", repo: "game", number: 1 },
     headSha: "a".repeat(40),
     modelRequested: "jev-1.13.0",
@@ -24,6 +27,7 @@ function record(id: string, choice: "recommend" | "do_not_recommend", probabilit
     stateFingerprint: "same-state",
     baseline: {
       selectedLenses: ["CodeQuality", "Security"],
+      erroredLenses: [],
       findingFingerprint: "findings",
       verdictDecision: "approved",
       posted: false,
@@ -92,6 +96,48 @@ describe("TypeSafe corpus manifest", () => {
       }],
     })).toThrow(/pending data-processing approval/);
   });
+
+  test("allows any review only under an explicit approved until-revoked mode", () => {
+    const manifest = CorpusManifestSchema.parse({
+      schemaVersion: 1,
+      authorizationMode: "all-reviews-until-revoked",
+      frozenAt: "2026-09-19T06:00:00.000Z",
+      dataProcessingApproval: {
+        status: "approved",
+        approvedBy: "principal",
+        approvedAt: "2026-09-19T06:00:00.000Z",
+        scope: "all Sage reviews until revoked",
+        termsReviewedAt: "2026-09-18T20:00:00.000Z",
+      },
+      entries: [],
+    });
+
+    expect(manifest.authorizationMode).toBe("all-reviews-until-revoked");
+    expect(authorizeCorpusInput(manifest, {
+      ref: { owner: "any", repo: "game", number: 99 },
+      pr: {
+        number: 99,
+        title: "game change",
+        body: "",
+        state: "OPEN",
+        isDraft: false,
+        baseRefName: "main",
+        headRefName: "feature",
+        headRefOid: "b".repeat(40),
+        author: { login: "principal" },
+        changedFiles: 0,
+        additions: 0,
+        deletions: 0,
+        files: [],
+        url: "https://github.com/any/game/pull/99",
+      },
+      diff: "",
+      baselineLensNames: [],
+      lensReports: [],
+      verdict: { decision: "approved", summary: "clean", lenses: [] },
+      posted: false,
+    })).toEqual({ ok: true });
+  });
 });
 
 describe("TypeSafe evaluation report", () => {
@@ -123,6 +169,12 @@ describe("TypeSafe evaluation report", () => {
     const report = generateEvaluationReport(records, labels);
     expect(report.records).toBe(2);
     expect(report.baselineLensRuns).toBe(4);
+    expect(report.baselineFailedLensRuns).toBe(0);
+    expect(report.labelCoverage).toEqual({
+      requiredSignals: 2,
+      labeledSignals: 2,
+      unlabeledSignals: 0,
+    });
     expect(report.repeatability.repeatedGroups).toBe(1);
     expect(report.repeatability.meanAgreement).toBe(1);
     expect(report.repeatability.maxProbabilitySpread).toBeCloseTo(0.2);
@@ -135,6 +187,17 @@ describe("TypeSafe evaluation report", () => {
     expect(markdown).toContain("Independent reviewer labels");
     expect(markdown).toContain("Maximum probability spread");
     expect(markdown).toContain("Estimated provider cost");
+  });
+
+  test("counts one fixed Sage baseline once across repeated Jev judgments", () => {
+    const first = record("r1", "recommend", 0.9);
+    const repeated = { ...record("r2", "recommend", 0.8), repeatIndex: 2 };
+    const report = generateEvaluationReport([first, repeated], []);
+
+    expect(report.records).toBe(2);
+    expect(report.baselineLensRuns).toBe(2);
+    expect(report.baselineFailedLensRuns).toBe(0);
+    expect(report.labelCoverage.requiredSignals).toBe(2);
   });
 
   test("requires cost, latency, and repeatability gates before proposing integration", () => {
@@ -158,5 +221,17 @@ describe("TypeSafe evaluation report", () => {
     const inconsistent = [record("r1", "recommend", 0.9), record("r2", "do_not_recommend", 0.9)];
     expect(generateEvaluationReport(inconsistent, labels, approvedThresholds).recommendation)
       .toBe("iterate");
+
+    const incompleteThresholds = { ...approvedThresholds, minimumLabels: 1 };
+    const incomplete = generateEvaluationReport(records, labels.slice(0, 1), incompleteThresholds);
+    expect(incomplete.labelCoverage.unlabeledSignals).toBe(1);
+    expect(incomplete.recommendation).toBe("iterate");
+
+    const incompleteBaseline = records.map((item, index) => index === 0
+      ? { ...item, baseline: { ...item.baseline, erroredLenses: ["CodeQuality"] } }
+      : item);
+    const baselineReport = generateEvaluationReport(incompleteBaseline, labels, approvedThresholds);
+    expect(baselineReport.baselineFailedLensRuns).toBe(1);
+    expect(baselineReport.recommendation).toBe("iterate");
   });
 });

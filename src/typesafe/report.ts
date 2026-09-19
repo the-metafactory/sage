@@ -48,6 +48,12 @@ export interface EvaluationReport {
   records: number;
   immutableStates: number;
   baselineLensRuns: number;
+  baselineFailedLensRuns: number;
+  labelCoverage: {
+    requiredSignals: number;
+    labeledSignals: number;
+    unlabeledSignals: number;
+  };
   failedRecords: number;
   truncatedRecords: number;
   requests: number;
@@ -175,13 +181,34 @@ export function generateEvaluationReport(
   const labels = rawLabels.map((label) => ReviewerLabelSchema.parse(label));
   const thresholds = EvaluationThresholdsSchema.parse(rawThresholds);
   const questions = questionEvaluations(records, labels);
-  const labeled = questions.reduce((sum, question) => sum + question.labeled, 0);
-  const useful = questions.reduce((sum, question) => sum + question.useful, 0);
-  const decidedLabels = questions.reduce(
-    (sum, question) => sum + question.useful + question.notUseful,
-    0,
+  const signalByKey = new Map<string, RecordedSignal>();
+  for (const record of records) {
+    for (const signal of allSignals(record)) {
+      signalByKey.set(`${record.recordId}:${signal.questionId}`, signal);
+    }
+  }
+  const decisionSignalKeys = new Set(
+    [...signalByKey.entries()]
+      .filter(([, signal]) => signal.family === "routing" || signal.family === "finding_evidence")
+      .map(([key]) => key),
   );
-  const precisionValues = questions
+  const decisionLabels = labels.filter((label) =>
+    decisionSignalKeys.has(`${label.recordId}:${label.questionId}`));
+  const labeledDecisionKeys = new Set(
+    decisionLabels.map((label) => `${label.recordId}:${label.questionId}`),
+  );
+  const decisionQuestionIds = new Set(
+    [...signalByKey.values()]
+      .filter((signal) => signal.family === "routing" || signal.family === "finding_evidence")
+      .map((signal) => signal.policyQuestionId),
+  );
+  const decisionQuestions = questions.filter((question) => decisionQuestionIds.has(question.questionId));
+  const labeled = labeledDecisionKeys.size;
+  const useful = decisionLabels.filter((label) => label.usefulness === "useful").length;
+  const decidedLabels = decisionLabels.filter(
+    (label) => label.usefulness === "useful" || label.usefulness === "not_useful",
+  ).length;
+  const precisionValues = decisionQuestions
     .map((question) => question.precision)
     .filter((value): value is number => value !== null);
   const meanPrecision =
@@ -196,6 +223,15 @@ export function generateEvaluationReport(
     : Number.POSITIVE_INFINITY;
   const repeat = repeatability(records);
   const p95LatencyMs = percentile(records.map((record) => record.latencyMs), 0.95);
+  const unlabeledSignals = decisionSignalKeys.size - labeledDecisionKeys.size;
+  // repeatIndex > 1 reuses the exact same completed Sage baseline. Count the
+  // baseline once per observer invocation while still counting every Jev
+  // decision above for label coverage and repeatability.
+  const baselineRecords = records.filter((record) => (record.repeatIndex ?? 1) === 1);
+  const baselineFailedLensRuns = baselineRecords.reduce(
+    (sum, record) => sum + record.baseline.erroredLenses.length,
+    0,
+  );
 
   let recommendation: EvaluationReport["recommendation"] = "iterate";
   let recommendationReason =
@@ -220,7 +256,10 @@ export function generateEvaluationReport(
     repeat.meanAgreement !== null &&
     repeat.meanAgreement >= thresholds.proposeMinimumRepeatAgreement &&
     repeat.maxProbabilitySpread !== null &&
-    repeat.maxProbabilitySpread <= thresholds.proposeMaximumProbabilitySpread
+    repeat.maxProbabilitySpread <= thresholds.proposeMaximumProbabilitySpread &&
+    decisionSignalKeys.size > 0 &&
+    unlabeledSignals === 0 &&
+    baselineFailedLensRuns === 0
   ) {
     recommendation = "propose_separately_authorized_integration";
     recommendationReason =
@@ -233,10 +272,16 @@ export function generateEvaluationReport(
   return {
     records: records.length,
     immutableStates: new Set(records.map((record) => record.stateFingerprint)).size,
-    baselineLensRuns: records.reduce(
+    baselineLensRuns: baselineRecords.reduce(
       (sum, record) => sum + record.baseline.selectedLenses.length,
       0,
     ),
+    baselineFailedLensRuns,
+    labelCoverage: {
+      requiredSignals: decisionSignalKeys.size,
+      labeledSignals: labeledDecisionKeys.size,
+      unlabeledSignals,
+    },
     failedRecords,
     truncatedRecords: records.filter((record) => record.state.truncation.stateTruncated).length,
     requests: records.reduce(
@@ -282,6 +327,8 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 - Records: ${report.records}
 - Immutable states: ${report.immutableStates}
 - Deterministic baseline lens runs observed: ${report.baselineLensRuns}
+- Failed baseline lens runs: ${report.baselineFailedLensRuns}
+- Independently labeled decision signals: ${report.labelCoverage.labeledSignals} / ${report.labelCoverage.requiredSignals} (${report.labelCoverage.unlabeledSignals} missing)
 - Failed records: ${report.failedRecords}
 - State-truncated records: ${report.truncatedRecords}
 - Provider request attempts / retries: ${report.requests} / ${report.retries}
