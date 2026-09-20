@@ -2,8 +2,9 @@ import type { TypeSafePolicy } from "./policy.ts";
 import { redactTypeSafeText } from "./state.ts";
 import type { BoundedCommentState, CommentSpan } from "./types.ts";
 
-const DOCSTRING_EXTENSIONS = new Set(["py", "pyi", "rb", "rake", "pl", "pm", "js", "jsx", "ts", "tsx", "mjs", "cjs"]);
-const JSDOC_EXTENSIONS = new Set(["js", "jsx", "ts", "tsx", "mjs", "cjs"]);
+const JS_EXTENSIONS = ["js", "jsx", "ts", "tsx", "mjs", "cjs"];
+const DOCSTRING_EXTENSIONS = new Set(["py", "pyi", "rb", "rake", "pl", "pm", ...JS_EXTENSIONS]);
+const JSDOC_EXTENSIONS = new Set(JS_EXTENSIONS);
 
 function extension(path: string): string {
   return path.split(".").at(-1)?.toLowerCase() ?? "";
@@ -14,20 +15,22 @@ interface ClassifiedComment {
   text: string;
 }
 
-function classifyComment(path: string, text: string, inJsDoc: boolean): ClassifiedComment | undefined {
+function classifyComment(path: string, text: string, inJsDoc: boolean, inBlockComment: boolean): ClassifiedComment | undefined {
   const trimmed = text.trim();
   if (JSDOC_EXTENSIONS.has(extension(path)) && (inJsDoc || /^\/\*\*/.test(trimmed))) {
     return { syntax: "docstring", text: trimmed };
   }
   if (/^<!--/.test(trimmed)) return { syntax: "markup_comment", text: trimmed };
-  if (/^(?:\/\*|\*|\*\/)/.test(trimmed)) return { syntax: "block_comment", text: trimmed };
+  if (/^\/\*/.test(trimmed) || (inBlockComment && /^(?:\*|\*\/)/.test(trimmed))) {
+    return { syntax: "block_comment", text: trimmed };
+  }
   if (/^(?:\/\/|#|--|;)/.test(trimmed)) return { syntax: "line_comment", text: trimmed };
   if (DOCSTRING_EXTENSIONS.has(extension(path)) && /(?:^|\s)(?:\"\"\"|''')/.test(trimmed)) {
     return { syntax: "docstring", text: trimmed };
   }
   // Keep inline source comments, but strip the executable prefix before this
-  // state crosses the external boundary. The marker must be preceded by
-  // whitespace to avoid treating URL and string fragments as comments.
+  // state crosses the external boundary. The marker must be at the start of
+  // the line or preceded by whitespace to avoid URL and string fragments.
   const inline = text.match(/(?:^|\s)(\/\/|#|--)\s.*$/);
   if (inline?.index !== undefined) {
     const markerOffset = text.indexOf(inline[1]!, inline.index);
@@ -48,6 +51,12 @@ type MutableCommentSpan = { -readonly [K in keyof CommentSpan]: CommentSpan[K] }
 
 function declarationSignature(path: string, text: string): string | undefined {
   const trimmed = text.trim();
+  if (JSDOC_EXTENSIONS.has(extension(path))) {
+    return /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type)\s+/.test(trimmed) ||
+      /^(?:export\s+)?const\s+[A-Za-z_$]/.test(trimmed)
+      ? trimmed.replace(/\s*(?:\{|=>|=).*$/, "").trimEnd()
+      : undefined;
+  }
   switch (extension(path)) {
     case "py":
     case "pyi":
@@ -58,16 +67,6 @@ function declarationSignature(path: string, text: string): string | undefined {
     case "pl":
     case "pm":
       return /^(?:sub|package)\s+/.test(trimmed) ? trimmed : undefined;
-    case "js":
-    case "jsx":
-    case "ts":
-    case "tsx":
-    case "mjs":
-    case "cjs":
-      return /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type)\s+/.test(trimmed) ||
-        /^(?:export\s+)?const\s+[A-Za-z_$]/.test(trimmed)
-        ? trimmed.replace(/\s*(?:\{|=>).*$/, "").trimEnd()
-        : undefined;
     default:
       return undefined;
   }
@@ -85,6 +84,7 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
   let inHunk = false;
   let precedingDeclaration: string | undefined;
   let inJsDoc = false;
+  let inBlockComment = false;
   let pendingFollowingDocstring: RawCommentSpan | undefined;
 
   for (const line of diff.split("\n")) {
@@ -94,6 +94,7 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
       inHunk = false;
       precedingDeclaration = undefined;
       inJsDoc = false;
+      inBlockComment = false;
       pendingFollowingDocstring = undefined;
       continue;
     }
@@ -103,13 +104,14 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
       inHunk = true;
       precedingDeclaration = undefined;
       inJsDoc = false;
+      inBlockComment = false;
       pendingFollowingDocstring = undefined;
       continue;
     }
     if (!inHunk || line.startsWith("\\ No newline")) continue;
     if (line.startsWith("+")) {
       const text = line.slice(1);
-      const syntax = classifyComment(path, text, inJsDoc);
+      const syntax = classifyComment(path, text, inJsDoc, inBlockComment);
       if (syntax) {
         const previous = spans.at(-1);
         if (syntax.syntax === "docstring" && previous?.syntax === "docstring" &&
@@ -131,6 +133,7 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
           inJsDoc = !text.includes("*/");
           if (!inJsDoc) pendingFollowingDocstring = spans.at(-1);
         }
+        if (syntax.syntax === "block_comment") inBlockComment = !text.includes("*/");
       } else {
         const declaration = declarationSignature(path, text);
         if (pendingFollowingDocstring) {
@@ -139,6 +142,7 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
         }
         precedingDeclaration = declaration;
         inJsDoc = false;
+        inBlockComment = false;
       }
       newLine++;
     } else if (!line.startsWith("-")) {

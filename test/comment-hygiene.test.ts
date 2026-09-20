@@ -108,6 +108,24 @@ describe("TypeSafe CommentHygiene", () => {
     expect(JSON.stringify(state)).not.toContain("return secret");
   });
 
+  test("does not export a const initializer or a bare multiplication line as documentation context", () => {
+    const state = buildBoundedCommentState(`diff --git a/src/ship.ts b/src/ship.ts
+@@ -0,0 +1,5 @@
++/** configured ship */
++export const ship = secret();
++const product = left
++  * right;
++// ordinary note`, TYPESAFE_POLICY);
+    expect(state.comments).toMatchObject([{
+      syntax: "docstring",
+      declarationContext: "export const ship",
+    }, {
+      syntax: "line_comment",
+      text: "// ordinary note",
+    }]);
+    expect(JSON.stringify(state)).not.toContain("secret()");
+  });
+
   test("extracts only added comment/docstring spans and redacts them before transport", () => {
     const state = buildBoundedCommentState(input.diff, TYPESAFE_POLICY);
     const serialized = JSON.stringify(state);
