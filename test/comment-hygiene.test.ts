@@ -135,7 +135,7 @@ describe("TypeSafe CommentHygiene", () => {
     expect(state.comments.map((span) => span.id)).toEqual([
       "comment_1", "comment_2", "comment_3", "comment_4",
     ]);
-    expect(state.comments[3]?.declarationContext).toBe("def ship():");
+    expect(state.comments[3]?.declarationContext).toBe("def ship");
     expect(serialized).not.toContain("const executable = run");
     expect(serialized).not.toContain("comment-secret");
     expect(serialized).toContain("[REDACTED]");
@@ -206,6 +206,7 @@ describe("TypeSafe CommentHygiene", () => {
     expect(records[0]?.routing.status).toBe("ok");
     expect(records[0]?.commentHygiene?.stage.status).toBe("failed");
     expect(records[0]?.commentHygiene?.stage.failureReason).toContain("invalid choice");
+    expect(records[0]?.failureReason).toBeNull();
   });
 
   test("keeps the none criterion out of the candidate gate", async () => {

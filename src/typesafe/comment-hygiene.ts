@@ -25,14 +25,14 @@ function classifyComment(path: string, text: string, inJsDoc: boolean, inBlockCo
     return { syntax: "block_comment", text: trimmed };
   }
   if (/^(?:\/\/|#|--|;)/.test(trimmed)) return { syntax: "line_comment", text: trimmed };
-  if (DOCSTRING_EXTENSIONS.has(extension(path)) && /(?:^|\s)(?:\"\"\"|''')/.test(trimmed)) {
+  if (!JSDOC_EXTENSIONS.has(extension(path)) && DOCSTRING_EXTENSIONS.has(extension(path)) && /(?:^|\s)(?:\"\"\"|''')/.test(trimmed)) {
     return { syntax: "docstring", text: trimmed };
   }
   // Keep inline source comments, but strip the executable prefix before this
   // state crosses the external boundary. The marker must be at the start of
   // the line or preceded by whitespace to avoid URL and string fragments.
-  const inline = text.match(/(?:^|\s)(\/\/|#|--)\s.*$/);
-  if (inline?.index !== undefined) {
+  const inline = text.match(/\s(\/\/)\s.*$/);
+  if (inline?.index !== undefined && !/["'`]/.test(text.slice(0, inline.index))) {
     const markerOffset = text.indexOf(inline[1]!, inline.index);
     return { syntax: "line_comment", text: text.slice(markerOffset).trim() };
   }
@@ -59,14 +59,16 @@ function declarationSignature(path: string, text: string): string | undefined {
   }
   switch (extension(path)) {
     case "py":
-    case "pyi":
-      return /^(?:async\s+)?(?:def|class)\s+/.test(trimmed) ? trimmed : undefined;
+    case "pyi": {
+      const match = trimmed.match(/^((?:async\s+)?(?:def|class)\s+[A-Za-z_]\w*)/);
+      return match?.[1];
+    }
     case "rb":
     case "rake":
-      return /^(?:def|class|module)\s+/.test(trimmed) ? trimmed : undefined;
+      return trimmed.match(/^((?:def|class|module)\s+[A-Za-z_]\w*[!?=]?)/)?.[1];
     case "pl":
     case "pm":
-      return /^(?:sub|package)\s+/.test(trimmed) ? trimmed : undefined;
+      return trimmed.match(/^((?:sub|package)\s+[A-Za-z_]\w*)/)?.[1];
     default:
       return undefined;
   }
@@ -146,6 +148,7 @@ function addedCommentSpans(diff: string): RawCommentSpan[] {
       }
       newLine++;
     } else if (!line.startsWith("-")) {
+      pendingFollowingDocstring = undefined;
       newLine++;
     }
   }

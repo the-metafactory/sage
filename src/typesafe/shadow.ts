@@ -424,7 +424,8 @@ function commentHygieneSignals(
   const question = policy.commentHygiene;
   return state.comments.map((span) => {
     const questionId = `${question.id}.${span.id}`;
-    const answer = response.answers[questionId]!;
+    const answer = response.answers[questionId];
+    if (!answer) throw new Error(`missing answer for ${questionId}`);
     const floor = span.syntax === "docstring"
       ? question.docstringCandidateFloor
       : question.candidateFloor;
@@ -523,7 +524,7 @@ function assembleRecord({
     inputTokens: routing.usage.inputTokens + evidence.usage.inputTokens + commentHygiene.stage.usage.inputTokens,
     outputTokens: routing.usage.outputTokens + evidence.usage.outputTokens + commentHygiene.stage.usage.outputTokens,
   };
-  const failureReason = [routing, evidence, commentHygiene.stage]
+  const failureReason = [routing, evidence]
     .filter((stage) => stage.status === "failed")
     .map((stage) => stage.failureReason)
     .filter((value): value is string => Boolean(value))
