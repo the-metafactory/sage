@@ -59,6 +59,8 @@ export interface EvaluationReport {
   failedRecords: number;
   truncatedRecords: number;
   omittedEvidenceQuestions: number;
+  commentHygieneSignals: number;
+  commentHygieneFailedStages: number;
   requests: number;
   retries: number;
   latencyMs: { p50: number; p95: number };
@@ -370,12 +372,21 @@ export function generateEvaluationReport(
     failedRecords,
     truncatedRecords: records.filter((record) => record.state.truncation.stateTruncated).length,
     omittedEvidenceQuestions,
+    commentHygieneSignals: records.reduce(
+      (sum, record) => sum + (record.commentHygiene?.stage.signals.length ?? 0),
+      0,
+    ),
+    commentHygieneFailedStages: records.filter(
+      (record) => record.commentHygiene?.stage.status === "failed",
+    ).length,
     requests: records.reduce(
-      (sum, record) => sum + record.routing.attempts + record.evidence.attempts,
+      (sum, record) => sum + record.routing.attempts + record.evidence.attempts +
+        (record.commentHygiene?.stage.attempts ?? 0),
       0,
     ),
     retries: records.reduce(
-      (sum, record) => sum + record.routing.retryCount + record.evidence.retryCount,
+      (sum, record) => sum + record.routing.retryCount + record.evidence.retryCount +
+        (record.commentHygiene?.stage.retryCount ?? 0),
       0,
     ),
     latencyMs: {
@@ -419,6 +430,7 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 - Failed records: ${report.failedRecords}
 - State-truncated records: ${report.truncatedRecords} / ${report.records} (${report.records > 0 ? formatMetric(report.truncatedRecords / report.records) : "N/A"})
 - Evidence questions omitted by request bounds: ${report.omittedEvidenceQuestions}
+- CommentHygiene advisory signals / failed stages: ${report.commentHygieneSignals} / ${report.commentHygieneFailedStages}
 - Provider request attempts / retries: ${report.requests} / ${report.retries}
 - Latency p50 / p95: ${report.latencyMs.p50} ms / ${report.latencyMs.p95} ms
 - Usage: ${report.usage.inputTokens} input tokens, ${report.usage.outputTokens} output tokens
@@ -426,8 +438,9 @@ export function renderEvaluationReport(report: EvaluationReport): string {
 
 ## Decision-signal repeatability
 
-Routing and finding-evidence signals only; candidate-selection helper signals
-are intentionally excluded because they do not count toward the production gate.
+Routing and finding-evidence signals only; candidate-selection helper signals and
+CommentHygiene are intentionally excluded because each needs its own labeled
+corpus and production gate.
 
 This repeatability result covers ${report.immutableStates} immutable state(s);
 interpret it at that sample size rather than as evidence of general stability.
