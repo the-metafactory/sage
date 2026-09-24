@@ -93,16 +93,19 @@ describe("CodexSubstrate", () => {
     ]);
   });
 
-  test("invalid CODEX_SANDBOX fails before spawning", async () => {
+  test("the Codex host seatbelt marker preserves Sage's read-only sandbox", async () => {
     process.env.CODEX_SANDBOX = "seatbelt";
     const substrate = new CodexSubstrate({ bin: writeRecorder() });
 
-    await expect(
-      substrate.run({
-        prompt: "review",
-        timeoutMs: 5_000,
-      }),
-    ).rejects.toThrow(/invalid CODEX_SANDBOX/);
+    const raw = await substrate.run({ prompt: "review", timeoutMs: 5_000 });
+    const captured = JSON.parse(raw.stdout) as { argv: string[] };
+    expect(captured.argv).toContain("read-only");
+  });
+
+  test("an invalid CODEX_SANDBOX fails before spawning", async () => {
+    process.env.CODEX_SANDBOX = "not-a-sandbox";
+    const substrate = new CodexSubstrate({ bin: writeRecorder() });
+    await expect(substrate.run({ prompt: "review", timeoutMs: 5_000 })).rejects.toThrow(/invalid CODEX_SANDBOX/);
   });
 
   test("invalid config sandbox fails before spawning", async () => {

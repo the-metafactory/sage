@@ -13,7 +13,8 @@ import type {
  *   - `CODEX_BIN`        (binary path; default `codex`)
  *   - `CODEX_MODEL`      (default model passed as `--model`)
  *   - `CODEX_PROFILE`    (default config profile passed as `--profile`)
- *   - `CODEX_SANDBOX`    (default sandbox; built-in default `read-only`)
+ *   - `CODEX_SANDBOX`    (default sandbox; built-in default `read-only`; the
+ *     host marker `seatbelt` is treated as `read-only`)
  *   - `CODEX_SYSTEM_PROMPT_MODE` (`inband`, or `native` for CLIs verified to
  *     support `--system-prompt`; default `inband`)
  *   - `CODEX_TIMEOUT_MS` (default timeout)
@@ -56,7 +57,7 @@ export class CodexSubstrate implements Substrate {
     const profile = process.env.CODEX_PROFILE ?? this.cfg.profile;
     const sandbox =
       process.env.CODEX_SANDBOX !== undefined
-        ? parseSandbox("CODEX_SANDBOX", process.env.CODEX_SANDBOX)
+        ? parseEnvironmentSandbox(process.env.CODEX_SANDBOX)
         : parseSandbox("codex sandbox config", this.cfg.sandbox);
 
     // codex 0.130+ removed `--ask-for-approval` from `codex exec`. `exec`
@@ -98,6 +99,15 @@ function parseSandbox(source: string, raw: string | undefined): CodexSandbox {
   throw new Error(
     `invalid ${source} "${trimmed}" — supported: ${CODEX_SANDBOXES.join(", ")}`,
   );
+}
+
+/**
+ * Codex-hosted sessions export `CODEX_SANDBOX=seatbelt` to describe the host
+ * OS boundary. That is not a `codex exec --sandbox` value; preserve Sage's
+ * read-only default instead of forwarding an invalid flag to every lens.
+ */
+function parseEnvironmentSandbox(raw: string): CodexSandbox {
+  return raw.trim() === "seatbelt" ? DEFAULT_SANDBOX : parseSandbox("CODEX_SANDBOX", raw);
 }
 
 function isCodexSandbox(raw: string): raw is CodexSandbox {
