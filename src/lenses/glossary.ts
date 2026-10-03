@@ -208,7 +208,7 @@ export function buildGlossaryContext(
     excerpt: `Glossary (diff-relevant) — CONTEXT.md canonical terms referenced by this diff:
 ${capped}
 
-If the diff introduces one of the listed Avoid aliases, prefer the canonical term. If the alias is intentional (e.g. a library function name), add a \`// glossary-ignore: <alias>\` (or \`# …\`) marker on that line or in the same hunk (\`<!-- glossary-ignore: <alias> -->\` in Markdown).`,
+If the diff introduces one of the listed Avoid aliases, prefer the canonical term. If the alias is intentional (e.g. a library function name), add ${markerSyntax("<alias>", false)} on that line or in the same hunk (${markerSyntax("<alias>", true)} in Markdown).`,
     hasEntries: true,
   };
 }
@@ -236,9 +236,11 @@ const MARKDOWN_PATH_RE = /\.(?:md|mdx|markdown)$/i;
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 // The marker only counts after a `//`, `#`, `/*`, `<!--` or `--`
 // opener at line start or after whitespace, or after a `*` block
-// continuation at line start — so marker text inside a string literal
-// or prose doesn't exempt anything. The alias list runs to `-->`, `*/`
-// or end of line. Comma-split only (aliases may hold spaces).
+// continuation at line start — so bare marker text in prose or a string
+// literal doesn't exempt anything. Not a tokenizer: a string that itself
+// holds an opener plus the marker (`"x // glossary-ignore: a"`) still
+// counts. The alias list runs to `-->`, `*/` or end of line. Comma-split
+// only (aliases may hold spaces).
 const IGNORE_MARKER_RE =
   /(?:^\s*\*|(?:^|\s)(?:\/\/+|#+|\/\*+|<!--|--))\s*glossary-ignore:\s*(.*?)\s*(?:-->|\*\/|$)/i;
 
@@ -304,6 +306,11 @@ function parseHunks(diff: string): DiffHunk[] {
   let currentPath = "";
   let current: DiffHunk | undefined;
   let newLineNo = 0;
+  const openHunk = (): DiffHunk => {
+    const hunk: DiffHunk = { path: currentPath, start: newLineNo, lines: [] };
+    hunks.push(hunk);
+    return hunk;
+  };
 
   for (const raw of diff.split("\n")) {
     if (raw.startsWith("+++ ")) {
@@ -317,18 +324,14 @@ function parseHunks(diff: string): DiffHunk[] {
     const header = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
     if (header?.[1]) {
       newLineNo = parseInt(header[1], 10);
-      current = { path: currentPath, start: newLineNo, lines: [] };
-      hunks.push(current);
+      current = openHunk();
       continue;
     }
 
     const added = raw.startsWith("+");
     if (added || raw.startsWith(" ")) {
       // Lines before any `@@` header (a bare `+line` snippet) form an implicit hunk.
-      if (!current) {
-        current = { path: currentPath, start: newLineNo, lines: [] };
-        hunks.push(current);
-      }
+      current ??= openHunk();
       current.lines.push({ added, lineNumber: newLineNo, text: raw.slice(1) });
       newLineNo++;
     }
@@ -384,13 +387,14 @@ function isTypeSafeBoundaryPath(path: string): boolean {
 
 /** Blank out Markdown inline code spans (`x`, ``x``) so names quoted as code don't match. */
 function stripInlineCode(text: string): string {
-  return text.replace(/(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => " ".repeat(span.length));
+  return text.replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => " ".repeat(span.length));
 }
 
-function ignoreHint(path: string, alias: string): string {
-  return isMarkdownPath(path)
-    ? `<!-- glossary-ignore: ${alias} -->`
-    : `a \`// glossary-ignore: ${alias}\` (or \`# …\`) marker`;
+/** The exemption marker as an author should write it — shared by finding rationales and the lens-stdin excerpt. */
+function markerSyntax(alias: string, markdown: boolean): string {
+  return markdown
+    ? `\`<!-- glossary-ignore: ${alias} -->\``
+    : `\`// glossary-ignore: ${alias}\` (or \`# …\`)`;
 }
 
 function quoteTerms(terms: readonly string[], quote: string, separator: string): string {
@@ -420,7 +424,7 @@ function buildViolation(
     line,
     severity: "important", // glossary-ignore: severity
     title: `Avoid alias "${alias}" — use ${quoteTerms(terms, '"', " or ")}`,
-    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${ignoreHint(path, alias)} on this line or in the same hunk. ${citations}`,
+    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk. ${citations}`,
   };
 }
 

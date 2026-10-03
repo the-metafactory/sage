@@ -344,6 +344,12 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     expect(findGlossaryViolations(seelite, mixed)).toHaveLength(1);
   });
 
+  test("an unmatched backtick run is literal, so the alias after it is still flagged", () => {
+    // `` opens no span (no closing ``), so CommonMark renders it literally.
+    const diff = hunkDiff("docs/a.md", 1, ["+A stray ``Spawn` here."]);
+    expect(findGlossaryViolations(seelite, diff)).toHaveLength(1);
+  });
+
   test("one finding per (line, alias), naming every canonical term", () => {
     const diff = hunkDiff("docs/a.md", 1, ["+Each Spawn waits."]);
     const findings = findGlossaryViolations(seelite, diff);
@@ -363,7 +369,7 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     const md = findGlossaryViolations(seelite, hunkDiff("docs/a.md", 1, ["+Each Spawn waits."]));
     expect(md[0]?.rationale).toContain("<!-- glossary-ignore: Spawn -->");
     const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+const sender = 1;"]));
-    expect(ts[0]?.rationale).toContain("`// glossary-ignore: sender` (or `# …`) marker");
+    expect(ts[0]?.rationale).toContain("`// glossary-ignore: sender` (or `# …`) on this line");
   });
 
   test("glossary-ignore on the same line exempts the alias (marker text itself is not flagged)", () => {
