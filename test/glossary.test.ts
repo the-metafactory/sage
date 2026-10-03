@@ -239,6 +239,12 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
   });
 });
 
+// The fixtures below use Avoid aliases on purpose, so this hunk opts out
+// of Sage's own glossary check. Fixture markers are built from IGNORE so
+// they never follow a `//` opener in this file and exempt it by accident.
+// glossary-ignore: sender, bot, persona, gateway, spawn
+const IGNORE = ["glossary", "ignore:"].join("-");
+
 /** Build a single-file, single-hunk diff whose hunk starts at `start` and whose lines are given with their `+`/` `/`-` prefix. */
 function hunkDiff(path: string, start: number, lines: readonly string[]): string {
   return `diff --git a/${path} b/${path}
@@ -305,6 +311,18 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     expect(findGlossaryViolations(seelite, diff).map((f) => f.line)).toEqual([51]);
   });
 
+  test("a mid-file hunk misreading an outer ```` closer still flags the prose after it", () => {
+    // Lines 50-53 close a ```ts example inside a ```` block opened above
+    // the hunk; the bare ```` is the outer closer, not an opener.
+    const diff = hunkDiff("docs/a.md", 50, [" ```ts", " spawn(cmd);", " ```", " ````", "+Each Spawn waits."]);
+    expect(findGlossaryViolations(seelite, diff).map((f) => f.line)).toEqual([54]);
+  });
+
+  test("an unclosed fence in a mid-file hunk is not trusted — lean toward flagging", () => {
+    const diff = hunkDiff("docs/a.md", 50, [" ```ts", "+spawn(cmd);"]);
+    expect(findGlossaryViolations(seelite, diff).map((f) => f.line)).toEqual([51]);
+  });
+
   test("an unclosed fence in one file does not swallow the next file", () => {
     const diff =
       hunkDiff("docs/a.md", 1, ["+```ts", "+spawn(cmd);"]) +
@@ -345,36 +363,51 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     const md = findGlossaryViolations(seelite, hunkDiff("docs/a.md", 1, ["+Each Spawn waits."]));
     expect(md[0]?.rationale).toContain("<!-- glossary-ignore: Spawn -->");
     const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+const sender = 1;"]));
-    expect(ts[0]?.rationale).toContain("`glossary-ignore: sender` marker");
+    expect(ts[0]?.rationale).toContain("`// glossary-ignore: sender` (or `# …`) marker");
   });
 
   test("glossary-ignore on the same line exempts the alias (marker text itself is not flagged)", () => {
-    const diff = hunkDiff("src/a.ts", 1, ["+const child = spawn(cmd); // glossary-ignore: spawn"]);
+    const diff = hunkDiff("src/a.ts", 1, [`+const child = spawn(cmd); // ${IGNORE} spawn`]);
     expect(findGlossaryViolations(seelite, diff)).toEqual([]);
   });
 
   test("glossary-ignore anywhere in the hunk — added, context, before or after — exempts it", () => {
-    const before = hunkDiff("docs/a.md", 10, [" <!-- glossary-ignore: Spawn -->", "+Each Spawn waits."]);
+    const before = hunkDiff("docs/a.md", 10, [` <!-- ${IGNORE} Spawn -->`, "+Each Spawn waits."]);
     expect(findGlossaryViolations(seelite, before)).toEqual([]);
 
-    const after = hunkDiff("docs/a.md", 10, ["+Each Spawn waits.", "+<!-- glossary-ignore: spawn -->"]);
+    const after = hunkDiff("docs/a.md", 10, ["+Each Spawn waits.", `+<!-- ${IGNORE} spawn -->`]);
     expect(findGlossaryViolations(seelite, after)).toEqual([]);
   });
 
   test("glossary-ignore takes a comma list and is case-insensitive", () => {
-    const diff = hunkDiff("src/a.ts", 1, ["+// glossary-ignore: SENDER, Bot", "+const sender = bot;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} SENDER, Bot`, "+const sender = bot;"]);
     expect(findGlossaryViolations(fixture, diff)).toEqual([]);
   });
 
   test("glossary-ignore for one alias does not exempt another", () => {
-    const diff = hunkDiff("src/a.ts", 1, ["+// glossary-ignore: sender", "+const sender = bot;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} sender`, "+const sender = bot;"]);
     const findings = findGlossaryViolations(fixture, diff);
     expect(findings.map((f) => f.title)).toEqual(['Avoid alias "bot" — use "Assistant" or "Agent"']);
   });
 
   test("glossary-ignore on a removed line does not count", () => {
-    const diff = hunkDiff("src/a.ts", 1, ["-// glossary-ignore: sender", "+const sender = 1;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`-// ${IGNORE} sender`, "+const sender = 1;"]);
     expect(findGlossaryViolations(fixture, diff)).toHaveLength(1);
+  });
+
+  test("glossary-ignore inside a string literal does not exempt anything", () => {
+    const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+const sender = 1;"]);
+    expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([1, 2]);
+  });
+
+  test("glossary-ignore after # works (Python, YAML, shell)", () => {
+    const diff = hunkDiff("tools/a.py", 1, [`+sender = resolve()  # ${IGNORE} sender`]);
+    expect(findGlossaryViolations(fixture, diff)).toEqual([]);
+  });
+
+  test("glossary-ignore inside a Markdown fenced block is quoted code and does not count", () => {
+    const diff = hunkDiff("docs/a.md", 1, ["+```html", `+<!-- ${IGNORE} Spawn -->`, "+```", "+Each Spawn waits."]);
+    expect(findGlossaryViolations(seelite, diff).map((f) => f.line)).toEqual([4]);
   });
 
   test("glossary-ignore in another hunk does not apply", () => {
@@ -382,7 +415,7 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
 --- a/src/a.ts
 +++ b/src/a.ts
 @@ -1,1 +1,1 @@
-+// glossary-ignore: sender
++// ${IGNORE} sender
 @@ -40,1 +40,1 @@
 +const sender = 1;
 `;

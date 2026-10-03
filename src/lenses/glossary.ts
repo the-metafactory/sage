@@ -208,7 +208,7 @@ export function buildGlossaryContext(
     excerpt: `Glossary (diff-relevant) — CONTEXT.md canonical terms referenced by this diff:
 ${capped}
 
-If the diff introduces one of the listed Avoid aliases, prefer the canonical term. If the alias is intentional (e.g. a library function name), add a \`glossary-ignore: <alias>\` marker on that line or in the same hunk (\`<!-- glossary-ignore: <alias> -->\` in Markdown).`,
+If the diff introduces one of the listed Avoid aliases, prefer the canonical term. If the alias is intentional (e.g. a library function name), add a \`// glossary-ignore: <alias>\` (or \`# …\`) marker on that line or in the same hunk (\`<!-- glossary-ignore: <alias> -->\` in Markdown).`,
     hasEntries: true,
   };
 }
@@ -223,12 +223,24 @@ interface DiffAddedLine {
   ignored: ReadonlySet<string>;
 }
 
+interface DiffHunk {
+  path: string;
+  /** New-revision line number of the hunk's first line. */
+  start: number;
+  /** Added and context lines in order — the hunk's view of the new revision. */
+  lines: { added: boolean; lineNumber: number; text: string }[];
+}
+
 const MARKDOWN_PATH_RE = /\.(?:md|mdx|markdown)$/i;
 // CommonMark fence: up to 3 spaces of indent, then 3+ backticks or tildes.
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-// `glossary-ignore: a, b` — the alias list runs to `-->`, `*/` or end
-// of line. Comma-split only (aliases may hold spaces).
-const IGNORE_MARKER_RE = /glossary-ignore:\s*(.*?)\s*(?:-->|\*\/|$)/i;
+// The marker only counts after a `//`, `#`, `/*`, `<!--` or `--`
+// opener at line start or after whitespace, or after a `*` block
+// continuation at line start — so marker text inside a string literal
+// or prose doesn't exempt anything. The alias list runs to `-->`, `*/`
+// or end of line. Comma-split only (aliases may hold spaces).
+const IGNORE_MARKER_RE =
+  /(?:^\s*\*|(?:^|\s)(?:\/\/+|#+|\/\*+|<!--|--))\s*glossary-ignore:\s*(.*?)\s*(?:-->|\*\/|$)/i;
 
 function isMarkdownPath(path: string): boolean {
   return MARKDOWN_PATH_RE.test(path);
@@ -244,101 +256,122 @@ function parseIgnoreMarker(text: string): string[] {
 }
 
 /**
- * Hunk-local fenced-code tracking for Markdown. A hunk only shows a
- * window of the file, so a hunk that starts inside an existing fence
- * would see its bare closing ``` as an opener and silently skip the
- * prose after it. To lean toward flagging (a false positive has the
- * `glossary-ignore` escape hatch; a false negative is invisible), a
- * fence only counts once its parity is certain: the hunk starts at
- * new-file line 1, or the opener carries an info string (```ts — a
- * closer never does). Until then bare fences are ignored.
+ * Which of a Markdown hunk's lines sit inside a fenced code block.
+ *
+ * A hunk only shows a window of the file, so its first fence may be the
+ * closer of a block opened above it. To lean toward flagging (a false
+ * positive has the `glossary-ignore` escape hatch; a false negative is
+ * invisible):
+ *   - a fence only counts once its parity is certain: the hunk starts at
+ *     new-file line 1, or an opener carries an info string (```ts — a
+ *     closer never does). Until then bare fences are ignored.
+ *   - in a hunk that starts mid-file, a block counts only when its
+ *     closer is also in the hunk. An unclosed "opener" may be the closer
+ *     of an outer block (e.g. ```` around a ```ts example).
+ * Residual miss: two misread outer closers inside one mid-file hunk can
+ * still pair up and hide the prose between them.
  */
-class FenceTracker {
-  private certain: boolean;
-  private open: { char: string; length: number } | undefined;
+function fencedLines(texts: readonly string[], startsAtTop: boolean): boolean[] {
+  const fenced = texts.map(() => false);
+  let certain = startsAtTop;
+  let open: { char: string; length: number; from: number } | undefined;
 
-  constructor(hunkStartsAtTop: boolean) {
-    this.certain = hunkStartsAtTop;
-  }
-
-  /** Feed one new-revision line; returns whether that line is inside (or delimits) a fence. */
-  step(text: string): boolean {
-    const fence = text.replace(/\r$/, "").match(FENCE_RE);
-    if (this.open) {
-      if (
-        fence?.[1] &&
-        fence[1][0] === this.open.char &&
-        fence[1].length >= this.open.length &&
-        (fence[2] ?? "").trim() === ""
-      ) {
-        this.open = undefined;
+  texts.forEach((raw, i) => {
+    const fence = raw.replace(/\r$/, "").match(FENCE_RE);
+    const marker = fence?.[1];
+    const info = (fence?.[2] ?? "").trim();
+    if (open) {
+      if (marker && marker[0] === open.char && marker.length >= open.length && info === "") {
+        fenced.fill(true, open.from, i + 1);
+        open = undefined;
       }
-      return true;
+      return;
     }
-    if (!fence?.[1]) return false;
-    const marker = fence[1];
-    const info = (fence[2] ?? "").trim();
+    if (!marker) return;
     // A backtick fence's info string may not contain a backtick.
-    if (marker[0] === "`" && info.includes("`")) return false;
-    if (info !== "") this.certain = true;
-    if (!this.certain) return false;
-    this.open = { char: marker[0] ?? "`", length: marker.length };
-    return true;
-  }
+    if (marker[0] === "`" && info.includes("`")) return;
+    if (info !== "") certain = true;
+    if (certain) open = { char: marker[0] ?? "`", length: marker.length, from: i };
+  });
+
+  if (open && startsAtTop) fenced.fill(true, open.from);
+  return fenced;
 }
 
-/**
- * Walk a unified diff, yielding every added (`+`) line with its file +
- * new-revision line number, Markdown fence state, and the hunk's
- * `glossary-ignore` exemptions. Context lines feed fence state and
- * markers; removed lines don't (they're not in the new revision).
- */
-function parseAddedLines(diff: string): DiffAddedLine[] {
-  const lines = diff.split("\n");
-  const added: DiffAddedLine[] = [];
+/** Split a unified diff into hunks of new-revision (added + context) lines. Removed lines are dropped. */
+function parseHunks(diff: string): DiffHunk[] {
+  const hunks: DiffHunk[] = [];
   let currentPath = "";
+  let current: DiffHunk | undefined;
   let newLineNo = 0;
-  let fences: FenceTracker | undefined;
-  let hunkIgnored = new Set<string>();
 
-  const feed = (text: string): boolean => {
-    for (const alias of parseIgnoreMarker(text)) hunkIgnored.add(alias);
-    return fences?.step(text) ?? false;
-  };
-
-  for (const raw of lines) {
+  for (const raw of diff.split("\n")) {
     if (raw.startsWith("+++ ")) {
       const m = raw.match(/^\+\+\+ (?:b\/)?(.+)$/);
       currentPath = m?.[1] === undefined || m[1] === "/dev/null" ? "" : m[1];
-      fences = undefined;
+      current = undefined;
       continue;
     }
     if (raw.startsWith("--- ")) continue;
 
-    const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (hunk?.[1]) {
-      newLineNo = parseInt(hunk[1], 10);
-      fences = isMarkdownPath(currentPath) ? new FenceTracker(newLineNo <= 1) : undefined;
-      // Fresh set per hunk: a marker exempts its own hunk only. Added
-      // lines already pushed keep a reference to their hunk's set, so
-      // a marker later in the same hunk still applies to them.
-      hunkIgnored = new Set<string>();
+    const header = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (header?.[1]) {
+      newLineNo = parseInt(header[1], 10);
+      current = { path: currentPath, start: newLineNo, lines: [] };
+      hunks.push(current);
       continue;
     }
 
-    if (raw.startsWith("+")) {
-      const text = raw.slice(1);
-      const inCodeFence = feed(text);
-      added.push({ path: currentPath, lineNumber: newLineNo, text, inCodeFence, ignored: hunkIgnored });
-      newLineNo++;
-      continue;
-    }
-    if (raw.startsWith("-")) continue; // removed line — new-revision counter doesn't advance
-    if (raw.startsWith(" ")) {
-      feed(raw.slice(1));
+    const added = raw.startsWith("+");
+    if (added || raw.startsWith(" ")) {
+      // Lines before any `@@` header (a bare `+line` snippet) form an implicit hunk.
+      if (!current) {
+        current = { path: currentPath, start: newLineNo, lines: [] };
+        hunks.push(current);
+      }
+      current.lines.push({ added, lineNumber: newLineNo, text: raw.slice(1) });
       newLineNo++;
     }
+    // removed (`-`) line — new-revision counter doesn't advance.
     // diff --git / index / mode lines etc — ignored, no counter effect.
+  }
+
+  return hunks;
+}
+
+/**
+ * Every added line with its file + new-revision line number, Markdown
+ * fence state, and the hunk's `glossary-ignore` exemptions. Context
+ * lines feed fence state and markers; a marker inside a fenced block is
+ * quoted code and doesn't count.
+ */
+function parseAddedLines(diff: string): DiffAddedLine[] {
+  const added: DiffAddedLine[] = [];
+
+  for (const hunk of parseHunks(diff)) {
+    const fenced = isMarkdownPath(hunk.path)
+      ? fencedLines(
+          hunk.lines.map((l) => l.text),
+          hunk.start <= 1,
+        )
+      : hunk.lines.map(() => false);
+
+    const ignored = new Set<string>();
+    hunk.lines.forEach((l, i) => {
+      if (fenced[i]) return;
+      for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
+    });
+
+    hunk.lines.forEach((l, i) => {
+      if (!l.added) return;
+      added.push({
+        path: hunk.path,
+        lineNumber: l.lineNumber,
+        text: l.text,
+        inCodeFence: fenced[i] ?? false,
+        ignored,
+      });
+    });
   }
 
   return added;
@@ -357,11 +390,38 @@ function stripInlineCode(text: string): string {
 function ignoreHint(path: string, alias: string): string {
   return isMarkdownPath(path)
     ? `<!-- glossary-ignore: ${alias} -->`
-    : `a \`glossary-ignore: ${alias}\` marker`;
+    : `a \`// glossary-ignore: ${alias}\` (or \`# …\`) marker`;
 }
 
-function formatTermList(terms: readonly string[]): string {
-  return terms.map((t) => `"${t}"`).join(" or ");
+function quoteTerms(terms: readonly string[], quote: string, separator: string): string {
+  return terms.map((t) => `${quote}${t}${quote}`).join(separator);
+}
+
+/** One Avoid-alias finding for `alias` on `path:line`, naming every canonical term it belongs to. */
+function buildViolation(
+  path: string,
+  line: number,
+  alias: string,
+  matched: readonly GlossaryEntry[],
+): Finding {
+  const terms = matched.map((e) => e.term);
+  const citations = matched
+    .map(
+      (e) =>
+        `CONTEXT.md${e.section ? ` §${e.section}` : ""} — canonical term \`${e.term}\` (avoid: ${e.avoid.join(", ")}) — source CONTEXT.md:${e.line}`,
+    )
+    .join("; ");
+  const termPhrase =
+    terms.length === 1
+      ? `canonical term \`${terms[0]}\`. Use \`${terms[0]}\` instead`
+      : `canonical terms ${quoteTerms(terms, "`", ", ")}. Use one of those instead`;
+  return {
+    path,
+    line,
+    severity: "important", // glossary-ignore: severity
+    title: `Avoid alias "${alias}" — use ${quoteTerms(terms, '"', " or ")}`,
+    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${ignoreHint(path, alias)} on this line or in the same hunk. ${citations}`,
+  };
 }
 
 /**
@@ -375,17 +435,17 @@ function formatTermList(terms: readonly string[]): string {
  *     quoted code (`spawn` from `node:child_process`) isn't prose.
  *   - One finding per (line, alias): an alias listed under several
  *     canonical terms is reported once, naming every term.
- *   - A `glossary-ignore: <alias>[, <alias>…]` marker on any added or
- *     context line of the same hunk exempts those aliases there.
+ *   - A `glossary-ignore: <alias>[, <alias>…]` marker after a `//`,
+ *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
+ *     the same hunk exempts those aliases there.
  */
 export function findGlossaryViolations(
   entries: readonly GlossaryEntry[],
   diff: string,
 ): Finding[] {
-  const addedLines = parseAddedLines(diff);
   const findings: Finding[] = [];
 
-  for (const { path, lineNumber, text, inCodeFence, ignored } of addedLines) {
+  for (const { path, lineNumber, text, inCodeFence, ignored } of parseAddedLines(diff)) {
     if (inCodeFence) continue;
     if (isTypeSafeBoundaryPath(path)) continue;
     const haystack = isMarkdownPath(path) ? stripInlineCode(text) : text;
@@ -404,24 +464,7 @@ export function findGlossaryViolations(
     }
 
     for (const { alias, entries: matched } of hits.values()) {
-      const terms = matched.map((e) => e.term);
-      const citations = matched
-        .map(
-          (e) =>
-            `CONTEXT.md${e.section ? ` §${e.section}` : ""} — canonical term \`${e.term}\` (avoid: ${e.avoid.join(", ")}) — source CONTEXT.md:${e.line}`,
-        )
-        .join("; ");
-      const termPhrase =
-        terms.length === 1
-          ? `canonical term \`${terms[0]}\`. Use \`${terms[0]}\` instead`
-          : `canonical terms ${terms.map((t) => `\`${t}\``).join(", ")}. Use one of those instead`;
-      findings.push({
-        path,
-        line: lineNumber,
-        severity: "important", // glossary-ignore: severity
-        title: `Avoid alias "${alias}" — use ${formatTermList(terms)}`,
-        rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${ignoreHint(path, alias)} on this line or in the same hunk. ${citations}`,
-      });
+      findings.push(buildViolation(path, lineNumber, alias, matched));
     }
   }
 
