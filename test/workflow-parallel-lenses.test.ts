@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeStubForge } from "./forge-stub.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
+import * as registryModule from "../src/lenses/registry.ts";
+
+// Real registry exports, copied before any test below mocks the module.
+// `mock.restore()` does not undo `mock.module`, so without re-installing
+// these in afterEach the last crashing-lens mock leaks into every test file
+// bun runs later in the same process (CI order: delta-scoped-review.test.ts).
+const REAL_REGISTRY = { ...registryModule };
 
 /**
  * sage#26: lens execution is parallel, not sequential.
@@ -124,6 +131,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.SAGE_LENS_CONCURRENCY;
+  mock.module("../src/lenses/registry.ts", () => REAL_REGISTRY);
   mock.restore();
 });
 
