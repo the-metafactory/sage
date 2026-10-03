@@ -81,10 +81,34 @@ export interface BoundedReviewState {
   };
 }
 
+export interface CommentSpan {
+  readonly id: string;
+  readonly path: string;
+  readonly line: number;
+  readonly syntax: "line_comment" | "block_comment" | "docstring" | "markup_comment";
+  readonly text: string;
+  /** A redacted declaration signature, present only for recognized docstrings. */
+  readonly declarationContext?: string;
+  readonly originalChars: number;
+  readonly retainedChars: number;
+  readonly truncated: boolean;
+}
+
+/** The only source text the CommentHygiene Choice receives. */
+export interface BoundedCommentState {
+  readonly comments: readonly CommentSpan[];
+  readonly truncation: {
+    readonly spansDetected: number;
+    readonly spansRetained: number;
+    readonly spansTruncated: number;
+    readonly stateTruncated: boolean;
+  };
+}
+
 export interface RecordedSignal {
   readonly questionId: string;
   readonly policyQuestionId: string;
-  readonly family: "routing" | "candidate" | "finding_evidence";
+  readonly family: "routing" | "candidate" | "finding_evidence" | "comment_hygiene";
   readonly subject: string;
   readonly answer: ChoiceAnswer;
   readonly floor: number;
@@ -130,6 +154,11 @@ export interface ShadowComparisonRecord {
   readonly state: BoundedReviewState;
   readonly routing: StageRecord;
   readonly evidence: StageRecord;
+  /** Optional so the frozen v1 routing/evidence corpus remains readable. */
+  readonly commentHygiene?: {
+    readonly state: BoundedCommentState;
+    readonly stage: StageRecord;
+  };
   readonly latencyMs: number;
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
   readonly estimatedCostUsd: number;
@@ -177,10 +206,30 @@ const BoundedReviewStateSchema = z.object({
   }).strict(),
 }).strict();
 
+const BoundedCommentStateSchema = z.object({
+  comments: z.array(z.object({
+    id: z.string(),
+    path: z.string(),
+    line: z.number().int().positive(),
+    syntax: z.enum(["line_comment", "block_comment", "docstring", "markup_comment"]),
+    text: z.string(),
+    declarationContext: z.string().optional(),
+    originalChars: z.number().int().nonnegative(),
+    retainedChars: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }).strict()),
+  truncation: z.object({
+    spansDetected: z.number().int().nonnegative(),
+    spansRetained: z.number().int().nonnegative(),
+    spansTruncated: z.number().int().nonnegative(),
+    stateTruncated: z.boolean(),
+  }).strict(),
+}).strict();
+
 const RecordedSignalSchema = z.object({
   questionId: z.string(),
   policyQuestionId: z.string(),
-  family: z.enum(["routing", "candidate", "finding_evidence"]),
+  family: z.enum(["routing", "candidate", "finding_evidence", "comment_hygiene"]),
   subject: z.string(),
   answer: ChoiceAnswerSchema,
   floor: z.number().min(0).max(1),
@@ -229,6 +278,10 @@ export const ShadowComparisonRecordSchema: z.ZodType<ShadowComparisonRecord> = z
   state: BoundedReviewStateSchema,
   routing: StageRecordSchema,
   evidence: StageRecordSchema,
+  commentHygiene: z.object({
+    state: BoundedCommentStateSchema,
+    stage: StageRecordSchema,
+  }).strict().optional(),
   latencyMs: z.number().int().nonnegative(),
   usage: z.object({
     inputTokens: z.number().int().nonnegative(),

@@ -23,6 +23,25 @@ const RoutingQuestionSchema = z.object({
   }),
 });
 
+const CommentHygieneSchema = z.object({
+  id: z.string().min(1),
+  candidateFloor: z.number().min(0).max(1),
+  docstringCandidateFloor: z.number().min(0).max(1),
+  maxSpans: z.number().int().positive(),
+  maxSpanChars: z.number().int().positive(),
+  maxDeclarationContextChars: z.number().int().positive(),
+  maxStateChars: z.number().int().positive(),
+  criteria: z.object({
+    change_history: z.string().min(1),
+    planning_context: z.string().min(1),
+    code_restatement: z.string().min(1),
+    mechanism_over_rationale: z.string().min(1),
+    ephemeral_context: z.string().min(1),
+    filler_jargon: z.string().min(1),
+    none: z.string().min(1),
+  }),
+});
+
 const PolicySchema = z.object({
   schemaVersion: z.literal(1),
   policyVersion: z.string().min(1),
@@ -40,6 +59,7 @@ const PolicySchema = z.object({
     maxCandidateChars: z.number().int().positive(),
     maxStateChars: z.number().int().positive(),
   }),
+  commentHygiene: CommentHygieneSchema,
   routing: z.array(RoutingQuestionSchema).length(5),
   findingEvidence: z.object({
     id: z.string().min(1),

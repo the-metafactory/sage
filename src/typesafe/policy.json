@@ -15,6 +15,24 @@
     "maxCandidateChars": 2400,
     "maxStateChars": 16000
   },
+  "commentHygiene": {
+    "id": "code_smell.v1",
+    "candidateFloor": 0.9,
+    "docstringCandidateFloor": 0.95,
+    "maxSpans": 24,
+    "maxSpanChars": 600,
+    "maxDeclarationContextChars": 240,
+    "maxStateChars": 8000,
+    "criteria": {
+      "change_history": "Describes the diff itself, explains prior behavior, or records a rejected approach.",
+      "planning_context": "Narrates an implementation plan (for example, Phase 2 or Step 3), references a ticket such as XYZ-1234 or a GitHub pull request such as #1234.",
+      "code_restatement": "Restates what the adjacent code already says plainly.",
+      "mechanism_over_rationale": "Explains implementation mechanics where a one-line explanation of why—or, preferably, no comment at all—would suffice.",
+      "ephemeral_context": "Only makes sense within the current session or pull request and would read incongruously when encountered on its own a month later.",
+      "filler_jargon": "Uses filler jargon such as load-bearing, gated on, robust, or comprehensive instead of naming the concrete dependency or condition.",
+      "none": "The added comments and docstrings do not clearly show any of those code smells."
+    }
+  },
   "routing": [
     {
       "id": "lens.security.v1",

@@ -137,7 +137,11 @@ _Avoid_: vendor, model provider, API
 **System One adapter**:
 The *bounded typed-decision integration* under `src/typesafe/`. It sends a
 redacted, size-limited state to a pinned TypeSafe Jev endpoint and accepts only
-schema-validated choices and probabilities. It is not a Substrate: it cannot
+schema-validated choices and probabilities. Its `CommentHygiene` shadow stage
+asks one fixed Choice per extracted added comment/docstring span. It receives no
+executable diff; a recognized docstring may carry only its adjacent, redacted,
+bounded declaration signature so code-restatement has a local comparator. It is
+not a Substrate: it cannot
 run a Lens, produce prose, add or suppress a Finding, change a Verdict, or
 cause a Forge side effect. It is outside the Substrate boundary and never
 runs a Lens. Direct HTTP is confined to this adapter, runs only
