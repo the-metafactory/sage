@@ -58,7 +58,19 @@ export class PiSubstrate implements Substrate {
     const model = opts.model ?? process.env.PI_MODEL ?? this.cfg.model;
     const apiKey = opts.apiKey ?? process.env.PI_API_KEY ?? this.cfg.apiKey;
 
-    const args: string[] = ["-p"];
+    const args: string[] = [
+      "-p",
+      // Run pi lean: skip the operator's installed extensions, skills,
+      // AGENTS.md/CLAUDE.md context files, and prompt templates. A lens owns
+      // its whole prompt, and that operator setup added ~16k input tokens to
+      // every turn of a lens's tool loop (one-shot probe on
+      // spark/longctx-think: 17,185 → 1,045 input tokens). Built-in tools
+      // stay enabled — lenses read the repo through them.
+      "--no-extensions",
+      "--no-skills",
+      "--no-context-files",
+      "--no-prompt-templates",
+    ];
     if (provider) args.push("--provider", provider);
     if (model) args.push("--model", model);
     if (apiKey) args.push("--api-key", apiKey);
