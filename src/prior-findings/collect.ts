@@ -22,6 +22,7 @@
 
 import {
   parseSageCheckedClaims,
+  parseSageReviewedCommit,
   parseSageReviewFindings,
 } from "../forge/prior-findings.ts";
 import type { PrRef, PriorReviewFinding } from "../forge/types.ts";
@@ -66,7 +67,8 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
         reviewCount++;
-        if (review.commitId) latestReviewCommitId = review.commitId;
+        const commitId = review.commitId ?? parseSageReviewedCommit(review.body);
+        if (commitId) latestReviewCommitId = commitId;
         // Last one wins, and only Reviews that recorded a digest update it: a
         // later Review whose Oracle did not run must not erase the fact that an
         // earlier one checked these claims.

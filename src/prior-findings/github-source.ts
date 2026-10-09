@@ -1,8 +1,14 @@
 /**
  * GitHub `ForgeReviewSource` Adapter.
  *
- * Wraps `gh api repos/.../pulls/N/reviews` (paginated + slurped) plus
- * `gh api user` for the trust-gate identity. Identity caching lives in
+ * Wraps `gh api repos/.../pulls/N/reviews` and `.../issues/N/comments`
+ * (both paginated + slurped) plus `gh api user` for the trust-gate identity.
+ *
+ * Comments count because not every Sage Review is a forge Review: ranger runs
+ * `sage review` offline and posts the rendered body as a PR comment under its
+ * machine account, and GitHub refuses a changes-requested Review on the
+ * author's own PR, so loops paste those as comments too. Only comments that
+ * are rendered Sage Reviews are returned; the trust gate still applies. Identity caching lives in
  * the closure returned from `createGitHubReviewSource` — there is no
  * module-level global (issue #56: kill `ghViewerLoginPromise`).
  *
@@ -20,6 +26,7 @@ import { z } from "zod";
 import { runGh as defaultRunGh } from "../forge/github/backend.ts";
 import type { PrRef } from "../forge/types.ts";
 import type { ForgeReviewSource, ForgeReviewBody } from "./types.ts";
+import { isSageReviewBody, parseSageReviewedCommit } from "../forge/prior-findings.ts";
 
 /** Subset of the gh subprocess wrapper the Adapter actually needs. */
 export type RunGh = (args: string[]) => Promise<{ stdout: string }>;
@@ -38,6 +45,14 @@ const ReviewSchema = z.object({
 
 /** `gh api --paginate --slurp` returns an array-of-pages. */
 const ReviewPagesSchema = z.array(z.array(ReviewSchema));
+
+const CommentSchema = z.object({
+  body: z.string().nullable().transform((s) => s ?? ""),
+  user: z.object({ login: z.string() }),
+  created_at: z.string().nullable().optional(),
+});
+
+const CommentPagesSchema = z.array(z.array(CommentSchema));
 
 const UserSchema = z.object({ login: z.string() });
 
@@ -72,12 +87,18 @@ export function createGitHubReviewSource(
 
   return {
     async fetchReviewBodies(ref: PrRef) {
-      const [reviewsOut, sageLogin] = await Promise.all([
+      const [reviewsOut, commentsOut, sageLogin] = await Promise.all([
         runGh([
           "api",
           "--paginate",
           "--slurp",
           `repos/${ref.owner}/${ref.repo}/pulls/${ref.number}/reviews`,
+        ]),
+        runGh([
+          "api",
+          "--paginate",
+          "--slurp",
+          `repos/${ref.owner}/${ref.repo}/issues/${ref.number}/comments`,
         ]),
         resolveSageLogin(),
       ]);
@@ -97,16 +118,55 @@ export function createGitHubReviewSource(
         );
       }
 
-      const bodies: ForgeReviewBody[] = parsed.data.flat().map((r) => ({
+      const reviews: ForgeReviewBody[] = parsed.data.flat().map((r) => ({
         authorLogin: r.user.login,
         body: r.body,
         ...(r.submitted_at != null ? { postedAt: r.submitted_at } : {}),
         ...(r.commit_id != null ? { commitId: r.commit_id } : {}),
       }));
 
-      return { bodies, sageLogin };
+      const comments: ForgeReviewBody[] = parseComments(commentsOut.stdout, ref)
+        .filter((c) => isSageReviewBody(c.body))
+        .map((c) => {
+          const commitId = parseSageReviewedCommit(c.body);
+          return {
+            authorLogin: c.user.login,
+            body: c.body,
+            ...(c.created_at != null ? { postedAt: c.created_at } : {}),
+            ...(commitId !== undefined ? { commitId } : {}),
+          };
+        });
+
+      return { bodies: oldestFirst([...reviews, ...comments]), sageLogin };
     },
   };
+}
+
+function parseComments(stdout: string, ref: PrRef): z.infer<typeof CommentSchema>[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stdout);
+  } catch (err) {
+    const m = err instanceof Error ? err.message : String(err);
+    throw new Error(`gh api issue comments returned non-JSON output: ${m}`);
+  }
+  const parsed = CommentPagesSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `gh api issue comments payload failed schema validation for ${ref.owner}/${ref.repo}#${ref.number}: ${parsed.error.message}`,
+    );
+  }
+  return parsed.data.flat();
+}
+
+/**
+ * Reviews and comments interleaved by time, oldest first — the order the
+ * Module relies on when it takes the LAST trusted Review's commit as the one
+ * Sage read most recently. A body with no timestamp keeps its place at the
+ * front; the sort is stable.
+ */
+function oldestFirst(bodies: ForgeReviewBody[]): ForgeReviewBody[] {
+  return [...bodies].sort((a, b) => (a.postedAt ?? "").localeCompare(b.postedAt ?? ""));
 }
 
 async function fetchViewerLogin(runGh: RunGh): Promise<string> {

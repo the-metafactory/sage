@@ -31,4 +31,10 @@ export interface Verdict {
    * cannot answer from a diff.
    */
   checkedClaimsDigest?: string;
+  /**
+   * The PR head this Review read. Rendered as a hidden marker so a Review
+   * posted as a plain PR comment (ranger's offline rounds) still tells the
+   * next round where Sage left off.
+   */
+  reviewedCommitId?: string;
 }

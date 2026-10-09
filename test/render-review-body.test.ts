@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseSageReviewFindings } from "../src/forge/github/backend.ts";
+import { parseSageReviewedCommit } from "../src/forge/prior-findings.ts";
 import type { LensReport } from "../src/lenses/types.ts";
 import { renderVerdict, type Verdict } from "../src/verdict/index.ts";
 
@@ -191,5 +192,13 @@ describe("renderVerdict compact review body", () => {
     const body = renderVerdict(verdict, "codex");
     expect(body).toMatch(/Fix: Move the shared parsing into `parseRef\(\)`\./);
     expect(body).not.toMatch(/Suggestion:/);
+  });
+});
+
+describe("reviewed-commit marker", () => {
+  test("a Verdict that records its commit renders the marker, which parses back", () => {
+    const body = renderVerdict({ decision: "approved", summary: "No findings.", lenses: [], reviewedCommitId: "0123abcd" });
+    expect(body).toContain("<!-- sage:reviewed-commit:0123abcd -->");
+    expect(parseSageReviewedCommit(body)).toBe("0123abcd");
   });
 });

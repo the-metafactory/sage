@@ -257,3 +257,14 @@ describe("sage#107 delta-scoped review — workflow", () => {
     expect(result.verdict.convergence?.previousRoundSurfaceUnavailable).toBe(true);
   });
 });
+
+describe("restrictDiffToPaths: a base merge's files stay out of the delta", () => {
+  test("keeps only the sections for the PR's files, including renames by either side", async () => {
+    const { restrictDiffToPaths } = await import("../src/verdict/index.ts");
+    const section = (a: string, b: string) =>
+      `diff --git a/${a} b/${b}\n--- a/${a}\n+++ b/${b}\n@@ -1 +1 @@\n-x\n+y\n`;
+    const diff = section("src/pr.ts", "src/pr.ts") + section("src/main-only.ts", "src/main-only.ts") + section("old.ts", "src/renamed.ts");
+    const kept = restrictDiffToPaths(diff, new Set(["src/pr.ts", "src/renamed.ts"]));
+    expect(kept).toBe(section("src/pr.ts", "src/pr.ts") + section("old.ts", "src/renamed.ts"));
+  });
+});

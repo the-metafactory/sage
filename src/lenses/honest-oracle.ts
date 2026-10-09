@@ -51,8 +51,13 @@ Rules of engagement:
   or the PR description) and state why it misleads whoever relies on it. No
   vague unease.
 - Map severity to the shared vocabulary: a claim that, if shipped, MISLEADS or
-  HARMS a downstream reader is "blocker"; a real overstatement that needs
-  qualifying is "important"; a softer overreach is "suggestion".
+  HARMS a downstream reader is "blocker"; a claim a test, probe, gate, or
+  merge decision relies on, and the artifact does not earn, is "important";
+  any other overstatement is "suggestion" at most.
+- Attack claims that would change what someone decides or ships, not the
+  precision of their phrasing. A figure rounded differently, a bound missing
+  one qualifier, "exact" for a tolerance-bounded check, or "up to" drawn from a
+  sample is not a finding unless acting on it would go wrong.
 - If an axis turns up nothing, raise nothing for it. Do NOT manufacture
   criticism to look thorough — a false finding is itself a failure, and an
   honest "the claims are supported" is the correct output for a clean PR.

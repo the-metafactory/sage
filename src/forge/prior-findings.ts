@@ -18,6 +18,7 @@
 
 import type { PriorReviewFinding } from "./types.ts";
 import { parseCheckedClaimsMarker } from "../util/claims.ts";
+import { parseReviewedCommitMarker } from "../util/reviewed-commit.ts";
 
 const PRIOR_FINDING_RE =
   /^- \*\*\[(blocker|important|suggestion|nit)\]\*\* `([^`]+):(\d+)` — \*\*([^*]+)\*\*/gm;
@@ -32,6 +33,17 @@ const REVIEW_HEADING_MARKER = "## Sage code review";
 export function parseSageCheckedClaims(body: string): string | undefined {
   if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
   return parseCheckedClaimsMarker(body);
+}
+
+/** Whether a body is a rendered Sage Review at all, not some other comment. */
+export function isSageReviewBody(body: string): boolean {
+  return body.includes(REVIEW_HEADING_MARKER);
+}
+
+/** The commit a prior Sage Review recorded reading, if its body carries one. */
+export function parseSageReviewedCommit(body: string): string | undefined {
+  if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
+  return parseReviewedCommitMarker(body);
 }
 
 export function parseSageReviewFindings(body: string): PriorReviewFinding[] {

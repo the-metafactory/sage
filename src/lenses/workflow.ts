@@ -32,6 +32,7 @@ import {
   changedPathsInDiff,
   markPreviousRoundSurface,
   markRepeatedFindings,
+  restrictDiffToPaths,
 } from "../verdict/index.ts";
 import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
 import { digestClaims } from "../util/claims.ts";
@@ -181,11 +182,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // previous-round surface marking below. Round 1 (no prior review) and any
   // Forge that cannot compare two commits both land on `diff` undefined, which
   // is the pre-#107 behavior in full.
-  const priorRound = await fetchPriorRoundDiff(
-    opts.forge,
-    opts.ref,
-    pr.headRefOid,
-    priorResult.latestReviewCommitId,
+  const priorRound = onlyPrFiles(
+    await fetchPriorRoundDiff(opts.forge, opts.ref, pr.headRefOid, priorResult.latestReviewCommitId),
+    pr,
   );
 
   // Two contexts, deliberately separated. Applicability asks "does this Lens
@@ -303,10 +302,11 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const checkedClaims = claimsWereChecked(applicableLenses, enrichedLensReports)
     ? digestClaims(pr.body)
     : undefined;
-  const verdict: Verdict =
-    checkedClaims !== undefined
-      ? { ...decided, checkedClaimsDigest: checkedClaims }
-      : decided;
+  const verdict: Verdict = {
+    ...decided,
+    ...(checkedClaims !== undefined ? { checkedClaimsDigest: checkedClaims } : {}),
+    reviewedCommitId: pr.headRefOid,
+  };
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
@@ -472,6 +472,16 @@ async function fetchPriorRoundDiff(
     );
     return { unavailable: true };
   }
+}
+
+/**
+ * Drop the files a base merge brought into the prior-round range. Only when
+ * `pr.files` is the whole list: the forge can truncate it on a large PR, and
+ * filtering against a partial list would hide the PR's own changes.
+ */
+function onlyPrFiles(priorRound: PriorRoundDiff, pr: PrMetadata): PriorRoundDiff {
+  if (priorRound.diff === undefined || pr.files.length !== pr.changedFiles) return priorRound;
+  return { ...priorRound, diff: restrictDiffToPaths(priorRound.diff, new Set(pr.files.map((f) => f.path))) };
 }
 
 function applyPriorRoundSurface(

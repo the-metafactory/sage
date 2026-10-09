@@ -213,3 +213,66 @@ describe("Adapter identity cache eviction on transient failure", () => {
     expect(attempt).toBe(2);
   });
 });
+
+describe("GitHub source: Sage Reviews posted as PR comments", () => {
+  const originalEnv = process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.SAGE_REVIEW_AUTHOR_LOGIN;
+    else process.env.SAGE_REVIEW_AUTHOR_LOGIN = originalEnv;
+  });
+
+  const marked = (sha: string) => `**Sage review — round 1** (offline)\n\n${sageBody}\n<!-- sage:reviewed-commit:${sha} -->`;
+
+  function fakeGh(reviews: unknown[], comments: unknown[]) {
+    return async (args: string[]) => {
+      const path = args[args.length - 1] ?? "";
+      if (path.endsWith("/reviews")) return { stdout: JSON.stringify([reviews]) };
+      if (path.endsWith("/comments")) return { stdout: JSON.stringify([comments]) };
+      return { stdout: JSON.stringify({ login: "unused" }) };
+    };
+  }
+
+  test("a trusted comment counts as a Review, with its commit read from the marker", async () => {
+    process.env.SAGE_REVIEW_AUTHOR_LOGIN = "machine-bot";
+    const source = createGitHubReviewSource({
+      runGh: fakeGh([], [
+        { user: { login: "machine-bot" }, body: marked("aaaaaaa1"), created_at: "2026-10-09T09:00:00Z" },
+        { user: { login: "machine-bot" }, body: "Base merge — origin/main merged in.", created_at: "2026-10-09T09:30:00Z" },
+        { user: { login: "machine-bot" }, body: marked("bbbbbbb2"), created_at: "2026-10-09T10:00:00Z" },
+      ]),
+    });
+    const result = await createPriorFindings(source).collect(ref);
+    expect(result.status).toBe("ok");
+    // The base-merge note is not a Sage Review and does not count as a round.
+    expect(result.reviewCount).toBe(2);
+    expect(result.latestReviewCommitId).toBe("bbbbbbb2");
+    expect(result.findings.map((f) => f.title)).toEqual([
+      "Duplicate trigger pattern",
+      "Extract common helper",
+    ]);
+  });
+
+  test("an untrusted author's comment is ignored, so it cannot suppress findings", async () => {
+    process.env.SAGE_REVIEW_AUTHOR_LOGIN = "machine-bot";
+    const source = createGitHubReviewSource({
+      runGh: fakeGh([], [{ user: { login: "drive-by" }, body: marked("ccccccc3"), created_at: "2026-10-09T09:00:00Z" }]),
+    });
+    const result = await createPriorFindings(source).collect(ref);
+    expect(result.reviewCount).toBe(0);
+    expect(result.findings).toEqual([]);
+    expect(result.latestReviewCommitId).toBeUndefined();
+  });
+
+  test("reviews and comments interleave by time: the latest of either sets the commit", async () => {
+    process.env.SAGE_REVIEW_AUTHOR_LOGIN = "machine-bot";
+    const source = createGitHubReviewSource({
+      runGh: fakeGh(
+        [{ user: { login: "machine-bot" }, body: sageBody, submitted_at: "2026-10-09T11:00:00Z", commit_id: "ddddddd4" }],
+        [{ user: { login: "machine-bot" }, body: marked("eeeeeee5"), created_at: "2026-10-09T10:00:00Z" }],
+      ),
+    });
+    const result = await createPriorFindings(source).collect(ref);
+    expect(result.reviewCount).toBe(2);
+    expect(result.latestReviewCommitId).toBe("ddddddd4");
+  });
+});

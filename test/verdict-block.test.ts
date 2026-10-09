@@ -76,6 +76,24 @@ describe("mapFindingsToBuckets", () => {
     expect(mapFindingsToBuckets(v)).toEqual({ blockers: 1, majors: 2, nits: 3 });
   });
 
+  test("an important counts as a major only when it blocks: prose impact is a nit", () => {
+    const v: Verdict = {
+      decision: "changes-requested",
+      summary: "x",
+      lenses: [
+        lens("L", [
+          { path: "a", line: 1, severity: "important", impact: "behavior", title: "t", rationale: "r" },
+          { path: "b", line: 2, severity: "important", impact: "check", title: "t", rationale: "r" },
+          { path: "c", line: 3, severity: "important", impact: "prose", title: "t", rationale: "r" },
+          // An impact Sage had to default stays blocking, as in decideVerdict.
+          { path: "d", line: 4, severity: "important", impact: "behavior", impactFallback: true, title: "t", rationale: "r" },
+          { path: "e", line: 5, severity: "blocker", impact: "prose", title: "t", rationale: "r" },
+        ]),
+      ],
+    };
+    expect(mapFindingsToBuckets(v)).toEqual({ blockers: 1, majors: 3, nits: 1 });
+  });
+
   test("zero findings → all zero", () => {
     const v: Verdict = { decision: "approved", summary: "x", lenses: [lens("L", [])] };
     expect(mapFindingsToBuckets(v)).toEqual({ blockers: 0, majors: 0, nits: 0 });

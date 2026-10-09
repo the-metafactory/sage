@@ -166,7 +166,7 @@ describe("selectDiffRelevantEntries / buildGlossaryContext", () => {
 describe("findGlossaryViolations — deterministic, added-lines only", () => {
   const entries = parseGlossary(FIXTURE_CONTEXT_MD);
 
-  test("flags an exact _Avoid_ alias on an added line as an important finding", () => {
+  test("flags an exact _Avoid_ alias on an added line as a non-gating prose nit", () => {
     const diff = `diff --git a/src/bus.ts b/src/bus.ts
 --- a/src/bus.ts
 +++ b/src/bus.ts
@@ -180,7 +180,8 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
     expect(findings[0]).toMatchObject({
       path: "src/bus.ts",
       line: 11,
-      severity: "important",
+      severity: "nit",
+      impact: "prose",
     });
     expect(findings[0]?.title).toContain("sender");
     expect(findings[0]?.rationale).toContain("Originator");
@@ -403,7 +404,19 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
 
   test("glossary-ignore inside a string literal does not exempt anything", () => {
     const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+const sender = 1;"]);
-    expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([1, 2]);
+    const findings = findGlossaryViolations(fixture, diff);
+    // Both lines hit; one finding per (file, alias), anchored at the first.
+    expect(findings.map((f) => f.line)).toEqual([1]);
+    expect(findings[0]?.rationale).toContain("Also on line 2.");
+  });
+
+  test("one finding per (file, alias): repeats in a file collapse, other files keep their own", () => {
+    const diff =
+      hunkDiff("src/a.ts", 1, ["+const sender = 1;", "+const x = 2;", "+const sender2 = sender;"]) +
+      hunkDiff("src/b.ts", 1, ["+const sender = 3;"]);
+    const findings = findGlossaryViolations(fixture, diff);
+    expect(findings.map((f) => `${f.path}:${f.line}`)).toEqual(["src/a.ts:1", "src/b.ts:1"]);
+    expect(findings[0]?.rationale).toContain("Also on line 3.");
   });
 
   test("glossary-ignore after # works (Python, YAML, shell)", () => {
