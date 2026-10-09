@@ -23,6 +23,7 @@ export {
   addedLinesByPath,
   changedPathsInDiff,
   markPreviousRoundSurface,
+  restrictDiffToPaths,
 } from "./previous-round.ts";
 export { decideVerdict, verdictToEvent } from "./decide.ts";
 export { renderVerdict } from "./render.ts";

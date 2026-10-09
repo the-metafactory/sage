@@ -150,9 +150,13 @@ rationale. If you cannot quote the exact diff text that supports the finding,
 do not raise it.
 
 Iteration awareness: stdin may include previously raised Sage findings on this
-PR. If one still applies, do NOT re-raise it. If one has been addressed in the
-current diff, do NOT count it. Surface only new findings or findings earlier
-rounds clearly missed.
+PR. If one has been addressed in the current diff, do NOT count it. If one
+still applies:
+- re-raise it only if it is a blocker, or an important whose fix changes
+  behavior or a check: an open defect must keep holding the merge gate;
+- otherwise (suggestion, nit, or wording) do NOT re-raise it — it was said once.
+Beyond that, surface only new findings or findings earlier rounds clearly
+missed.
 
 Surface only real issues for THIS lens. Findings that belong to a different
 lens are out of scope — skip them. An empty findings array is a valid response.

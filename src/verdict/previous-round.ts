@@ -48,6 +48,26 @@ export function markPreviousRoundSurface(
 }
 
 /**
+ * Keep only the file sections of `diff` whose path is in `paths`.
+ *
+ * The prior-round comparison runs from the commit Sage last read to the head.
+ * When the base was merged in between, that range also carries every file the
+ * base changed, which is not this PR's work; filtering to the PR's own files
+ * keeps a delta-scoped Lens on the PR (seelite#836: 23 of 36 files in the
+ * range after a base merge were main's).
+ */
+export function restrictDiffToPaths(diff: string, paths: ReadonlySet<string>): string {
+  const sections = diff.split(/^(?=diff --git )/m);
+  return sections
+    .filter((section) => {
+      const header = /^diff --git a\/(.+?) b\/(.+)$/m.exec(section);
+      if (!header) return false;
+      return paths.has(header[1]!) || paths.has(header[2]!);
+    })
+    .join("");
+}
+
+/**
  * Every path the comparison diff touches, including files it only deletes from.
  *
  * Applicability is mostly PATH-triggered (`src/lenses/applicability.ts` reads
