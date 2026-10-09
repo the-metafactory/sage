@@ -1,5 +1,6 @@
 import type { Verdict } from "./types.ts";
 import { renderCheckedClaimsMarker } from "../util/claims.ts";
+import { renderReviewedCommitMarker } from "../util/reviewed-commit.ts";
 import { summarizeConvergence, type ConvergenceSummary } from "./convergence.ts";
 
 export function formatConvergenceLine(convergence: ConvergenceSummary): string {
@@ -61,7 +62,10 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
   const claimsMarker = verdict.checkedClaimsDigest
     ? `\n${renderCheckedClaimsMarker(verdict.checkedClaimsDigest)}`
     : "";
-  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._${claimsMarker}`;
+  const commitMarker = verdict.reviewedCommitId
+    ? `\n${renderReviewedCommitMarker(verdict.reviewedCommitId)}`
+    : "";
+  const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._${claimsMarker}${commitMarker}`;
   return [head, ...sections, footer].join("\n\n");
 }
 

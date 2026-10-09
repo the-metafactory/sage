@@ -303,10 +303,11 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const checkedClaims = claimsWereChecked(applicableLenses, enrichedLensReports)
     ? digestClaims(pr.body)
     : undefined;
-  const verdict: Verdict =
-    checkedClaims !== undefined
-      ? { ...decided, checkedClaimsDigest: checkedClaims }
-      : decided;
+  const verdict: Verdict = {
+    ...decided,
+    ...(checkedClaims !== undefined ? { checkedClaimsDigest: checkedClaims } : {}),
+    reviewedCommitId: pr.headRefOid,
+  };
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
