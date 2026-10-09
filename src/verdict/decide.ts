@@ -97,7 +97,7 @@ const SEVERITY_RANK: Record<Severity, number> = {
  * has not learned the field quietly open the merge gate. Same conservative
  * direction `summarizeConvergence` takes when it counts those into `behavior`.
  */
-function blocksAtImpact(finding: Finding): boolean {
+export function blocksAtImpact(finding: Finding): boolean {
   if (finding.impactFallback || !finding.impact) return true;
   return finding.impact !== "prose";
 }

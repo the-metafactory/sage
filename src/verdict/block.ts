@@ -1,4 +1,5 @@
-import type { Severity } from "../lenses/types.ts";
+import type { Finding } from "../lenses/types.ts";
+import { blocksAtImpact } from "./decide.ts";
 import type { Verdict } from "./types.ts";
 
 /**
@@ -38,31 +39,36 @@ export interface FindingsBuckets {
 
 /**
  * Map Sage's 4-level severity scale onto cortex's 3 findings buckets:
- *   blocker    → blockers
- *   important  → majors
- *   suggestion → nits
- *   nit        → nits
+ *   blocker                          → blockers
+ *   important, behavior/check impact → majors
+ *   important, prose impact          → nits
+ *   suggestion                       → nits
+ *   nit                              → nits
  *
- * Mirrors `decideVerdict`'s escalation tiers: blockers gate the verdict to
- * changes-requested, importants are majors worth surfacing, and the two
- * advisory tiers collapse into nits.
+ * Mirrors `decideVerdict`'s escalation tiers: blockers and the importants
+ * that block (`blocksAtImpact`) gate the verdict to changes-requested, and
+ * everything advisory collapses into nits. A prose-impact important counts
+ * as a nit because consumers that gate on `majors` (ranger) would otherwise
+ * run another fix round for wording that Sage itself does not block on — on
+ * seelite#828 three "commented" rounds with one prose important each
+ * (rounds 4, 7, 9) each sent ranger into another fix pass.
  */
 export function mapFindingsToBuckets(verdict: Verdict): FindingsBuckets {
   const buckets: FindingsBuckets = { blockers: 0, majors: 0, nits: 0 };
   for (const lens of verdict.lenses) {
     for (const f of lens.findings) {
-      buckets[bucketFor(f.severity)] += 1;
+      buckets[bucketFor(f)] += 1;
     }
   }
   return buckets;
 }
 
-function bucketFor(severity: Severity): keyof FindingsBuckets {
-  switch (severity) {
+function bucketFor(finding: Finding): keyof FindingsBuckets {
+  switch (finding.severity) {
     case "blocker":
       return "blockers";
     case "important":
-      return "majors";
+      return blocksAtImpact(finding) ? "majors" : "nits";
     case "suggestion":
     case "nit":
       return "nits";

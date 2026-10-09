@@ -401,13 +401,19 @@ function quoteTerms(terms: readonly string[], quote: string, separator: string):
   return terms.map((t) => `${quote}${t}${quote}`).join(separator);
 }
 
-/** One Avoid-alias finding for `alias` on `path:line`, naming every canonical term it belongs to. */
+/** One Avoid-alias finding for `alias` in `path`, at its first added line, naming every canonical term it belongs to. */
 function buildViolation(
   path: string,
-  line: number,
+  lines: readonly number[],
   alias: string,
   matched: readonly GlossaryEntry[],
 ): Finding {
+  const line = lines[0] ?? 0;
+  const more = lines.slice(1);
+  const elsewhere =
+    more.length === 0
+      ? ""
+      : ` Also on line${more.length === 1 ? "" : "s"} ${more.slice(0, 5).join(", ")}${more.length > 5 ? ` and ${more.length - 5} more` : ""}.`;
   const terms = matched.map((e) => e.term);
   const citations = matched
     .map(
@@ -422,23 +428,29 @@ function buildViolation(
   return {
     path,
     line,
-    severity: "important", // glossary-ignore: severity
+    // A vocabulary match is wording, never a merge gate: the matcher cannot
+    // tell the domain term from the plain-English word ("command", "hangar")
+    // or a library name (Blender's "Modifier"). On seelite#829 it raised 45
+    // `important` findings a round and blocked a handoff PR on its own.
+    severity: "nit",
+    impact: "prose",
     title: `Avoid alias "${alias}" — use ${quoteTerms(terms, '"', " or ")}`,
-    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk. ${citations}`,
+    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk.${elsewhere} ${citations}`,
   };
 }
 
 /**
  * Deterministic (non-model) `_Avoid_`-alias violations on added diff
- * lines. Severity `important` — same rank as a model-authored finding —
- * so a hit blocks the merge gate via `decideVerdict` regardless of
- * whether any usesArchitectureDocs lens ran for this PR.
+ * lines. Severity `nit`, impact `prose`: a hit is surfaced on every
+ * review but never blocks the merge gate, because an exact-word match
+ * cannot tell a domain term from the same word in plain English.
  *
  * sage#128 narrowing:
  *   - Markdown fenced code blocks and inline code spans are skipped —
  *     quoted code (`spawn` from `node:child_process`) isn't prose.
- *   - One finding per (line, alias): an alias listed under several
- *     canonical terms is reported once, naming every term.
+ *   - One finding per (file, alias): an alias listed under several
+ *     canonical terms is reported once, naming every term, at its first
+ *     added line, with the file's other hits listed in the rationale.
  *   - A `glossary-ignore: <alias>[, <alias>…]` marker after a `//`,
  *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
  *     the same hunk exempts those aliases there.
@@ -447,7 +459,11 @@ export function findGlossaryViolations(
   entries: readonly GlossaryEntry[],
   diff: string,
 ): Finding[] {
-  const findings: Finding[] = [];
+  // Keyed `path\0alias`; Map order keeps findings in diff order.
+  const byFileAlias = new Map<
+    string,
+    { path: string; alias: string; lines: number[]; entries: GlossaryEntry[] }
+  >();
 
   for (const { path, lineNumber, text, inCodeFence, ignored } of parseAddedLines(diff)) {
     if (inCodeFence) continue;
@@ -467,12 +483,16 @@ export function findGlossaryViolations(
       }
     }
 
-    for (const { alias, entries: matched } of hits.values()) {
-      findings.push(buildViolation(path, lineNumber, alias, matched));
+    for (const [key, { alias, entries: matched }] of hits) {
+      const fileKey = `${path}\0${key}`;
+      const group = byFileAlias.get(fileKey) ?? { path, alias, lines: [], entries: [] };
+      group.lines.push(lineNumber);
+      for (const e of matched) if (!group.entries.includes(e)) group.entries.push(e);
+      byFileAlias.set(fileKey, group);
     }
   }
 
-  return findings;
+  return [...byFileAlias.values()].map((g) => buildViolation(g.path, g.lines, g.alias, g.entries));
 }
 
 /** Wrap deterministic glossary findings as a code-synthesized LensReport, byte-shaped like a model-authored one so it flows through decideVerdict/renderVerdict unchanged. */

@@ -127,10 +127,23 @@ Choose exactly one impact for every finding; severity and impact are independent
 Impact gates the merge block: an "important" finding blocks merge only at impact
 "behavior" or "check". Do not inflate severity to make a wording point land.
 
-Calibration: across a typical PR with findings, expect at most 1 blocker and
-at most 2 important findings. Important requires concrete, demonstrable harm
-before merge. If the rationale is mainly "this might", "this could", or
-"future readers may", use suggestion or nit instead.
+Calibration: several lenses review the same PR, so this lens on its own should
+rarely raise more than 1 important finding, and most rounds should raise none.
+Important requires concrete, demonstrable harm before merge. If the rationale is
+mainly "this might", "this could", or "future readers may", use suggestion or
+nit instead.
+
+Materiality: a finding must change a decision, a gate, a test outcome, or what
+a user sees or gets. Do NOT raise findings about:
+- numeric precision that changes none of those: float noise, digits past the
+  precision anyone acts on, sub-pixel or sub-percent differences, rounding of a
+  displayed or documented figure (84.4 vs 84.5);
+- wording that is approximately right: "exact" for a tolerance-bounded check,
+  "up to" from a sample, a bound stated without every qualifier, a doc or
+  receipt figure a later commit made slightly stale;
+- whether evidence in a receipt, handoff, spike or review log was re-run after
+  the latest commit, unless the PR's own gate depends on it.
+If you are unsure whether a gap is material, it is not: leave it out.
 
 Grounding: every finding must quote the offending text from the diff in its
 rationale. If you cannot quote the exact diff text that supports the finding,
