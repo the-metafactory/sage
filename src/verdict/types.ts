@@ -8,7 +8,7 @@ import type { ConvergenceSummary } from "./convergence.ts";
  *
  * A `changes-requested` decision is **earned, not assumed**: at least
  * one Finding of Severity `blocker`, OR an `important`-severity Finding
- * whose Finding impact is `behavior` or `check` (or is unclassified),
+ * whose Finding impact is `behavior` or `check` (or is unclassified).
  * An errored Lens yields `incomplete`, requiring a retry, not a code fix. An
  * `important` Finding that changes only wording does NOT block — that
  * gate is what lets an autonomous review loop terminate. Severity and

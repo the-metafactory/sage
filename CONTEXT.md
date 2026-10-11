@@ -13,7 +13,7 @@ The *act* of reviewing one PR — full pipeline run from PR fetch → Lens execu
 _Avoid_: review run, review job, scan
 
 **Verdict**:
-The *decision* output of a Review — exactly one of `approved`, `changes-requested`, `commented`. Produced by `decideVerdict()`. A Verdict of `changes-requested` is **earned, not assumed**: at least one Finding of Severity `blocker`, or an `important` Finding whose Finding impact is `behavior` or `check`, or a Lens that failed to run. An `important` Finding that changes only wording does not flip the Verdict. No findings is a valid Verdict (`approved` or `commented` per config).
+The *decision* output of a Review — exactly one of `approved`, `changes-requested`, `commented`, or `incomplete`. Produced by `decideVerdict()`. A Verdict of `changes-requested` is **earned, not assumed**: at least one Finding of Severity `blocker`, or an `important` Finding whose Finding impact is `behavior` or `check`. Any failed Lens takes precedence and yields `incomplete`: coverage is missing, so retry the review. An `important` Finding that changes only wording does not flip the Verdict. No findings with complete lens coverage is a valid Verdict (`approved` or `commented` per config).
 _Avoid_: result, outcome, status
 
 **Verdict envelope**:
@@ -178,7 +178,7 @@ _Avoid_: direct subject, named subject
 - A **Review** runs zero or more applicable **Lens runs** in parallel; each Lens run produces a **LensReport** of **Findings** or skips.
 - **Severity** and **Finding impact** together determine the **Verdict**: any `blocker` ⇒ `changes-requested`; an `important` of impact `behavior` or `check` ⇒ `changes-requested`; otherwise `commented` or `approved` per config.
 - **Finding impact** produces a convergence summary and gates the `important` → `changes-requested` escalation. The Verdict-envelope vocabulary stays the same three values.
-- A **Verdict** produces both a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**.
+- A completed **Verdict** produces a **Verdict envelope** (bus) and, with `--post`, a **Review comment** (Forge) via a **PostAction**. `incomplete` is carried in the CLI structured block and exits 2; current consumers treat this as operational failure, not a completed Verdict envelope. With `--post`, incomplete attempts use only `comment`, naming the failed lenses.
 - A **Forge backend** is the only thing that talks to the **Forge**; the Review pipeline calls Forge backends through the interface, never directly.
 - A **Substrate** is the only thing that talks to a **Provider**; Lenses call Substrates through the interface, never directly.
 - A **System One adapter** may call its typed decision service directly, but it
