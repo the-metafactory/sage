@@ -398,7 +398,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     // Verdict mechanically blocks merge — the `important` finding flips
     // the decision to changes-requested, AND the verdict summary names
     // the failed lens so the operator can see which coverage they lost.
-    expect(result.verdict.decision).toBe("changes-requested");
+    expect(result.verdict.decision).toBe("incomplete");
     expect(result.verdict.summary).toMatch(/lens\(es\) failed to run: Security/);
   });
 
@@ -449,7 +449,7 @@ describe("reviewPr parallel lens execution (sage#26)", () => {
     }
 
     // Verdict summary names all three failures.
-    expect(result.verdict.decision).toBe("changes-requested");
+    expect(result.verdict.decision).toBe("incomplete");
     expect(result.verdict.summary).toMatch(/Security/);
     expect(result.verdict.summary).toMatch(/Architecture/);
     expect(result.verdict.summary).toMatch(/Performance/);

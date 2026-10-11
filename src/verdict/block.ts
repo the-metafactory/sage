@@ -56,6 +56,7 @@ export interface FindingsBuckets {
 export function mapFindingsToBuckets(verdict: Verdict): FindingsBuckets {
   const buckets: FindingsBuckets = { blockers: 0, majors: 0, nits: 0 };
   for (const lens of verdict.lenses) {
+    if (lens.errored) continue;
     for (const f of lens.findings) {
       buckets[bucketFor(f)] += 1;
     }

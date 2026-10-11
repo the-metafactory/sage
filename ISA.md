@@ -60,7 +60,7 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 - [x] ISC-10: `decideVerdict()` returns `changes-requested` iff any finding is severity `blocker`. _Probe: unit test._ _Superseded — the gate later grew errored-lens and impact-gated `important` cases; see CONTEXT.md and `test/convergence.test.ts`._
 - [x] ISC-11: `reviewPr({ post: true })` calls `postReview()` with the right `ReviewEvent`. _Probe: Read function body._
 - [x] ISC-12: `startBridge()` connects to NATS, subscribes to broadcast + direct subjects, and publishes lifecycle envelopes. _Probe: Read function body._
-- [x] ISC-13: `sage review <ref>` exits with code 1 on `changes-requested` verdict, 0 otherwise. _Probe: Read CLI action._
+- [x] ISC-13: `sage review <ref>` exits with code 2 on `incomplete`, 1 on `changes-requested`, and 0 on `approved` or `commented`. _Probe: Read CLI action._
 - [x] ISC-14: `Anti:` Sage MUST NOT post review comments without an explicit `--post` flag or `payload.post: true` envelope field. _Probe: Grep workflow.ts for guarding logic on the `post` flag._
 - [x] ISC-15: `src/forge/types.ts` exports the platform-neutral `ForgeBackend` interface with `parseRef`, `prView`, `prDiff`, `postReview`, `priorSageReviewFindings`, `authStatus`. _Probe: Read `src/forge/types.ts`._
 - [x] ISC-16: `src/forge/github/backend.ts` exports `GitHubBackend implements ForgeBackend`. _Probe: Grep for `class GitHubBackend implements ForgeBackend`._
@@ -137,3 +137,14 @@ Ship Phase 1 of the design doc: a standalone Sage that listens on Myelin, review
 | 1-14 | Read / Grep | Files written this session; code review against the spec line-by-line. Live probes (`bun test`, `pi -p`, NATS round-trip) are listed under DEFERRED-VERIFY until a real PR + broker run. |
 | sage#32 | Algorithm E1 + tests | Soma run creation attempted with `bun run soma algorithm new --id sage-issue-32-review-noise`, but the local Soma CLI is blocked by an unresolved merge marker at `/Users/fischer/work/mf/soma/src/cli.ts:802`. Repo verification passed: `bun test test/verdict.test.ts test/render-review-body.test.ts test/prior-review-findings.test.ts`, `bun run typecheck`, `bun test`, and `git diff --check`. |
 | sage#32-review-fix | Algorithm E1 + tests + live GitHub probe | Fixed the three Codex-backed Sage findings from PR #33. Verification passed: `bun test test/prior-review-findings.test.ts test/workflow-parallel-lenses.test.ts test/workflow-post-outcome.test.ts`, `bun run typecheck`, `bun test`, and live `priorSageReviewFindings({ owner: "the-metafactory", repo: "sage", number: 33 })` against paginated GitHub reviews. |
+
+## Review reliability — sage#136
+
+- [x] Any errored lens yields `incomplete`; code findings from successful lenses remain visible.
+- [x] Incomplete attempts post only comments and do not advance prior-review commit or claims baselines.
+- [x] Base-branch `.sage.yaml` glossary ignores affect deterministic findings and model context.
+
+Verification: 582 tests pass, typecheck passes; `test/incomplete-review.test.ts`
+reproduces malformed Pi output and exercises posting, structured output,
+baseline exclusion, and glossary configuration. Ranger/Cortex automatic retry
+policy is separate; their current subprocess paths reject exit 2.

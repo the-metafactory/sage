@@ -164,12 +164,12 @@ describe("decideVerdict", () => {
       };
     }
 
-    test("errored lens with no findings → changes-requested, not approved", () => {
+    test("errored lens with no findings → incomplete, not approved", () => {
       const v = decideVerdict([
         lens("CodeQuality", []),
         erroredLens("Security"),
       ]);
-      expect(v.decision).toBe("changes-requested");
+      expect(v.decision).toBe("incomplete");
     });
 
     test("errored lens summary names the failed lens", () => {
@@ -198,7 +198,7 @@ describe("decideVerdict", () => {
         ]),
         erroredLens("Security"),
       ]);
-      expect(v.decision).toBe("changes-requested");
+      expect(v.decision).toBe("incomplete");
       expect(v.summary).toMatch(/1 finding/);
       expect(v.summary).toMatch(/Security/);
     });

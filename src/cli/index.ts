@@ -195,6 +195,7 @@ program
       console.log(out);
       console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
       await review.observerCompletion;
+      if (review.verdict.decision === "incomplete") process.exit(2);
       if (review.verdict.decision === "changes-requested") {
         process.exit(1);
       }
