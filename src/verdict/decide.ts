@@ -16,7 +16,7 @@ import { normalizeTitle } from "./title.ts";
  */
 export function decideVerdict(lenses: LensReport[]): Verdict {
   const dedupedLenses = capPreviousRoundProse(dedupeLensFindings(lenses));
-  const all = dedupedLenses.flatMap((l) => l.findings);
+  const all = dedupedLenses.filter((l) => !l.errored).flatMap((l) => l.findings);
   const hasBlocker = all.some((f) => f.severity === "blocker");
   // sage#107 — the merge gate reads Finding impact, not severity alone. An
   // `important` Finding blocks only when addressing it would change runtime
@@ -29,19 +29,14 @@ export function decideVerdict(lenses: LensReport[]): Verdict {
   const hasBlockingImportant = all.some(
     (f) => f.severity === "important" && blocksAtImpact(f),
   );
-  // A lens that errored before producing findings is itself a merge-
-  // blocker: we don't know what the lens would have flagged, so the
-  // verdict must not approve. Per Holly review of sage#27 (findings #1
-  // and #2): a silently-crashed Security lens should not render as a
-  // mergable "commented" verdict next to five clean reports.
+  // Missing coverage is an incomplete attempt, never a completed review.
   const erroredLenses = lenses.filter((l) => l.errored);
   const hasLensError = erroredLenses.length > 0;
 
-  // blocker, behavior/check-impact important, and lens-error all signal
-  // "fix before merge" per persona.md §5 / Holly review. suggestion, nit, and
-  // wording-only important are comment-only.
   const decision: Verdict["decision"] =
-    hasBlocker || hasBlockingImportant || hasLensError
+    hasLensError
+      ? "incomplete"
+      : hasBlocker || hasBlockingImportant
       ? "changes-requested"
       : all.length === 0
         ? "approved"

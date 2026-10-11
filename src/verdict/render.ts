@@ -59,10 +59,10 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
             .join("\n\n");
     return [`${heading}\n\n${intro}${body}`];
   });
-  const claimsMarker = verdict.checkedClaimsDigest
+  const claimsMarker = verdict.decision !== "incomplete" && verdict.checkedClaimsDigest
     ? `\n${renderCheckedClaimsMarker(verdict.checkedClaimsDigest)}`
     : "";
-  const commitMarker = verdict.reviewedCommitId
+  const commitMarker = verdict.decision !== "incomplete" && verdict.reviewedCommitId
     ? `\n${renderReviewedCommitMarker(verdict.reviewedCommitId)}`
     : "";
   const footer = `\n---\n_Posted by Sage on ${substrateLabel ?? "pi.dev"} substrate._${claimsMarker}${commitMarker}`;

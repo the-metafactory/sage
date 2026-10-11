@@ -282,3 +282,24 @@ when the host cortex process inherits a noisy parent env.
 ## License
 
 MIT.
+
+### Incomplete reviews and repository glossary exemptions
+
+If any selected lens fails (including malformed model output), Sage returns
+`incomplete`, posts only a comment naming failed lenses, and exits **2**.
+Exit **1** means completed review with changes requested; exit **0** means
+approved/commented. Retry incomplete attempts; they do not advance Sage's
+prior-review baseline. Structured verdict blocks also carry `incomplete`;
+consumers must treat it as a retry, never approval.
+
+Commit `.sage.yaml` on the target repository's base branch to exempt intentional
+aliases from both the deterministic glossary check and model glossary context:
+
+```yaml
+glossary:
+  ignore: [Command, pad, crash, spawn]
+```
+
+Matching is exact and case-insensitive. Invalid configuration fails the review
+rather than silently suppressing findings. Inline `glossary-ignore` markers
+remain available for local exemptions.

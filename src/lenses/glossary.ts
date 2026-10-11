@@ -455,6 +455,17 @@ function buildViolation(
  *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
  *     the same hunk exempts those aliases there.
  */
+export function applyGlossaryIgnore(
+  entries: readonly GlossaryEntry[],
+  ignore: readonly string[],
+): GlossaryEntry[] {
+  const ignored = new Set(ignore.map((alias) => alias.trim().toLowerCase()));
+  return entries.map((entry) => ({
+    ...entry,
+    avoid: entry.avoid.filter((alias) => !ignored.has(alias.toLowerCase())),
+  }));
+}
+
 export function findGlossaryViolations(
   entries: readonly GlossaryEntry[],
   diff: string,

@@ -124,7 +124,7 @@ describe("sage#107 convergence signal", () => {
       durationMs: 0,
       errored: true,
     };
-    expect(decideVerdict([errored]).decision).toBe("changes-requested");
+    expect(decideVerdict([errored]).decision).toBe("incomplete");
   });
 
   test("prose findings on previous-round surface are capped at nit", () => {

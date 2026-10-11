@@ -1,3 +1,4 @@
+import { loadGlossaryIgnore } from "../repo-config.ts";
 import type {
   ForgeBackend,
   InlineComment,
@@ -18,6 +19,7 @@ import {
   buildGlossaryLensReport,
   findGlossaryViolations,
   parseGlossary,
+  applyGlossaryIgnore,
 } from "./glossary.ts";
 import {
   decideVerdict,
@@ -232,9 +234,16 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // and exact `_Avoid_`-alias hits on added lines become findings
   // regardless of which lenses are applicable to this PR.
   const contextMdDoc = architectureDocs.docs.find((d) => d.path === "CONTEXT.md");
-  const glossaryEntries =
-    contextMdDoc?.status === "loaded" ? parseGlossary(contextMdDoc.content) : [];
-  const glossaryContext = buildGlossaryContext(glossaryEntries, diff);
+  const glossaryIgnore = await loadGlossaryIgnore(opts.forge, opts.ref, pr.baseRefName);
+  const glossaryEntries = applyGlossaryIgnore(
+    contextMdDoc?.status === "loaded" ? parseGlossary(contextMdDoc.content) : [],
+    glossaryIgnore,
+  );
+  const baseGlossaryContext = buildGlossaryContext(glossaryEntries, diff);
+  const glossaryContext = glossaryIgnore.length > 0 ? {
+    excerpt: `${baseGlossaryContext.excerpt}\nRepository glossary exemptions (.sage.yaml): ${JSON.stringify(glossaryIgnore)}. These aliases are intentional; do not raise glossary findings for them, including aliases listed in CONTEXT.md.`,
+    hasEntries: true,
+  } : baseGlossaryContext;
   const glossaryFindings = findGlossaryViolations(glossaryEntries, diff);
 
   if (priorResult.status !== "ok") {
