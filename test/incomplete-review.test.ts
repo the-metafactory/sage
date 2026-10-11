@@ -59,3 +59,15 @@ test("invalid glossary config fails visibly and missing config has no exemptions
   await expect(loadGlossaryIgnore(forge, ref, "main")).rejects.toThrow("array of non-empty strings");
   expect(await loadGlossaryIgnore(makeStubForge({ pr, diff }), ref, "main")).toEqual([]);
 });
+
+
+test("legacy failed-lens reviews cannot advance the retry baseline", async () => {
+  const prior = await createPriorFindings({ fetchReviewBodies: async () => ({
+    sageLogin: "sage", bodies: [
+      { authorLogin: "sage", body: "## Sage code review — approved", commitId: "old" },
+      { authorLogin: "sage", body: "## Sage code review — changes-requested\n\n### Security — DID NOT RUN\n\nCoverage incomplete; re-run before merge.", commitId: "failed" },
+    ],
+  }) }).collect(ref);
+  expect(prior.reviewCount).toBe(1);
+  expect(prior.latestReviewCommitId).toBe("old");
+});

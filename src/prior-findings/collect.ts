@@ -67,7 +67,8 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
         // An incomplete attempt is not a reviewed baseline for delta lenses.
-        if (/^## Sage code review — incomplete\b/m.test(review.body)) continue;
+        if (/^## Sage code review — incomplete\b/m.test(review.body)
+          || /^### .+ — DID NOT RUN\s*$/m.test(review.body)) continue;
         reviewCount++;
         const commitId = review.commitId ?? parseSageReviewedCommit(review.body);
         if (commitId) latestReviewCommitId = commitId;
