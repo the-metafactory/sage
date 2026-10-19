@@ -39,7 +39,8 @@ describe("claims digest", () => {
 
   test("round-trips through the rendered review body", () => {
     const checked = checkedClaimsOf(LONG_BODY, "abc1234");
-    expect(parseCheckedClaimsMarker(renderCheckedClaimsMarker(checked))).toEqual(checked);
+    const footer = `\n---\n_Posted by Sage on pi.dev substrate._\n${renderCheckedClaimsMarker(checked)}`;
+    expect(parseCheckedClaimsMarker(footer)).toEqual(checked);
   });
 
   test("a review body with no marker reports nothing checked", () => {

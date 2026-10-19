@@ -318,7 +318,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     applyPriorRoundSurface(allLensReports, priorRound),
     priorResult.findings,
   );
-  const decided = decideVerdict(enrichedLensReports);
+  const decided = decideVerdict(
+    keepClaimsInScope(enrichedLensReports, applicableLenses, claimsScope, pr),
+  );
   // Recorded only when a claims-checking lens actually produced a report. A
   // digest written for a round whose Oracle crashed would assert that claims
   // nobody read have been checked, and the next round would skip them.
@@ -495,6 +497,44 @@ async function fetchPriorRoundDiff(
     );
     return { unavailable: true };
   }
+}
+
+/**
+ * sage#139: on a later round, keep only the claims-checking Lens's findings on
+ * claims it has not checked yet. The prompt asks for that; this holds it when
+ * the Substrate samples one more edge case of a settled claim — the drip that
+ * kept soma#1016 from converging.
+ *
+ * Kept regardless of line: a Finding anchored outside the PR's files (the
+ * description, a commit message; the prompt scopes those), and a Finding that
+ * restates an earlier round's, because an open defect must keep holding the
+ * merge gate. Runs after repeat marking for that reason.
+ */
+function keepClaimsInScope(
+  reports: LensReport[],
+  applicable: readonly LensModule[],
+  scope: ClaimsScope | undefined,
+  pr: PrMetadata,
+): LensReport[] {
+  if (!scope) return reports;
+  const claimsLenses = new Set(applicable.filter((l) => l.checksClaims).map((l) => l.name));
+  const prFiles = new Set(pr.files.map((f) => f.path));
+  const added = addedLinesByPath(scope.diff);
+  return reports.map((report) => {
+    if (!claimsLenses.has(report.lens)) return report;
+    const findings = report.findings.filter(
+      (f) =>
+        !prFiles.has(f.path) ||
+        added.get(f.path)?.has(f.line) === true ||
+        f.repeatOfPriorFinding !== undefined,
+    );
+    if (findings.length < report.findings.length) {
+      console.error(
+        `[workflow] ${report.lens}: dropped ${report.findings.length - findings.length} finding(s) on claims checked at ${scope.sinceCommit}`,
+      );
+    }
+    return { ...report, findings };
+  });
 }
 
 /**

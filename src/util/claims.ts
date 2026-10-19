@@ -138,16 +138,22 @@ export function renderCheckedClaimsMarker(checked: CheckedClaims): string {
   return `${MARKER_PREFIX}${checked.digest}${claims}${commit}${MARKER_SUFFIX}`;
 }
 
+/** The footer line Sage's renderer writes last, ahead of its hidden markers. */
+const FOOTER_RE = /\n---\n_Posted by Sage\b/g;
+
 /**
  * Read the marker back off a prior Sage Review comment.
  *
- * The LAST marker wins: Sage appends its own in the footer, and a Finding that
- * quotes PR text may echo a planted one earlier in the comment. Since sage#139
- * the marker decides which claims the Oracle may skip, so the first match
- * would let a PR author mark claims checked.
+ * Only a marker after the footer counts: Sage writes its own there, and a
+ * Finding that quotes PR text may echo a planted one above it. Since sage#139
+ * the marker decides which claims the Oracle may skip, so a planted marker
+ * would let a PR author mark claims checked — including on a round whose
+ * Oracle did not run and wrote no marker of its own.
  */
 export function parseCheckedClaimsMarker(body: string): CheckedClaims | undefined {
-  const match = [...body.matchAll(MARKER_RE)].at(-1);
+  const footer = [...body.matchAll(FOOTER_RE)].at(-1);
+  if (footer?.index === undefined) return undefined;
+  const match = [...body.slice(footer.index).matchAll(MARKER_RE)].at(-1);
   if (!match) return undefined;
   const [, digest, claims, commitId] = match;
   return {
