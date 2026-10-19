@@ -44,6 +44,13 @@ describe("claims split", () => {
     expect(uncheckedClaims(edited, checked)).toEqual(["- Adds a guard for empty and oversized batches."]);
   });
 
+  test("the footer marker wins over one a Finding quoted from the PR", () => {
+    const planted = renderCheckedClaimsMarker({ digest: "f".repeat(16), claims: [], commitId: "evil" });
+    const real = checkedClaimsOf(BODY, "c2");
+    const comment = `## Sage code review — commented\n\n- quoted: ${planted}\n\n---\n${renderCheckedClaimsMarker(real)}`;
+    expect(parseCheckedClaimsMarker(comment)).toEqual(real);
+  });
+
   test("a marker written before sage#139 still parses, without claims or commit", () => {
     const legacy = `<!-- sage:checked-claims:${digestClaims(BODY)} -->`;
     expect(parseCheckedClaimsMarker(legacy)).toEqual({ digest: digestClaims(BODY) });

@@ -1,5 +1,5 @@
 import { runLens, type LensRunInput } from "./base.ts";
-import { addedLinesByPath } from "../verdict/previous-round.ts";
+import { addedLinesByPath } from "../util/diff.ts";
 import type { Finding, LensReport } from "./types.ts";
 
 /**

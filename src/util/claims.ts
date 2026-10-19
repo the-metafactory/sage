@@ -34,9 +34,9 @@ const MARKER_SUFFIX = " -->";
 // Claims and commit are optional so a marker written before sage#139 still
 // parses: it then says WHAT was checked, but not which claims or where.
 const MARKER_RE =
-  /<!-- sage:checked-claims:([0-9a-f]{16})(?: claims:([0-9a-f,]*))?(?: commit:([0-9A-Za-z._-]{1,64}))? -->/;
+  /<!-- sage:checked-claims:([0-9a-f]{16})(?: claims:([0-9a-f,]*))?(?: commit:([0-9A-Za-z._-]{1,64}))? -->/g;
 
-/** What a prior Oracle run checked, read back off its Review body. */
+/** What a prior Oracle run checked, read back off its Review comment. */
 export interface CheckedClaims {
   /** {@link digestClaims} of the whole description. */
   readonly digest: string;
@@ -56,7 +56,11 @@ export interface CheckedClaims {
 export interface ClaimsScope {
   /** The commit the previous Oracle run read. */
   readonly sinceCommit: string;
-  /** Changes since then: new claims in docs and comments, and changed code an earlier claim may cite. */
+  /**
+   * Changes since then: new claims in docs and comments, and changed code an
+   * earlier claim may cite. The Oracle sees that code only on a round it runs;
+   * a code-only change does not make it run.
+   */
   readonly diff: string;
   /** Description claims new or edited since then, in description order. */
   readonly descriptionClaims: readonly string[];
@@ -134,9 +138,16 @@ export function renderCheckedClaimsMarker(checked: CheckedClaims): string {
   return `${MARKER_PREFIX}${checked.digest}${claims}${commit}${MARKER_SUFFIX}`;
 }
 
-/** Read the marker back off a prior Sage review body. */
+/**
+ * Read the marker back off a prior Sage Review comment.
+ *
+ * The LAST marker wins: Sage appends its own in the footer, and a Finding that
+ * quotes PR text may echo a planted one earlier in the comment. Since sage#139
+ * the marker decides which claims the Oracle may skip, so the first match
+ * would let a PR author mark claims checked.
+ */
 export function parseCheckedClaimsMarker(body: string): CheckedClaims | undefined {
-  const match = MARKER_RE.exec(body);
+  const match = [...body.matchAll(MARKER_RE)].at(-1);
   if (!match) return undefined;
   const [, digest, claims, commitId] = match;
   return {

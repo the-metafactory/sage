@@ -71,7 +71,7 @@ Findings attributed to Sage from earlier Reviews on the same PR. Fed into every 
 _Avoid_: previous findings, history, past comments
 
 **Checked claims**:
-The version of the PR description a claims-checking Lens has already read, recorded as a digest in the Review body it posted and read back by the next Review, with a digest per claim (paragraph, list item, table row, heading) and the commit it read. On a later run the Lens targets only what is unchecked: description claims whose digest is new, and the changes since that commit. Claims checked against code that has not changed since stay settled, and a finding on a file line those changes do not add is dropped (sage#139). Written only when that Lens actually ran and returned a usable report — a digest recorded for a round whose Lens crashed would assert that unread claims have been checked. Absent means *unknown*, never *unchanged*: a Review that never checked claims has not reported them old.
+The version of the PR description a claims-checking Lens has already read, recorded as a digest in the Review comment it posted and read back by the next Review, with a digest per claim (paragraph, list item, table row, heading) and the commit it read. On a later run the Lens targets only what is unchecked: description claims whose digest is new, and the changes since that commit. A finding on a file line those changes do not add is dropped (sage#139). A code-only change does not by itself make the Lens run, so an earlier claim whose code changed is re-checked on the next round the Lens runs, not on that round. Written only when that Lens actually ran and returned a usable report — a digest recorded for a round whose Lens crashed would assert that unread claims have been checked. Absent means *unknown*, never *unchanged*: a Review that never checked claims has not reported them old.
 _Avoid_: body hash, claims cache, description state
 
 **Restated Finding**:
@@ -185,7 +185,7 @@ _Avoid_: direct subject, named subject
   observes only a completed Review and has no path back into Lens selection,
   Findings, Verdict, or Forge behavior.
 - **Prior Findings** flow from earlier Reviews on the same **PR** into every **Lens run** of the next Review, and are what a **Restated Finding** is matched against.
-- **Checked claims** are what makes HonestOracle's description trigger settle: unchecked or unknown ⇒ the Lens runs; already checked ⇒ it does not. Once recorded with a commit, they also narrow what the Lens attacks when it does run, and its Applicability reads the changes since that commit, not since the last Review.
+- **Checked claims** are what makes HonestOracle's description Applicability settle: unchecked or unknown ⇒ the Lens runs; already checked ⇒ it does not. Once recorded with a commit, they also narrow what the Lens attacks when it does run, and its Applicability reads the changes since that commit, not since the last Review.
 - A **Restated Finding** is counted in the convergence summary but never subtracted from it: a round whose restated count equals its Finding count produced no new information, which is a signal to the loop, not a reason to hide a Finding.
 - **Review scope** decides which diff a **Lens run** receives; **Applicability** decides whether it happens at all. Both read the delta once a previous Sage Review exists.
 - **ContextDrift** consumes target-repo architecture context docs, especially `CONTEXT.md`, to check whether new vocabulary or public surfaces drift from canonical bounded-context language.
