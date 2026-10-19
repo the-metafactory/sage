@@ -1,5 +1,6 @@
 import { runLens, type LensRunInput } from "./base.ts";
-import type { LensReport } from "./types.ts";
+import { addedLinesByPath } from "../verdict/previous-round.ts";
+import type { Finding, LensReport } from "./types.ts";
 
 /**
  * The Honest Oracle — a domain-agnostic adversarial lens whose sole job is to
@@ -62,15 +63,44 @@ Rules of engagement:
   criticism to look thorough — a false finding is itself a failure, and an
   honest "the claims are supported" is the correct output for a clean PR.
 - Output the indictment, not the remedy: OMIT the suggestion field. You are the
-  adversary, not the fixer.`;
+  adversary, not the fixer.
+
+Later rounds: when stdin carries a "Claims since the last check" section, the
+claims outside it were already checked against code that has not changed since.
+They are settled; do not attack them again. Attack only:
+- a claim on a line the "Changes since" diff adds;
+- a description claim listed there as new or edited;
+- an earlier claim whose supporting code the "Changes since" diff changes —
+  anchor that finding on the changed line, not on the claim.
+A finding on a file line the "Changes since" diff does not add is dropped.`;
 
 export async function reviewHonestOracle(input: LensRunInput): Promise<LensReport> {
   const report = await runLens({ name: "HonestOracle", focus: FOCUS }, input);
   // The Oracle is the adversary, not the fixer — its output is the indictment,
   // never the remedy. The focus prompt asks the model to omit `suggestion`, but
   // strip it structurally too so the contract holds even when the model drifts.
-  return {
-    ...report,
-    findings: report.findings.map(({ suggestion: _drop, ...rest }) => rest),
-  };
+  const findings = report.findings.map(({ suggestion: _drop, ...rest }) => rest);
+  return { ...report, findings: inClaimsScope(findings, input) };
+}
+
+/**
+ * sage#139: on a later round, keep only findings on the claims surface the
+ * Oracle has not checked yet. The prompt asks for that; this holds it when the
+ * model samples one more edge case of a settled claim — the drip that kept
+ * soma#1016 from converging. A finding anchored outside the PR's files (the
+ * description, a commit message) passes: the prompt scopes those.
+ */
+function inClaimsScope(findings: Finding[], input: LensRunInput): Finding[] {
+  if (!input.claimsScope) return findings;
+  const prFiles = new Set(input.pr.files.map((f) => f.path));
+  const added = addedLinesByPath(input.claimsScope.diff);
+  const kept = findings.filter(
+    (f) => !prFiles.has(f.path) || added.get(f.path)?.has(f.line) === true,
+  );
+  if (kept.length < findings.length) {
+    console.error(
+      `[honest-oracle] dropped ${findings.length - kept.length} finding(s) on claims checked at ${input.claimsScope.sinceCommit}`,
+    );
+  }
+  return kept;
 }

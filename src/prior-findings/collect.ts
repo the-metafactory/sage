@@ -26,6 +26,7 @@ import {
   parseSageReviewFindings,
 } from "../forge/prior-findings.ts";
 import type { PrRef, PriorReviewFinding } from "../forge/types.ts";
+import type { CheckedClaims } from "../util/claims.ts";
 import type {
   ForgeReviewSource,
   PriorFindings,
@@ -62,7 +63,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
       const seen = new Set<string>();
       const findings: PriorReviewFinding[] = [];
       let latestReviewCommitId: string | undefined;
-      let latestCheckedClaimsDigest: string | undefined;
+      let latestCheckedClaims: CheckedClaims | undefined;
       let reviewCount = 0;
       for (const review of raw.bodies) {
         if (review.authorLogin !== sageLogin) continue;
@@ -76,7 +77,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         // later Review whose Oracle did not run must not erase the fact that an
         // earlier one checked these claims.
         const checked = parseSageCheckedClaims(review.body);
-        if (checked) latestCheckedClaimsDigest = checked;
+        if (checked) latestCheckedClaims = checked;
         for (const finding of parseSageReviewFindings(review.body)) {
           const key = `${finding.path}:${finding.line}:${finding.severity}:${finding.title}`;
           if (seen.has(key)) continue;
@@ -94,7 +95,7 @@ export function createPriorFindings(source: ForgeReviewSource): PriorFindings {
         reviewCount,
         identity: { login: sageLogin },
         ...(latestReviewCommitId !== undefined ? { latestReviewCommitId } : {}),
-        ...(latestCheckedClaimsDigest !== undefined ? { latestCheckedClaimsDigest } : {}),
+        ...(latestCheckedClaims !== undefined ? { latestCheckedClaims } : {}),
       };
     },
   };

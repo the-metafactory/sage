@@ -1,5 +1,6 @@
 import type { LensReport } from "../lenses/types.ts";
 import type { ConvergenceSummary } from "./convergence.ts";
+import type { CheckedClaims } from "../util/claims.ts";
 
 /**
  * The decision output of a Review — exactly one of `approved`,
@@ -22,15 +23,15 @@ export interface Verdict {
   /** Additive round-progress signal for autonomous review loops (sage#107). */
   convergence?: ConvergenceSummary;
   /**
-   * Digest of the claims surface the HonestOracle actually checked this round
-   * (sage#107). Set only when the Oracle ran and returned a usable report, so
+   * The claims the HonestOracle actually checked this round, and the commit it
+   * read (sage#107, sage#139). Set only when the Oracle ran and returned a usable report, so
    * the marker never asserts that claims nobody read have been checked.
    *
    * The next Review reads it back off the posted body to answer "are there new
    * claims?" — the question the Oracle's PR-description trigger needs and
    * cannot answer from a diff.
    */
-  checkedClaimsDigest?: string;
+  checkedClaims?: CheckedClaims;
   /**
    * The PR head this Review read. Rendered as a hidden marker so a Review
    * posted as a plain PR comment (ranger's offline rounds) still tells the

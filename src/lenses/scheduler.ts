@@ -21,6 +21,7 @@ import type { LensRunInput } from "./base.ts";
 import type { GlossaryContext } from "./glossary.ts";
 import { lensReviewScope, lensUsesArchitectureDocs, type LensModule } from "./registry.ts";
 import { buildErroredLensReport, type LensReport } from "./types.ts";
+import type { ClaimsScope } from "../util/claims.ts";
 
 export interface LensScheduleOptions {
   /**
@@ -46,6 +47,11 @@ export interface LensScheduleOptions {
    * Lens sees the cumulative diff, which is the pre-#107 behavior.
    */
   readonly deltaDiff?: string;
+  /**
+   * What the claims-checking Lens has not checked yet (sage#139). Threaded
+   * only to Lenses declaring `checksClaims`; absent → they check every claim.
+   */
+  readonly claimsScope?: ClaimsScope;
   /**
    * True when `lenses` has already been filtered by applicability.
    * Workflow uses this so the same predicates can feed doc preload and
@@ -104,6 +110,7 @@ export interface LensScheduleOptions {
  *       it returns LensReports and stops.
  *   I8. A Lens receives the diff its `reviewScope` declares. `delta` without
  *       a `deltaDiff` falls back to the cumulative diff.
+ *   I9. Only a `checksClaims` Lens receives `claimsScope`.
  */
 export async function runLenses(
   opts: LensScheduleOptions,
@@ -152,14 +159,16 @@ export async function runLenses(
         lensReviewScope(lens) === "delta" && opts.deltaDiff !== undefined
           ? opts.deltaDiff
           : opts.ctx.diff;
+      const claims = lens.checksClaims && opts.claimsScope ? { claimsScope: opts.claimsScope } : {};
       const lensInput = usesArchitectureDocs
         ? {
             ...lensInputBase,
+            ...claims,
             diff,
             acceptsArchitectureDocs: true,
             ...(opts.architectureDocs ? { architectureDocs: opts.architectureDocs } : {}),
           }
-        : { ...lensInputBase, diff };
+        : { ...lensInputBase, ...claims, diff };
       report = await lens.review(lensInput as LensRunInput);
     } catch (err) {
       // I3: Lens that throws → errored LensReport (defense in depth

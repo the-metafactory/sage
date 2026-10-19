@@ -37,7 +37,7 @@ import {
   restrictDiffToPaths,
 } from "../verdict/index.ts";
 import { LENSES, lensReviewScope, type LensModule } from "./registry.ts";
-import { digestClaims } from "../util/claims.ts";
+import { checkedClaimsOf, digestClaims, uncheckedClaims, type ClaimsScope } from "../util/claims.ts";
 import {
   readConcurrencyEnv,
   runLenses,
@@ -201,9 +201,9 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // Undefined when no prior Review recorded a claims digest — unknown, not
   // unchanged, so the claims-checking lens looks.
   const claimsChanged =
-    priorResult.latestCheckedClaimsDigest === undefined
+    priorResult.latestCheckedClaims === undefined
       ? undefined
-      : digestClaims(pr.body) !== priorResult.latestCheckedClaimsDigest;
+      : digestClaims(pr.body) !== priorResult.latestCheckedClaims.digest;
   const claimsCtx = claimsChanged === undefined ? {} : { claimsChanged };
   const cumulativeCtx: ApplicabilityContext = { pr, diff, isFirstRound, ...claimsCtx };
   const applicabilityCtx: ApplicabilityContext =
@@ -215,8 +215,21 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
           ...claimsCtx,
         }
       : cumulativeCtx;
+  // sage#139 — the claims-checking Lens answers to its own delta: what changed
+  // since IT last ran, which is not the last Review when a round skipped it.
+  const claimsScope = await resolveClaimsScope(opts, pr, priorResult, priorRound);
+  const claimsApplicabilityCtx: ApplicabilityContext = claimsScope
+    ? {
+        pr: narrowToDelta(pr, claimsScope.diff),
+        diff: claimsScope.diff,
+        isFirstRound,
+        claimsChanged: claimsScope.descriptionClaims.length > 0,
+      }
+    : applicabilityCtx;
   const applicableLenses = LENSES.filter(
-    (lens) => !lens.applies || lens.applies(applicabilityCtx),
+    (lens) =>
+      !lens.applies ||
+      lens.applies(lens.checksClaims ? claimsApplicabilityCtx : applicabilityCtx),
   );
   logReviewScope(applicableLenses, diff, priorRound);
   // compass#98 F7: load unconditionally. Previously gated on
@@ -266,6 +279,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     lenses: applicableLenses,
     ctx: cumulativeCtx,
     ...(priorRound.diff !== undefined ? { deltaDiff: priorRound.diff } : {}),
+    ...(claimsScope !== undefined ? { claimsScope } : {}),
     lensesAreApplicable: true,
     substrate: opts.substrate,
     priorFindings: priorResult.findings,
@@ -309,11 +323,11 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   // digest written for a round whose Oracle crashed would assert that claims
   // nobody read have been checked, and the next round would skip them.
   const checkedClaims = claimsWereChecked(applicableLenses, enrichedLensReports)
-    ? digestClaims(pr.body)
+    ? checkedClaimsOf(pr.body, pr.headRefOid)
     : undefined;
   const verdict: Verdict = {
     ...decided,
-    ...(checkedClaims !== undefined ? { checkedClaimsDigest: checkedClaims } : {}),
+    ...(checkedClaims !== undefined ? { checkedClaims } : {}),
     reviewedCommitId: pr.headRefOid,
   };
   const body = renderVerdict(verdict, opts.substrate.displayName);
@@ -481,6 +495,44 @@ async function fetchPriorRoundDiff(
     );
     return { unavailable: true };
   }
+}
+
+/**
+ * What the claims-checking Lens has not checked yet (sage#139).
+ *
+ * Undefined means "review every claim": no earlier Oracle run, a marker
+ * written before sage#139 (no commit to compare from), or a Forge that cannot
+ * produce the comparison. All three fall back to the full check, which is what
+ * round 1 does anyway.
+ */
+async function resolveClaimsScope(
+  opts: ReviewOptions,
+  pr: PrMetadata,
+  priorResult: PriorFindingsResult,
+  priorRound: PriorRoundDiff,
+): Promise<ClaimsScope | undefined> {
+  const checked = priorResult.latestCheckedClaims;
+  if (checked?.commitId === undefined) return undefined;
+  let diff = priorRound.diff;
+  if (checked.commitId !== priorResult.latestReviewCommitId) {
+    if (!opts.forge.diffBetween) return undefined;
+    try {
+      diff = onlyPrFiles(
+        { diff: await opts.forge.diffBetween(opts.ref, checked.commitId, pr.headRefOid), unavailable: false },
+        pr,
+      ).diff;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[workflow] claims comparison unavailable; the Oracle checks every claim: ${message}`);
+      return undefined;
+    }
+  }
+  if (diff === undefined) return undefined;
+  return {
+    sinceCommit: checked.commitId,
+    diff,
+    descriptionClaims: uncheckedClaims(pr.body, checked.claims ?? []),
+  };
 }
 
 /**

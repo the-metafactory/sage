@@ -17,7 +17,7 @@
  */
 
 import type { PriorReviewFinding } from "./types.ts";
-import { parseCheckedClaimsMarker } from "../util/claims.ts";
+import { parseCheckedClaimsMarker, type CheckedClaims } from "../util/claims.ts";
 import { parseReviewedCommitMarker } from "../util/reviewed-commit.ts";
 
 const PRIOR_FINDING_RE =
@@ -26,11 +26,11 @@ const PRIOR_FINDING_RE =
 const REVIEW_HEADING_MARKER = "## Sage code review";
 
 /**
- * The claims digest a prior Sage review recorded, if it checked any. Absent on
+ * The claims a prior Sage review recorded checking, if it checked any. Absent on
  * a review whose Oracle did not run — which correctly reads as "these claims
  * have not been checked" rather than "unchanged".
  */
-export function parseSageCheckedClaims(body: string): string | undefined {
+export function parseSageCheckedClaims(body: string): CheckedClaims | undefined {
   if (!body.includes(REVIEW_HEADING_MARKER)) return undefined;
   return parseCheckedClaimsMarker(body);
 }
