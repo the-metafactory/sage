@@ -3,6 +3,7 @@ import { extractFromRun } from "../substrate/json/index.ts";
 import type { Substrate } from "../substrate/types.ts";
 import { renderArchitectureDocs, type ArchitectureDocsContext } from "./architecture-docs.ts";
 import type { GlossaryContext } from "./glossary.ts";
+import type { ClaimsScope } from "../util/claims.ts";
 import { makeLensPipeline } from "./shape.ts";
 import { appendSummaryNote } from "./summary.ts";
 import { buildErroredLensReport, type Finding, type FindingImpact, type LensReport } from "./types.ts";
@@ -73,6 +74,12 @@ export interface LensRunInput {
    * CONTEXT.md.
    */
   glossaryContext?: GlossaryContext;
+  /**
+   * The claims not yet checked (sage#139). Set by the scheduler only for a
+   * `checksClaims` Lens, and only after an earlier run recorded where it left
+   * off; rendered on stdin ahead of the cumulative diff.
+   */
+  claimsScope?: ClaimsScope;
 }
 
 interface RawLensOutput {
@@ -215,6 +222,7 @@ function buildStdinContent(
   priorFindings: readonly PriorReviewFinding[] = [],
   architectureDocs?: ArchitectureDocsContext,
   glossaryContext?: GlossaryContext,
+  claimsScope?: ClaimsScope,
 ): string {
   const fileList = pr.files
     .map((f) => `  - ${f.path} (+${f.additions} / -${f.deletions})`)
@@ -233,6 +241,7 @@ ${priorFindings
   // compass#98 F7: injected for EVERY lens (not gated on
   // acceptsArchitectureDocs) — this is the always-on-path glossary fix.
   const glossarySection = glossaryContext?.hasEntries ? `\n${glossaryContext.excerpt}\n` : "";
+  const claimsSection = claimsScope ? `\n${renderClaimsScope(claimsScope)}\n` : "";
 
   return `PR #${pr.number}: ${pr.title}
 Author: ${pr.author.login}
@@ -244,12 +253,31 @@ Description:
 ${pr.body || "(no description)"}
 
 ${priorSection}
-${architectureSection}${glossarySection}
+${architectureSection}${glossarySection}${claimsSection}
 
 ---
 Unified diff:
 
 ${diff}`;
+}
+
+function renderClaimsScope(scope: ClaimsScope): string {
+  const description =
+    scope.descriptionClaims.length === 0
+      ? "(none)"
+      : scope.descriptionClaims.map((claim) => `  - ${claim}`).join("\n");
+  return `---
+Claims since the last check: every claim in this PR was checked at commit ${scope.sinceCommit}.
+Only these are unchecked: description claims new or edited since then, and the
+changes below (new claims in docs and comments, and changed code an earlier
+claim may cite). The unified diff further down is evidence, not a target.
+
+Description claims new or edited since ${scope.sinceCommit}:
+${description}
+
+Changes since ${scope.sinceCommit}:
+
+${scope.diff || "(none)"}`;
 }
 
 /**
@@ -267,6 +295,7 @@ export async function runLens(spec: LensSpec, input: LensRunInput): Promise<Lens
     input.priorFindings,
     architectureDocs,
     input.glossaryContext,
+    input.claimsScope,
   );
 
   let lensJson: RawLensOutput | undefined;

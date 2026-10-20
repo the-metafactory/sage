@@ -5,6 +5,7 @@ import { honestOracleApplies } from "../src/lenses/applicability.ts";
 import { parseSageCheckedClaims } from "../src/forge/prior-findings.ts";
 import { createPriorFindings } from "../src/prior-findings/index.ts";
 import {
+  checkedClaimsOf,
   digestClaims,
   parseCheckedClaimsMarker,
   renderCheckedClaimsMarker,
@@ -37,14 +38,15 @@ describe("claims digest", () => {
   });
 
   test("round-trips through the rendered review body", () => {
-    const digest = digestClaims(LONG_BODY);
-    expect(parseCheckedClaimsMarker(renderCheckedClaimsMarker(digest))).toBe(digest);
+    const checked = checkedClaimsOf(LONG_BODY, "abc1234");
+    const footer = `\n---\n_Posted by Sage on pi.dev substrate._\n${renderCheckedClaimsMarker(checked)}`;
+    expect(parseCheckedClaimsMarker(footer)).toEqual(checked);
   });
 
   test("a review body with no marker reports nothing checked", () => {
     expect(parseSageCheckedClaims("## Sage code review — approved\n\nNo findings.")).toBeUndefined();
     // Not a Sage review body at all.
-    expect(parseSageCheckedClaims(renderCheckedClaimsMarker("0".repeat(16)))).toBeUndefined();
+    expect(parseSageCheckedClaims(renderCheckedClaimsMarker({ digest: "0".repeat(16) }))).toBeUndefined();
   });
 });
 
@@ -97,24 +99,24 @@ describe("prior findings carry the last checked claims", () => {
   }
 
   test("reports the digest the most recent checking review recorded", async () => {
-    const first = renderCheckedClaimsMarker(digestClaims("old claims"));
-    const second = renderCheckedClaimsMarker(digestClaims(LONG_BODY));
+    const first = renderCheckedClaimsMarker(checkedClaimsOf("old claims", "aaaaaaa"));
+    const second = renderCheckedClaimsMarker(checkedClaimsOf(LONG_BODY, "bbbbbbb"));
     const result = await collectFrom([{ body: sageBody(first) }, { body: sageBody(second) }]);
 
-    expect(result.latestCheckedClaimsDigest).toBe(digestClaims(LONG_BODY));
+    expect(result.latestCheckedClaims).toEqual(checkedClaimsOf(LONG_BODY, "bbbbbbb"));
     expect(result.reviewCount).toBe(2);
   });
 
   test("a later review whose oracle did not run does not erase an earlier check", async () => {
-    const checked = renderCheckedClaimsMarker(digestClaims(LONG_BODY));
+    const checked = renderCheckedClaimsMarker(checkedClaimsOf(LONG_BODY, "aaaaaaa"));
     const result = await collectFrom([{ body: sageBody(checked) }, { body: sageBody() }]);
 
-    expect(result.latestCheckedClaimsDigest).toBe(digestClaims(LONG_BODY));
+    expect(result.latestCheckedClaims?.digest).toBe(digestClaims(LONG_BODY));
   });
 
   test("no review ever checked claims reads as unknown, not unchanged", async () => {
     const result = await collectFrom([{ body: sageBody() }]);
-    expect(result.latestCheckedClaimsDigest).toBeUndefined();
+    expect(result.latestCheckedClaims).toBeUndefined();
   });
 });
 
@@ -167,12 +169,12 @@ describe("the verdict records only claims that were actually read", () => {
   test("records the digest when the oracle read the claims", async () => {
     const { verdict } = await reviewWith({ oracleErrors: false });
 
-    expect(verdict.checkedClaimsDigest).toBe(digestClaims(LONG_BODY));
+    expect(verdict.checkedClaims).toEqual(checkedClaimsOf(LONG_BODY, "head"));
   });
 
   test("records nothing when the oracle crashed — unread claims are not checked claims", async () => {
     const { verdict } = await reviewWith({ oracleErrors: true });
 
-    expect(verdict.checkedClaimsDigest).toBeUndefined();
+    expect(verdict.checkedClaims).toBeUndefined();
   });
 });

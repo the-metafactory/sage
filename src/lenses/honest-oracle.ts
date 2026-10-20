@@ -62,7 +62,16 @@ Rules of engagement:
   criticism to look thorough — a false finding is itself a failure, and an
   honest "the claims are supported" is the correct output for a clean PR.
 - Output the indictment, not the remedy: OMIT the suggestion field. You are the
-  adversary, not the fixer.`;
+  adversary, not the fixer.
+
+Later rounds: when stdin carries a "Claims since the last check" section, the
+claims outside it were already checked against code that has not changed since.
+They are settled; do not attack them again. Attack only:
+- a claim on a line the "Changes since" diff adds;
+- a description claim listed there as new or edited;
+- an earlier claim whose supporting code the "Changes since" diff changes —
+  anchor that finding on the changed line, not on the claim.
+A finding on a file line the "Changes since" diff does not add is dropped.`;
 
 export async function reviewHonestOracle(input: LensRunInput): Promise<LensReport> {
   const report = await runLens({ name: "HonestOracle", focus: FOCUS }, input);

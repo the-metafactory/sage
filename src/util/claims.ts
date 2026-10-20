@@ -25,11 +25,50 @@ import { createHash } from "node:crypto";
 
 /** Marker length. Collision risk over one PR's rounds is not a concern here. */
 const DIGEST_LENGTH = 16;
+/** Per-claim digest length: a description has tens of claims, not thousands. */
+const CLAIM_DIGEST_LENGTH = 8;
 
 const MARKER_PREFIX = "<!-- sage:checked-claims:";
 const MARKER_SUFFIX = " -->";
 
-const MARKER_RE = /<!-- sage:checked-claims:([0-9a-f]{16}) -->/;
+// Claims and commit are optional so a marker written before sage#139 still
+// parses: it then says WHAT was checked, but not which claims or where.
+const MARKER_RE =
+  /<!-- sage:checked-claims:([0-9a-f]{16})(?: claims:([0-9a-f,]*))?(?: commit:([0-9A-Za-z._-]{1,64}))? -->/g;
+
+/** What a prior Oracle run checked, read back off its Review comment. */
+export interface CheckedClaims {
+  /** {@link digestClaims} of the whole description. */
+  readonly digest: string;
+  /** {@link digestClaim} of each claim in it. Absent on a pre-sage#139 marker. */
+  readonly claims?: readonly string[];
+  /** The PR head the Oracle read. Absent on a pre-sage#139 marker. */
+  readonly commitId?: string;
+}
+
+/**
+ * The part of a PR the Oracle has not checked yet (sage#139).
+ *
+ * Present only when an earlier Oracle run recorded where it left off and the
+ * Forge could compare that commit to the head. The Oracle still reads the
+ * cumulative diff, as evidence, but only these claims are its target.
+ */
+export interface ClaimsScope {
+  /** The commit the previous Oracle run read. */
+  readonly sinceCommit: string;
+  /**
+   * Changes since then: new claims in docs and comments, and changed code an
+   * earlier claim may cite. The Oracle sees that code only on a round it runs;
+   * a code-only change does not make it run.
+   */
+  readonly diff: string;
+  /** Description claims new or edited since then, in description order. */
+  readonly descriptionClaims: readonly string[];
+}
+
+function normalize(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
 
 /**
  * Digest of the claims surface — today, the PR description.
@@ -38,23 +77,88 @@ const MARKER_RE = /<!-- sage:checked-claims:([0-9a-f]{16}) -->/;
  * Case is preserved: "MUST" and "must" are not the same claim.
  */
 export function digestClaims(prBody: string): string {
-  const normalized = prBody.replace(/\s+/g, " ").trim();
-  return createHash("sha256").update(normalized).digest("hex").slice(0, DIGEST_LENGTH);
+  return createHash("sha256").update(normalize(prBody)).digest("hex").slice(0, DIGEST_LENGTH);
+}
+
+const CLAIM_LINE_START_RE = /^\s*(?:[-*+]\s|\d+[.)]\s|\||#)/;
+
+/**
+ * The description split into claims: paragraphs, with each list item, table
+ * row and heading its own claim. Editing one bullet then re-checks that bullet,
+ * not the whole list. Whitespace-normalized like {@link digestClaims}.
+ */
+export function splitClaims(prBody: string): string[] {
+  const claims: string[] = [];
+  for (const block of prBody.split(/\n\s*\n/)) {
+    let current: string[] = [];
+    const flush = () => {
+      const claim = normalize(current.join(" "));
+      if (claim) claims.push(claim);
+      current = [];
+    };
+    for (const line of block.split("\n")) {
+      if (CLAIM_LINE_START_RE.test(line)) flush();
+      current.push(line);
+    }
+    flush();
+  }
+  return claims;
+}
+
+export function digestClaim(claim: string): string {
+  return createHash("sha256").update(normalize(claim)).digest("hex").slice(0, CLAIM_DIGEST_LENGTH);
+}
+
+/** What the Oracle checks this round, recorded for the next one. */
+export function checkedClaimsOf(prBody: string, commitId: string): CheckedClaims {
+  return {
+    digest: digestClaims(prBody),
+    claims: [...new Set(splitClaims(prBody).map(digestClaim))],
+    commitId,
+  };
+}
+
+/** Description claims whose digest no earlier Oracle run recorded. */
+export function uncheckedClaims(prBody: string, checked: readonly string[]): string[] {
+  const seen = new Set(checked);
+  return splitClaims(prBody).filter((claim) => !seen.has(digestClaim(claim)));
 }
 
 /**
  * The hidden marker appended to a rendered Review body, recording the claims
- * digest the Oracle actually checked this round.
+ * the Oracle actually checked this round, and at which commit.
  *
  * Written ONLY when the Oracle ran and produced a usable report. A digest
  * recorded for a round where the lens crashed would assert "these claims have
  * been checked" about claims nobody read.
  */
-export function renderCheckedClaimsMarker(digest: string): string {
-  return `${MARKER_PREFIX}${digest}${MARKER_SUFFIX}`;
+export function renderCheckedClaimsMarker(checked: CheckedClaims): string {
+  const claims = checked.claims ? ` claims:${checked.claims.join(",")}` : "";
+  const commit = checked.commitId ? ` commit:${checked.commitId}` : "";
+  return `${MARKER_PREFIX}${checked.digest}${claims}${commit}${MARKER_SUFFIX}`;
 }
 
-/** Read the marker back off a prior Sage review body. */
-export function parseCheckedClaimsMarker(body: string): string | undefined {
-  return MARKER_RE.exec(body)?.[1];
+/** The footer line Sage's renderer writes last, ahead of its hidden markers. */
+const FOOTER_RE = /\n---\n_Posted by Sage\b/g;
+
+/**
+ * Read the marker back off a prior Sage Review comment.
+ *
+ * Only a marker after the footer counts: Sage writes its own there, and a
+ * Finding that quotes PR text may echo a planted one above it. Since sage#139
+ * the marker decides which claims the Oracle may skip, so a planted marker
+ * would let a PR author mark claims checked — including on a round whose
+ * Oracle did not run and wrote no marker of its own.
+ */
+export function parseCheckedClaimsMarker(body: string): CheckedClaims | undefined {
+  const footer = [...body.matchAll(FOOTER_RE)].at(-1);
+  if (footer?.index === undefined) return undefined;
+  const match = [...body.slice(footer.index).matchAll(MARKER_RE)].at(-1);
+  if (!match) return undefined;
+  const [, digest, claims, commitId] = match;
+  return {
+    digest: digest!,
+    ...(claims !== undefined ? { claims: claims ? claims.split(",") : [] } : {}),
+    ...(commitId !== undefined ? { commitId } : {}),
+  };
 }

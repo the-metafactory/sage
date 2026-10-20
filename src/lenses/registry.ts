@@ -149,6 +149,8 @@ export const LENSES: readonly LensModule[] = [
   // Stays `cumulative`: the Oracle weighs the PR description's claims against
   // the artifact, and the artifact is the whole change, not the last round of
   // it. Its wording findings are no longer merge-blocking anyway (sage#107).
+  // The whole change is its evidence, not its target: after its first run it
+  // attacks only the claims it has not checked yet (`claimsScope`, sage#139).
   {
     name: "HonestOracle",
     review: reviewHonestOracle,
