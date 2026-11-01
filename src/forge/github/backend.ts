@@ -424,7 +424,8 @@ export async function runGh(
       }
       const exitCode = code ?? -1;
       if (exitCode !== 0 && !opts.allowNonZero) {
-        reject(new Error(`gh ${args.join(" ")} failed (exit ${exitCode}): ${stderr || stdout}`));
+        const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+        reject(new Error(`gh ${args.join(" ")} failed (exit ${exitCode}): ${detail}`));
         return;
       }
       resolve({ stdout, stderr, exitCode });

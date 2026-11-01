@@ -1,12 +1,30 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { PrRef } from "../forge/types.ts";
 import { safeRefSegment } from "../util/persistence.ts";
 import type { Verdict } from "./types.ts";
 
-const REVIEWS_DIR = join(homedir(), ".config", "sage", "reviews");
+function reviewsDir(): string {
+  const configured = process.env.SAGE_REVIEWS_DIR?.trim();
+  return configured ? resolve(configured) : join(homedir(), ".config", "sage", "reviews");
+}
+
+export function prepareVerdictDirectory(): string {
+  const dir = reviewsDir();
+  try {
+    mkdirSync(dir, { recursive: true });
+    const probe = join(dir, `.sage-write-probe-${randomUUID()}`);
+    writeFileSync(probe, "", { flag: "wx", mode: 0o600 });
+    unlinkSync(probe);
+    return dir;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot save Sage verdicts in ${dir}: ${detail}. Use --output-dir or SAGE_REVIEWS_DIR with a writable directory.`);
+  }
+}
 
 /**
  * Absolute path to the verdict-file for a PR ref, in either the
@@ -17,7 +35,7 @@ const REVIEWS_DIR = join(homedir(), ".config", "sage", "reviews");
  */
 export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
   const slug = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
-  return join(REVIEWS_DIR, `${slug}.${ext}`);
+  return join(reviewsDir(), `${slug}.${ext}`);
 }
 
 /**
@@ -36,7 +54,7 @@ export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
  */
 export function persistVerdict(ref: PrRef, verdict: Verdict, body: string): boolean {
   try {
-    mkdirSync(REVIEWS_DIR, { recursive: true });
+    mkdirSync(reviewsDir(), { recursive: true });
     const json = {
       ref,
       verdict,

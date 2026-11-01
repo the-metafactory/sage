@@ -479,7 +479,8 @@ export function findGlossaryViolations(
   for (const { path, lineNumber, text, inCodeFence, ignored } of parseAddedLines(diff)) {
     if (inCodeFence) continue;
     if (isTypeSafeBoundaryPath(path)) continue;
-    const haystack = isMarkdownPath(path) ? stripInlineCode(text) : text;
+    const prose = isMarkdownPath(path) ? text : /^\s*(?:\/\/|\/\*|\*\s|#|--\s)(.*)$/.exec(text)?.[1] ?? "";
+    const haystack = stripInlineCode(prose);
 
     // Group by alias (case-insensitive) so one hit under N terms is one finding.
     const hits = new Map<string, { alias: string; entries: GlossaryEntry[] }>();

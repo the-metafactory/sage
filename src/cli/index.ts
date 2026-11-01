@@ -23,6 +23,7 @@ import {
   type TypeSafeShadowObserver,
 } from "../typesafe/index.ts";
 import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
+import { prepareVerdictDirectory } from "../verdict/persist.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -102,6 +103,7 @@ program
   )
   .argument("<pr-ref>", "PR/MR URL or OWNER/REPO#N (GitHub) or GROUP/PROJ!N (GitLab)")
   .option("--post", "Post the review back to the PR/MR via the forge CLI", false)
+  .option("--output-dir <path>", "Directory for recoverable verdict files (env SAGE_REVIEWS_DIR)")
   .option(
     "--emit-verdict-block",
     "Append the cortex structured verdict block (fenced ```json) as the terminal stdout artefact. cortex's pi-dev substrate parses it to recover the decision + findings counts.",
@@ -143,6 +145,7 @@ program
   .action(
     async (prRef: string, opts: {
       post: boolean;
+      outputDir?: string;
       emitVerdictBlock: boolean;
       timeout: number;
       substrate?: string;
@@ -152,6 +155,8 @@ program
       typesafeMode: string;
       typesafeCorpus: string;
     }) => {
+      if (opts.outputDir !== undefined) process.env.SAGE_REVIEWS_DIR = opts.outputDir;
+      const outputDir = prepareVerdictDirectory();
       const forgeSelection = selectForge({
         ...(opts.forge !== undefined ? { flag: opts.forge } : {}),
         fromRef: prRef,
@@ -177,6 +182,7 @@ program
       console.error(
         `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
+      console.error(`[sage] verdict directory: ${outputDir}`);
       const review = await reviewPr({
         ref,
         forge: forgeSelection.backend,
@@ -194,6 +200,7 @@ program
         : body;
       console.log(out);
       console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
+      if (review.recoveryPath) console.error(`[sage] saved review: ${review.recoveryPath}`);
       await review.observerCompletion;
       if (review.verdict.decision === "incomplete") process.exit(2);
       if (review.verdict.decision === "changes-requested") {

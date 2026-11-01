@@ -1,19 +1,23 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGh, postReviewWithFallback } from "../src/forge/github/backend.ts";
 import { reviewPr } from "../src/lenses/workflow.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
+import { ClaudeSubstrate } from "../src/substrate/claude.ts";
 import { isTransientNetworkError, retryTransient } from "../src/util/retry.ts";
 import { findGlossaryViolations, parseGlossary } from "../src/lenses/glossary.ts";
 import { makeStubForge } from "./forge-stub.ts";
 
 const dirs: string[] = [];
 const originalGh = process.env.GH_BIN;
+const originalClaude = process.env.CLAUDE_BIN;
 afterEach(() => {
   if (originalGh === undefined) delete process.env.GH_BIN;
   else process.env.GH_BIN = originalGh;
+  if (originalClaude === undefined) delete process.env.CLAUDE_BIN;
+  else process.env.CLAUDE_BIN = originalClaude;
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 function directory(): string {
@@ -29,6 +33,42 @@ function failingGh(): void {
 }
 
 describe("review delivery regressions", () => {
+  test("CLI rejects an unwritable output destination before authentication or model work", () => {
+    const dir = directory();
+    const output = join(dir, "not-a-directory");
+    writeFileSync(output, "keep");
+    const child = Bun.spawnSync([process.execPath, "src/cli/index.ts", "review", "example/fixture#7", "--output-dir", output], {
+      cwd: join(import.meta.dir, ".."),
+      env: { HOME: dir, PATH: process.env.PATH ?? "", GH_BIN: join(dir, "no-gh") },
+    });
+    expect(child.exitCode).toBe(1);
+    expect(child.stderr.toString()).toContain("--output-dir");
+    expect(readFileSync(output, "utf8")).toBe("keep");
+    expect(existsSync(join(dir, ".config/sage/reviews"))).toBe(false);
+  });
+
+  test("Claude reports an unavailable executable before a review starts", async () => {
+    process.env.CLAUDE_BIN = join(directory(), "missing-claude");
+    await expect(new ClaudeSubstrate().preflight()).rejects.toThrow("Set CLAUDE_BIN");
+  });
+
+  test("Claude checks executable access without a model call and pins its resolved binary", async () => {
+    const dir = directory();
+    const bin = join(dir, "claude");
+    const calls = join(dir, "calls");
+    writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${calls}'\nif [ "$1" = '--version' ]; then printf 'fixture version\\n'; else printf 'fixture response\\n'; fi\n`);
+    chmodSync(bin, 0o755);
+    process.env.CLAUDE_BIN = bin;
+    const substrate = new ClaudeSubstrate();
+    await substrate.preflight();
+    process.env.CLAUDE_BIN = join(dir, "now-missing");
+    const result = await substrate.run({ prompt: "fixture", timeoutMs: 2_000 });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("fixture response");
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["--version", "-p"]);
+    await expect(substrate.preflight()).rejects.toThrow("Set CLAUDE_BIN");
+  });
+
   test("retains GitHub validation JSON alongside generic stderr", async () => {
     failingGh();
     await expect(runGh(["api", "fixture"])).rejects.toThrow("Cannot request changes on your own pull request");
