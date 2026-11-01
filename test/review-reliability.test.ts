@@ -1,0 +1,118 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { runGh, postReviewWithFallback } from "../src/forge/github/backend.ts";
+import { reviewPr } from "../src/lenses/workflow.ts";
+import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
+import { isTransientNetworkError, retryTransient } from "../src/util/retry.ts";
+import { findGlossaryViolations, parseGlossary } from "../src/lenses/glossary.ts";
+import { makeStubForge } from "./forge-stub.ts";
+
+const dirs: string[] = [];
+const originalGh = process.env.GH_BIN;
+afterEach(() => {
+  if (originalGh === undefined) delete process.env.GH_BIN;
+  else process.env.GH_BIN = originalGh;
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function directory(): string {
+  const dir = mkdtempSync(join(tmpdir(), "sage-reliability-"));
+  dirs.push(dir);
+  return dir;
+}
+function failingGh(): void {
+  const path = join(directory(), "gh");
+  writeFileSync(path, `#!/bin/sh\nprintf '%s\\n' '{"message":"Validation Failed","errors":["Cannot request changes on your own pull request"]}'\nprintf '%s\\n' 'gh: Unprocessable Entity (HTTP 422)' >&2\nexit 1\n`);
+  chmodSync(path, 0o755);
+  process.env.GH_BIN = path;
+}
+
+describe("review delivery regressions", () => {
+  test("retains GitHub validation JSON alongside generic stderr", async () => {
+    failingGh();
+    await expect(runGh(["api", "fixture"])).rejects.toThrow("Cannot request changes on your own pull request");
+  });
+
+  test("self-review fallback can see an error returned on stdout", async () => {
+    failingGh();
+    const calls: string[] = [];
+    const result = await postReviewWithFallback("request-changes", async event => {
+      calls.push(event);
+      if (event !== "comment") await runGh(["api", "fixture"]);
+    }, () => {});
+    expect(calls).toEqual(["request-changes", "comment"]);
+    expect(result).toEqual({ posted: "comment", downgraded: true });
+  });
+
+  test("stops secondary rate limiting instead of rapidly repeating a write", async () => {
+    let calls = 0;
+    await expect(retryTransient(async () => {
+      calls++;
+      throw new Error("HTTP 403: You have exceeded a secondary rate limit. Please retry later.");
+    }, { baseDelayMs: 1, maxDelayMs: 1 })).rejects.toThrow("secondary rate limit");
+    expect(calls).toBe(1);
+  });
+
+  test("a 429 is a cooldown rather than an immediate network retry", () => {
+    expect(isTransientNetworkError(new Error("HTTP 429 Too Many Requests"))).toBe(false);
+  });
+
+  test("persists a recoverable verdict in an explicitly writable directory", () => {
+    const dir = directory();
+    const output = join(dir, "output");
+    const source = `import {verdictFilePath,persistVerdict} from './src/verdict/persist.ts';
+      import {decideVerdict} from './src/verdict/decide.ts';
+      const ref={owner:'example',repo:'fixture',number:7};
+      process.stdout.write(JSON.stringify({path:verdictFilePath(ref,'md'),saved:persistVerdict(ref,decideVerdict([]),'completed review')}));`;
+    const child = Bun.spawnSync([process.execPath, "-e", source], {
+      cwd: join(import.meta.dir, ".."),
+      env: { HOME: dir, PATH: process.env.PATH ?? "", SAGE_REVIEWS_DIR: output },
+    });
+    expect(child.exitCode).toBe(0);
+    const result = JSON.parse(child.stdout.toString());
+    expect(result.path).toBe(join(output, "example-fixture-7.md"));
+    expect(result.saved).toBe(true);
+    expect(readFileSync(result.path, "utf8")).toBe("completed review");
+  });
+
+  test("failed substrate preflight runs once and prevents forge reads and model fanout", async () => {
+    let checked = 0;
+    let runs = 0;
+    let reads = 0;
+    const forge = makeStubForge({ pr: {}, diff: "" });
+    forge.prView = async () => { reads++; throw new Error("must not read PR"); };
+    const substrate = {
+      name: "claude" as const, displayName: "Claude Code", bin: "missing-claude",
+      envRequirements: { namespaces: [], keys: [] }, jsonExtractors: TEXT_EXTRACTORS,
+      preflight: async () => { checked++; throw new Error("Claude executable unavailable; set CLAUDE_BIN"); },
+      run: async () => { runs++; return { stdout: "", stderr: "", exitCode: 1, durationMs: 0 }; },
+    };
+    await expect(reviewPr({ ref: { owner: "x", repo: "y", number: 1 }, forge, substrate, post: false })).rejects.toThrow("CLAUDE_BIN");
+    expect(checked).toBe(1);
+    expect(reads).toBe(0);
+    expect(runs).toBe(0);
+  });
+});
+
+const glossary = parseGlossary("## Terms\n\n**Cortex runtime**: runtime.\n_Avoid_: node, host\n\n**Session**: execution.\n_Avoid_: run\n");
+function diff(path: string, lines: string[]): string {
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -0,0 +1,${lines.length} @@\n${lines.map(line => "+" + line).join("\n")}\n`;
+}
+describe("glossary syntax regressions", () => {
+  test("does not rewrite Node imports or source identifiers as domain prose", () => {
+    expect(findGlossaryViolations(glossary, diff("src/research.ts", [
+      'import { join } from "node:path";', 'const host = "simulated-owner";',
+    ]))).toEqual([]);
+  });
+  test("does not rewrite executable YAML keys or generated lock/JSON records", () => {
+    for (const path of [".github/workflows/check.yml", "bun.lock", "results.jsonl"]) {
+      expect(findGlossaryViolations(glossary, diff(path, ['run: bun test', '{"node":"fixture"}']))).toEqual([]);
+    }
+  });
+  test("still reports prose in Markdown and source comments", () => {
+    for (const [path, text] of [["README.md", "The host starts a run."], ["src/worker.ts", "// The host starts a run."]]) {
+      expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toHaveLength(2);
+    }
+  });
+});
