@@ -2,6 +2,7 @@ import { CLAUDE_EXTRACTORS } from "./json/extractors.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import { buildSubstrateEnv } from "./env.ts";
 import { ReviewSetupError } from "../util/review-setup.ts";
+import { join } from "node:path";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -78,7 +79,11 @@ export class ClaudeSubstrate implements Substrate {
     this.resolvedBin = undefined;
     const env = buildSubstrateEnv(this);
     const requested = this.requestedBin;
-    const bin = Bun.which(requested, { PATH: env.PATH ?? "" });
+    const fromPath = Bun.which(requested, { PATH: env.PATH ?? "" });
+    const userInstall = process.env.CLAUDE_BIN === undefined && this.cfg.bin === undefined && env.HOME
+      ? join(env.HOME, ".local", "bin", "claude")
+      : undefined;
+    const bin = fromPath ?? (userInstall ? Bun.which(userInstall) : null);
     if (!bin) throw new ReviewSetupError(`Claude executable unavailable: ${requested}. Set CLAUDE_BIN to an executable absolute path.`);
     try {
       const result = await spawnSubstrateFor({
@@ -91,6 +96,7 @@ export class ClaudeSubstrate implements Substrate {
       throw new ReviewSetupError(`Claude preflight failed for ${bin}: ${detail}. Check executable access and CLAUDE_BIN.`);
     }
     this.resolvedBin = bin;
+    console.error(`[sage] Claude executable: ${bin}`);
   }
 
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {

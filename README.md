@@ -286,8 +286,10 @@ MIT.
 ### Incomplete reviews and repository glossary exemptions
 
 Claude reviews check executable availability with `claude --version` before
-fetching the PR or starting lenses. Set `CLAUDE_BIN` to an absolute executable
-path when the process cannot resolve Claude through `PATH`.
+fetching the PR or starting lenses. Default discovery checks `PATH`, then
+`$HOME/.local/bin/claude`, and prints the resolved executable. Explicit
+`CLAUDE_BIN` or configured binary paths never fall back to another location.
+Set `CLAUDE_BIN` to use a different installation.
 
 For a sandboxed review, choose a writable directory for the completed verdict:
 

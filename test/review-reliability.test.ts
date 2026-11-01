@@ -33,6 +33,40 @@ function failingGh(): void {
 }
 
 describe("review delivery regressions", () => {
+  test("default Claude discovery finds the user-local install absent from a login PATH", () => {
+    const dir = directory();
+    const bin = join(dir, ".local/bin/claude");
+    const calls = join(dir, "calls");
+    mkdirSync(join(dir, ".local/bin"), { recursive: true });
+    writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$1" >> '${calls}'\nprintf 'fixture version\\n'\n`);
+    chmodSync(bin, 0o755);
+    const source = `import {ClaudeSubstrate} from './src/substrate/claude.ts'; const c=new ClaudeSubstrate(); await c.preflight(); process.stdout.write(c.bin);`;
+    const child = Bun.spawnSync([process.execPath, "-e", source], {
+      cwd: join(import.meta.dir, ".."), env: { HOME: dir, PATH: "/usr/bin:/bin" },
+    });
+    expect(child.exitCode).toBe(0);
+    expect(child.stdout.toString()).toBe(bin);
+    expect(readFileSync(calls, "utf8").trim()).toBe("--version");
+    const preferred = join(dir, "preferred/claude");
+    mkdirSync(join(dir, "preferred"));
+    writeFileSync(preferred, "#!/bin/sh\nprintf 'preferred fixture version\\n'\n");
+    chmodSync(preferred, 0o755);
+    const fromPath = Bun.spawnSync([process.execPath, "-e", source], {
+      cwd: join(import.meta.dir, ".."), env: { HOME: dir, PATH: join(dir, "preferred") + ":/usr/bin:/bin" },
+    });
+    expect(fromPath.exitCode).toBe(0);
+    expect(fromPath.stdout.toString()).toBe(preferred);
+    const explicit = Bun.spawnSync([process.execPath, "-e", source], {
+      cwd: join(import.meta.dir, ".."), env: { HOME: dir, PATH: "/usr/bin:/bin", CLAUDE_BIN: "explicit-missing-claude" },
+    });
+    expect(explicit.exitCode).not.toBe(0);
+    expect(explicit.stderr.toString()).toContain("explicit-missing-claude");
+    const denied = Bun.spawnSync([process.execPath, "-e", source], {
+      cwd: join(import.meta.dir, ".."), env: { HOME: dir, PATH: "/usr/bin:/bin", SAGE_ENV_DENY: "HOME" },
+    });
+    expect(denied.exitCode).not.toBe(0);
+  });
+
   test("CLI rejects an unwritable output destination before authentication or model work", () => {
     const dir = directory();
     const output = join(dir, "not-a-directory");
