@@ -319,7 +319,8 @@ Exit **1** means completed review with changes requested; exit **0** means
 approved/commented. Retry incomplete attempts; they do not advance Sage's
 prior-review baseline. Structured verdict blocks also carry `incomplete`;
 consumers must treat it as a retry, never approval.
-Setup failures also exit **2**, before any verdict is produced.
+Claude preflight failures and invalid or unwritable explicit output directories
+also exit **2**, before any verdict is produced.
 
 Commit `.sage.yaml` on the target repository's base branch to exempt intentional
 aliases from both the deterministic glossary check and model glossary context:
