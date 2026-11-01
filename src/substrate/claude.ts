@@ -1,5 +1,8 @@
 import { CLAUDE_EXTRACTORS } from "./json/extractors.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
+import { buildSubstrateEnv } from "./env.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
+import { join } from "node:path";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -58,12 +61,42 @@ export class ClaudeSubstrate implements Substrate {
 
   constructor(private readonly cfg: ClaudeSubstrateConfig = {}) {}
 
+  private resolvedBin: string | undefined;
+
   // Resolution chain: opts > env > config > default. Mirrors
   // selectSubstrate()'s order so an operator setting CLAUDE_MODEL in the
   // shell consistently wins over sage.config.json without surprising
   // anyone.
   get bin(): string {
+    return this.resolvedBin ?? this.requestedBin;
+  }
+
+  private get requestedBin(): string {
     return process.env.CLAUDE_BIN ?? this.cfg.bin ?? "claude";
+  }
+
+  async preflight(): Promise<void> {
+    this.resolvedBin = undefined;
+    const env = buildSubstrateEnv(this);
+    const requested = this.requestedBin;
+    const fromPath = Bun.which(requested, { PATH: env.PATH ?? "" });
+    const userInstall = process.env.CLAUDE_BIN === undefined && this.cfg.bin === undefined && env.HOME
+      ? join(env.HOME, ".local", "bin", "claude")
+      : undefined;
+    const bin = fromPath ?? (userInstall ? Bun.which(userInstall) : null);
+    if (!bin) throw new ReviewSetupError(`Claude executable unavailable: ${requested}. Set CLAUDE_BIN to an executable absolute path.`);
+    try {
+      const result = await spawnSubstrateFor({
+        substrate: this, bin, args: ["--version"],
+        opts: { prompt: "", timeoutMs: 5_000 },
+      });
+      if (result.exitCode !== 0) throw new Error(result.stderr || `exit ${result.exitCode}`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new ReviewSetupError(`Claude preflight failed for ${bin}: ${detail}. Check executable access and CLAUDE_BIN.`);
+    }
+    this.resolvedBin = bin;
+    console.error(`[sage] Claude executable: ${bin}`);
   }
 
   async run(opts: SubstrateRunOptions): Promise<SubstrateRunResult> {

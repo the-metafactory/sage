@@ -168,6 +168,8 @@ export interface Substrate {
    */
   readonly envRequirements: EnvRequirements;
 
+  preflight?(): Promise<void>;
+
   /**
    * Run the coding task. Implementations spawn the substrate binary as a
    * subprocess, forward an allow-listed env, wait for completion or

@@ -232,6 +232,7 @@ interface DiffHunk {
 }
 
 const MARKDOWN_PATH_RE = /\.(?:md|mdx|markdown)$/i;
+const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*\s|#(?:\s|$)|--\s)(.*)$/;
 // CommonMark fence: up to 3 spaces of indent, then 3+ backticks or tildes.
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 // The marker only counts after a `//`, `#`, `/*`, `<!--` or `--`
@@ -246,6 +247,10 @@ const IGNORE_MARKER_RE =
 
 function isMarkdownPath(path: string): boolean {
   return MARKDOWN_PATH_RE.test(path);
+}
+
+function proseOf(path: string, text: string): string {
+  return isMarkdownPath(path) ? text : COMMENT_LINE.exec(text)?.[1] ?? "";
 }
 
 function parseIgnoreMarker(text: string): string[] {
@@ -479,7 +484,7 @@ export function findGlossaryViolations(
   for (const { path, lineNumber, text, inCodeFence, ignored } of parseAddedLines(diff)) {
     if (inCodeFence) continue;
     if (isTypeSafeBoundaryPath(path)) continue;
-    const haystack = isMarkdownPath(path) ? stripInlineCode(text) : text;
+    const haystack = stripInlineCode(proseOf(path, text));
 
     // Group by alias (case-insensitive) so one hit under N terms is one finding.
     const hits = new Map<string, { alias: string; entries: GlossaryEntry[] }>();

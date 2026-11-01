@@ -23,6 +23,8 @@ import {
   type TypeSafeShadowObserver,
 } from "../typesafe/index.ts";
 import { renderVerdict, renderVerdictBlock } from "../verdict/index.ts";
+import { prepareVerdictDirectory } from "../verdict/persist.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
 import { dispatchReview } from "./dispatch.ts";
 
 /**
@@ -102,6 +104,7 @@ program
   )
   .argument("<pr-ref>", "PR/MR URL or OWNER/REPO#N (GitHub) or GROUP/PROJ!N (GitLab)")
   .option("--post", "Post the review back to the PR/MR via the forge CLI", false)
+  .option("--output-dir <path>", "Directory for recoverable verdict files (env SAGE_REVIEWS_DIR)")
   .option(
     "--emit-verdict-block",
     "Append the cortex structured verdict block (fenced ```json) as the terminal stdout artefact. cortex's pi-dev substrate parses it to recover the decision + findings counts.",
@@ -143,6 +146,7 @@ program
   .action(
     async (prRef: string, opts: {
       post: boolean;
+      outputDir?: string;
       emitVerdictBlock: boolean;
       timeout: number;
       substrate?: string;
@@ -152,6 +156,16 @@ program
       typesafeMode: string;
       typesafeCorpus: string;
     }) => {
+      const configuredOutput = opts.outputDir ?? process.env.SAGE_REVIEWS_DIR;
+      if (configuredOutput !== undefined && !configuredOutput.trim()) throw new ReviewSetupError("--output-dir or SAGE_REVIEWS_DIR must name a writable directory.");
+      let outputDir: string | undefined;
+      try {
+        outputDir = prepareVerdictDirectory(configuredOutput);
+      } catch (error) {
+        if (configuredOutput !== undefined) throw error;
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(`[sage] continuing without guaranteed recovery files: ${detail}`);
+      }
       const forgeSelection = selectForge({
         ...(opts.forge !== undefined ? { flag: opts.forge } : {}),
         fromRef: prRef,
@@ -177,12 +191,14 @@ program
       console.error(
         `[sage] reviewing ${refLabel} via ${forgeSelection.kind} (${forgeSelection.source}) on ${selection.substrate.displayName} (${selection.source}, timeout=${opts.timeout}s, lensConcurrency=${lensConcurrency ?? "unbounded"})`,
       );
+      if (outputDir) console.error(`[sage] verdict directory: ${outputDir}`);
       const review = await reviewPr({
         ref,
         forge: forgeSelection.backend,
         post: opts.post,
         substrate: selection.substrate,
         timeoutMs: opts.timeout * 1000,
+        ...(outputDir ? { outputDir } : {}),
         ...(lensConcurrency !== undefined ? { lensConcurrency } : {}),
         ...(typeSafeShadow ? { completedReviewObserver: typeSafeShadow } : {}),
       });
@@ -194,6 +210,7 @@ program
         : body;
       console.log(out);
       console.error(`[sage] verdict: ${review.verdict.decision} (posted=${review.posted})`);
+      if (review.recoveryPath) console.error(`[sage] saved review: ${review.recoveryPath}`);
       await review.observerCompletion;
       if (review.verdict.decision === "incomplete") process.exit(2);
       if (review.verdict.decision === "changes-requested") {
@@ -409,5 +426,5 @@ program
 program.parseAsync(process.argv).catch((err: unknown) => {
   const m = err instanceof Error ? err.stack ?? err.message : String(err);
   console.error(`[sage] error: ${m}`);
-  process.exit(1);
+  process.exit(err instanceof ReviewSetupError ? 2 : 1);
 });

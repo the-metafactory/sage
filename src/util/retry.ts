@@ -6,10 +6,9 @@
  * - "could not resolve host"              (DNS)
  * - "Connection reset by peer"
  * - "Bad Gateway" / "Gateway Timeout"     (GH-side transient)
- * - "rate limit"                          (gh CLI prints this distinctly)
  *
  * NOT retried: auth failures (operator must intervene), validation errors
- * (review-body too long, invalid event), or any 4xx other than 429.
+ * (review-body too long, invalid event), or rate limits requiring a cooldown.
  */
 
 const TRANSIENT_PATTERNS: readonly RegExp[] = [
@@ -23,12 +22,11 @@ const TRANSIENT_PATTERNS: readonly RegExp[] = [
   /\b502\b|\b503\b|\b504\b/,
   /bad gateway|gateway time-?out|service unavailable/i,
   /eai_(?:again|nodata)/i,
-  /rate limit/i,
-  /\bhttp 429\b/i,
 ];
 
 export function isTransientNetworkError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
+  if (/rate limit|\bhttp 429\b/i.test(msg)) return false;
   return TRANSIENT_PATTERNS.some((re) => re.test(msg));
 }
 

@@ -285,12 +285,44 @@ MIT.
 
 ### Incomplete reviews and repository glossary exemptions
 
+Claude reviews check executable availability with `claude --version` before
+fetching the PR or starting lenses. Default discovery checks `PATH`, then
+`$HOME/.local/bin/claude`, and prints the resolved executable. Explicit
+`CLAUDE_BIN` or configured binary paths never fall back to another location.
+Set `CLAUDE_BIN` to use a different installation.
+
+For a sandboxed review, choose a writable directory for the completed verdict:
+
+```sh
+sage review OWNER/REPO#N --substrate claude --post --output-dir ./review-output
+```
+
+`SAGE_REVIEWS_DIR` supplies the same setting. The default remains
+`~/.config/sage/reviews`. An explicitly configured directory must pass a write
+check before authentication or model work. The default remains best-effort:
+if access fails, the CLI warns and continues. JSON and Markdown are saved
+before posting when storage is available. Later write failures remain possible.
+
+GitHub validation errors retain both stderr and the JSON response on stdout.
+Rate-limit responses stop automatic forge-request retries. After the cooldown, you
+can post the saved Markdown without running the models again:
+
+```sh
+gh pr review N --repo OWNER/REPO --comment --body-file ./review-output/OWNER-REPO-N.md
+```
+
+The saved Markdown includes the findings. Recovery posts a comment without
+inline anchors, approval or a changes-requested event.
+Check the saved review's commit marker against the PR head before posting it.
+
 If any selected lens fails (including malformed model output), Sage returns
 `incomplete`, posts only a comment naming failed lenses, and exits **2**.
 Exit **1** means completed review with changes requested; exit **0** means
 approved/commented. Retry incomplete attempts; they do not advance Sage's
 prior-review baseline. Structured verdict blocks also carry `incomplete`;
 consumers must treat it as a retry, never approval.
+Claude preflight failures and invalid or unwritable explicit output directories
+also exit **2**, before any verdict is produced.
 
 Commit `.sage.yaml` on the target repository's base branch to exempt intentional
 aliases from both the deterministic glossary check and model glossary context:
@@ -303,3 +335,9 @@ glossary:
 Matching is exact and case-insensitive. Invalid configuration fails the review
 rather than silently suppressing findings. Inline `glossary-ignore` markers
 remain available for local exemptions.
+
+The deterministic glossary scan checks Markdown prose and standalone source
+comment lines. It skips executable statements, identifiers, configuration keys
+and generated data. Model lenses still read the source and glossary context;
+they assess terminology where an exact-word scan cannot establish its meaning.
+Markdown code spans and fenced examples remain excluded from prose matching.

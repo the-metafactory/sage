@@ -1,12 +1,31 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { PrRef } from "../forge/types.ts";
 import { safeRefSegment } from "../util/persistence.ts";
 import type { Verdict } from "./types.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
 
-const REVIEWS_DIR = join(homedir(), ".config", "sage", "reviews");
+function reviewsDir(override?: string): string {
+  const configured = (override ?? process.env.SAGE_REVIEWS_DIR)?.trim();
+  return configured ? resolve(configured) : join(homedir(), ".config", "sage", "reviews");
+}
+
+export function prepareVerdictDirectory(outputDir?: string): string {
+  const dir = reviewsDir(outputDir);
+  try {
+    mkdirSync(dir, { recursive: true });
+    const probe = join(dir, `.sage-write-probe-${randomUUID()}`);
+    writeFileSync(probe, "", { flag: "wx", mode: 0o600 });
+    unlinkSync(probe);
+    return dir;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new ReviewSetupError(`Cannot save Sage verdicts in ${dir}: ${detail}. Use --output-dir or SAGE_REVIEWS_DIR with a writable directory.`);
+  }
+}
 
 /**
  * Absolute path to the verdict-file for a PR ref, in either the
@@ -15,9 +34,9 @@ const REVIEWS_DIR = join(homedir(), ".config", "sage", "reviews");
  * dispatcher's recovery hint) so the directory / separator / extension
  * cannot drift between them (sage#16 round-3 review).
  */
-export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
+export function verdictFilePath(ref: PrRef, ext: "json" | "md", outputDir?: string): string {
   const slug = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
-  return join(REVIEWS_DIR, `${slug}.${ext}`);
+  return join(reviewsDir(outputDir), `${slug}.${ext}`);
 }
 
 /**
@@ -34,17 +53,17 @@ export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
  * verdict-domain logic — a Verdict knows how to save itself for
  * recovery. (Reverses the pre-#70 placement under `util/`; see #70.)
  */
-export function persistVerdict(ref: PrRef, verdict: Verdict, body: string): boolean {
+export function persistVerdict(ref: PrRef, verdict: Verdict, body: string, outputDir?: string): boolean {
   try {
-    mkdirSync(REVIEWS_DIR, { recursive: true });
+    mkdirSync(reviewsDir(outputDir), { recursive: true });
     const json = {
       ref,
       verdict,
       body,
       savedAt: new Date().toISOString(),
     };
-    writeFileSync(verdictFilePath(ref, "json"), JSON.stringify(json, null, 2));
-    writeFileSync(verdictFilePath(ref, "md"), body);
+    writeFileSync(verdictFilePath(ref, "json", outputDir), JSON.stringify(json, null, 2));
+    writeFileSync(verdictFilePath(ref, "md", outputDir), body);
     return true;
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);

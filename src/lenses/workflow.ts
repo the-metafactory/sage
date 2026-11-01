@@ -43,6 +43,7 @@ import {
   runLenses,
 } from "./scheduler.ts";
 import type { ApplicabilityContext } from "./applicability.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
 import type { LensReport } from "./types.ts";
 import type {
   CompletedReviewAnchor,
@@ -69,6 +70,7 @@ export interface ReviewOptions {
   substrate: Substrate;
   /** Post the review back to the forge. Default: false (dry-run). */
   post?: boolean;
+  outputDir?: string;
   /** Per-lens substrate timeout. Falls back to substrate-specific default. */
   timeoutMs?: number;
   /**
@@ -148,6 +150,11 @@ function sanitizeErrorMessage(raw: string): string {
 }
 
 export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
+  try {
+    await opts.substrate.preflight?.();
+  } catch (error) {
+    throw new ReviewSetupError(error);
+  }
   const priorFindingsModule: PriorFindings =
     opts.priorFindings ?? createPriorFindings(opts.forge.reviewSource());
 
@@ -336,8 +343,8 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
 
   // Persist BEFORE post: a failed post leaves the verdict on disk
   // for manual re-post via `gh pr review --body-file` (sage#16).
-  const persisted = persistVerdict(opts.ref, verdict, body);
-  const recoveryPath = persisted ? verdictFilePath(opts.ref, "md") : undefined;
+  const persisted = persistVerdict(opts.ref, verdict, body, opts.outputDir);
+  const recoveryPath = persisted ? verdictFilePath(opts.ref, "md", opts.outputDir) : undefined;
 
   // compass#99 F15: line-anchored findings (real diff line, non-errored
   // lens) become inline PR comments alongside the top-level review body.

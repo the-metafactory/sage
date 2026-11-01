@@ -16,8 +16,8 @@ describe("isTransientNetworkError", () => {
     expect(isTransientNetworkError(new Error("HTTP 503 Service Unavailable"))).toBe(true);
   });
 
-  test("detects rate limit", () => {
-    expect(isTransientNetworkError(new Error("API rate limit exceeded"))).toBe(true);
+  test("does not rapidly retry a rate limit", () => {
+    expect(isTransientNetworkError(new Error("API rate limit exceeded"))).toBe(false);
   });
 
   test("does NOT match 401 auth failure", () => {

@@ -172,7 +172,7 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
 +++ b/src/bus.ts
 @@ -10,2 +10,3 @@
  const x = 1;
-+const sender = resolveOriginator();
++// sender is the caller.
  const y = 2;
 `;
     const findings = findGlossaryViolations(entries, diff);
@@ -228,10 +228,10 @@ describe("findGlossaryViolations — deterministic, added-lines only", () => {
 +++ b/a.ts
 @@ -1,1 +1,1 @@
 -const old = 1;
-+const bot = 1;
++// bot is the helper.
 @@ -20,1 +20,2 @@
  const kept = 1;
-+const gateway = 2;
++// gateway routes work.
 `;
     const findings = findGlossaryViolations(entries, diff);
     const byLine = Object.fromEntries(findings.map((f) => [f.line, f.title]));
@@ -333,7 +333,7 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("``` inside a non-Markdown file is not treated as a fence", () => {
-    const diff = hunkDiff("src/a.ts", 1, ["+// ```", "+const sender = 1;", "+// ```"]);
+    const diff = hunkDiff("src/a.ts", 1, ["+// ```", "+// sender is the caller.", "+// ```"]);
     expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([2]);
   });
 
@@ -362,14 +362,14 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("single-term title is unchanged from the pre-#128 format", () => {
-    const diff = hunkDiff("src/bus.ts", 1, ["+const sender = 1;"]);
+    const diff = hunkDiff("src/bus.ts", 1, ["+// sender is the caller."]);
     expect(findGlossaryViolations(fixture, diff)[0]?.title).toBe('Avoid alias "sender" — use "Originator"');
   });
 
   test("rationale names the exemption marker for the file type", () => {
     const md = findGlossaryViolations(seelite, hunkDiff("docs/a.md", 1, ["+Each Spawn waits."]));
     expect(md[0]?.rationale).toContain("<!-- glossary-ignore: Spawn -->");
-    const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+const sender = 1;"]));
+    const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+// sender is the caller."]));
     expect(ts[0]?.rationale).toContain("`// glossary-ignore: sender` (or `# …`) on this line");
   });
 
@@ -387,33 +387,33 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("glossary-ignore takes a comma list and is case-insensitive", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} SENDER, Bot`, "+const sender = bot;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} SENDER, Bot`, "+// sender uses bot."]);
     expect(findGlossaryViolations(fixture, diff)).toEqual([]);
   });
 
   test("glossary-ignore for one alias does not exempt another", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} sender`, "+const sender = bot;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} sender`, "+// sender uses bot."]);
     const findings = findGlossaryViolations(fixture, diff);
     expect(findings.map((f) => f.title)).toEqual(['Avoid alias "bot" — use "Assistant" or "Agent"']);
   });
 
   test("glossary-ignore on a removed line does not count", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`-// ${IGNORE} sender`, "+const sender = 1;"]);
+    const diff = hunkDiff("src/a.ts", 1, [`-// ${IGNORE} sender`, "+// sender is the caller."]);
     expect(findGlossaryViolations(fixture, diff)).toHaveLength(1);
   });
 
-  test("glossary-ignore inside a string literal does not exempt anything", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+const sender = 1;"]);
+  test("glossary-ignore inside a string literal does not exempt prose comments", () => {
+    const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+// sender is the caller."]);
     const findings = findGlossaryViolations(fixture, diff);
-    // Both lines hit; one finding per (file, alias), anchored at the first.
-    expect(findings.map((f) => f.line)).toEqual([1]);
-    expect(findings[0]?.rationale).toContain("Also on line 2.");
+    // Only prose is scanned; a quoted marker cannot exempt the comment.
+    expect(findings.map((f) => f.line)).toEqual([2]);
+    expect(findings[0]?.rationale).not.toContain("Also on");
   });
 
   test("one finding per (file, alias): repeats in a file collapse, other files keep their own", () => {
     const diff =
-      hunkDiff("src/a.ts", 1, ["+const sender = 1;", "+const x = 2;", "+const sender2 = sender;"]) +
-      hunkDiff("src/b.ts", 1, ["+const sender = 3;"]);
+      hunkDiff("src/a.ts", 1, ["+// sender is the caller.", "+const x = 2;", "+// sender waits."]) +
+      hunkDiff("src/b.ts", 1, ["+// sender replies."]);
     const findings = findGlossaryViolations(fixture, diff);
     expect(findings.map((f) => `${f.path}:${f.line}`)).toEqual(["src/a.ts:1", "src/b.ts:1"]);
     expect(findings[0]?.rationale).toContain("Also on line 3.");
@@ -436,7 +436,7 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
 @@ -1,1 +1,1 @@
 +// ${IGNORE} sender
 @@ -40,1 +40,1 @@
-+const sender = 1;
++// sender is the caller.
 `;
     expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([40]);
   });
@@ -446,7 +446,7 @@ describe("buildGlossaryLensReport", () => {
   test("wraps findings as a code-synthesized LensReport shaped like a model-authored one", () => {
     const findings = findGlossaryViolations(
       parseGlossary(FIXTURE_CONTEXT_MD),
-      "+const sender = 1;\n",
+      "+// sender is the caller.\n",
     );
     const report = buildGlossaryLensReport(findings);
     expect(report.lens).toBe("Glossary");
