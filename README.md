@@ -296,19 +296,21 @@ sage review OWNER/REPO#N --substrate claude --post --output-dir ./review-output
 ```
 
 `SAGE_REVIEWS_DIR` supplies the same setting. The default remains
-`~/.config/sage/reviews`. The CLI checks directory access before authentication
-or model work, then saves JSON and Markdown before posting. A later write
-failure is still reported; the access check cannot guarantee future writes.
+`~/.config/sage/reviews`. An explicitly configured directory must pass a write
+check before authentication or model work. The default remains best-effort:
+if access fails, the CLI warns and continues. JSON and Markdown are saved
+before posting when storage is available. Later write failures remain possible.
 
 GitHub validation errors retain both stderr and the JSON response on stdout.
-Rate-limit responses stop automatic posting retries. After the cooldown, you
+Rate-limit responses stop automatic forge-request retries. After the cooldown, you
 can post the saved Markdown without running the models again:
 
 ```sh
 gh pr review N --repo OWNER/REPO --comment --body-file ./review-output/OWNER-REPO-N.md
 ```
 
-This recovery posts a comment, not an approval or changes-requested event.
+The saved Markdown includes the findings. Recovery posts a comment without
+inline anchors, approval or a changes-requested event.
 Check the saved review's commit marker against the PR head before posting it.
 
 If any selected lens fails (including malformed model output), Sage returns
@@ -317,6 +319,7 @@ Exit **1** means completed review with changes requested; exit **0** means
 approved/commented. Retry incomplete attempts; they do not advance Sage's
 prior-review baseline. Structured verdict blocks also carry `incomplete`;
 consumers must treat it as a retry, never approval.
+Setup failures also exit **2**, before any verdict is produced.
 
 Commit `.sage.yaml` on the target repository's base branch to exempt intentional
 aliases from both the deterministic glossary check and model glossary context:

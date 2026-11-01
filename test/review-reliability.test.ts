@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGh, postReviewWithFallback } from "../src/forge/github/backend.ts";
@@ -41,10 +41,41 @@ describe("review delivery regressions", () => {
       cwd: join(import.meta.dir, ".."),
       env: { HOME: dir, PATH: process.env.PATH ?? "", GH_BIN: join(dir, "no-gh") },
     });
-    expect(child.exitCode).toBe(1);
+    expect(child.exitCode).toBe(2);
     expect(child.stderr.toString()).toContain("--output-dir");
     expect(readFileSync(output, "utf8")).toBe("keep");
     expect(existsSync(join(dir, ".config/sage/reviews"))).toBe(false);
+  });
+
+  test("CLI setup failure exits incomplete once without reading a PR or posting", () => {
+    const dir = directory();
+    const gh = join(dir, "gh");
+    const calls = join(dir, "calls");
+    writeFileSync(gh, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${calls}'\nexit 0\n`);
+    chmodSync(gh, 0o755);
+    const child = Bun.spawnSync([process.execPath, "src/cli/index.ts", "review", "example/fixture#7", "--substrate", "claude", "--post", "--output-dir", join(dir, "output")], {
+      cwd: join(import.meta.dir, ".."),
+      env: { HOME: dir, PATH: process.env.PATH ?? "", GH_BIN: gh, CLAUDE_BIN: join(dir, "missing-claude") },
+    });
+    expect(child.exitCode).toBe(2);
+    expect(child.stderr.toString()).toContain("Set CLAUDE_BIN");
+    expect(child.stderr.toString()).not.toContain("lens substrate/extraction failed");
+    expect(child.stdout.toString()).toBe("");
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["auth status"]);
+  });
+
+  test("CLI keeps default persistence best-effort and proceeds to authentication", () => {
+    const dir = directory();
+    mkdirSync(join(dir, ".config/sage"), { recursive: true });
+    writeFileSync(join(dir, ".config/sage/reviews"), "keep");
+    const child = Bun.spawnSync([process.execPath, "src/cli/index.ts", "review", "example/fixture#7"], {
+      cwd: join(import.meta.dir, ".."),
+      env: { HOME: dir, PATH: process.env.PATH ?? "", GH_BIN: join(dir, "no-gh") },
+    });
+    expect(child.exitCode).toBe(2);
+    expect(child.stderr.toString()).toContain("continuing without guaranteed recovery files");
+    expect(child.stderr.toString()).toContain("gh auth is not configured");
+    expect(readFileSync(join(dir, ".config/sage/reviews"), "utf8")).toBe("keep");
   });
 
   test("Claude reports an unavailable executable before a review starts", async () => {
@@ -104,7 +135,8 @@ describe("review delivery regressions", () => {
     const source = `import {verdictFilePath,persistVerdict} from './src/verdict/persist.ts';
       import {decideVerdict} from './src/verdict/decide.ts';
       const ref={owner:'example',repo:'fixture',number:7};
-      process.stdout.write(JSON.stringify({path:verdictFilePath(ref,'md'),saved:persistVerdict(ref,decideVerdict([]),'completed review')}));`;
+      const explicit=process.env.SAGE_REVIEWS_DIR+'/explicit';
+      process.stdout.write(JSON.stringify({path:verdictFilePath(ref,'md'),saved:persistVerdict(ref,decideVerdict([]),'completed review'),explicitPath:verdictFilePath(ref,'md',explicit),explicitSaved:persistVerdict(ref,decideVerdict([]),'explicit review',explicit),env:process.env.SAGE_REVIEWS_DIR}));`;
     const child = Bun.spawnSync([process.execPath, "-e", source], {
       cwd: join(import.meta.dir, ".."),
       env: { HOME: dir, PATH: process.env.PATH ?? "", SAGE_REVIEWS_DIR: output },
@@ -114,6 +146,10 @@ describe("review delivery regressions", () => {
     expect(result.path).toBe(join(output, "example-fixture-7.md"));
     expect(result.saved).toBe(true);
     expect(readFileSync(result.path, "utf8")).toBe("completed review");
+    expect(result.explicitPath).toBe(join(output, "explicit/example-fixture-7.md"));
+    expect(result.explicitSaved).toBe(true);
+    expect(readFileSync(result.explicitPath, "utf8")).toBe("explicit review");
+    expect(result.env).toBe(output);
   });
 
   test("failed substrate preflight runs once and prevents forge reads and model fanout", async () => {
@@ -150,9 +186,17 @@ describe("glossary syntax regressions", () => {
       expect(findGlossaryViolations(glossary, diff(path, ['run: bun test', '{"node":"fixture"}']))).toEqual([]);
     }
   });
+  test("does not reinterpret shebangs, directives or private fields as comments", () => {
+    expect(findGlossaryViolations(glossary, diff("src/worker.ts", [
+      "#!/usr/bin/env node", "#host = 1;", "#include <node>",
+    ]))).toEqual([]);
+  });
   test("still reports prose in Markdown and source comments", () => {
     for (const [path, text] of [["README.md", "The host starts a run."], ["src/worker.ts", "// The host starts a run."]]) {
       expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toHaveLength(2);
     }
+  });
+  test("trailing comments inside executable lines remain outside the deterministic prose scan", () => {
+    expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["work(); // The host starts a run."]))).toEqual([]);
   });
 });

@@ -6,14 +6,15 @@ import { join, resolve } from "node:path";
 import type { PrRef } from "../forge/types.ts";
 import { safeRefSegment } from "../util/persistence.ts";
 import type { Verdict } from "./types.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
 
-function reviewsDir(): string {
-  const configured = process.env.SAGE_REVIEWS_DIR?.trim();
+function reviewsDir(override?: string): string {
+  const configured = (override ?? process.env.SAGE_REVIEWS_DIR)?.trim();
   return configured ? resolve(configured) : join(homedir(), ".config", "sage", "reviews");
 }
 
-export function prepareVerdictDirectory(): string {
-  const dir = reviewsDir();
+export function prepareVerdictDirectory(outputDir?: string): string {
+  const dir = reviewsDir(outputDir);
   try {
     mkdirSync(dir, { recursive: true });
     const probe = join(dir, `.sage-write-probe-${randomUUID()}`);
@@ -22,7 +23,7 @@ export function prepareVerdictDirectory(): string {
     return dir;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot save Sage verdicts in ${dir}: ${detail}. Use --output-dir or SAGE_REVIEWS_DIR with a writable directory.`);
+    throw new ReviewSetupError(`Cannot save Sage verdicts in ${dir}: ${detail}. Use --output-dir or SAGE_REVIEWS_DIR with a writable directory.`);
   }
 }
 
@@ -33,9 +34,9 @@ export function prepareVerdictDirectory(): string {
  * dispatcher's recovery hint) so the directory / separator / extension
  * cannot drift between them (sage#16 round-3 review).
  */
-export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
+export function verdictFilePath(ref: PrRef, ext: "json" | "md", outputDir?: string): string {
   const slug = `${safeRefSegment(ref.owner)}-${safeRefSegment(ref.repo)}-${ref.number}`;
-  return join(reviewsDir(), `${slug}.${ext}`);
+  return join(reviewsDir(outputDir), `${slug}.${ext}`);
 }
 
 /**
@@ -52,17 +53,17 @@ export function verdictFilePath(ref: PrRef, ext: "json" | "md"): string {
  * verdict-domain logic — a Verdict knows how to save itself for
  * recovery. (Reverses the pre-#70 placement under `util/`; see #70.)
  */
-export function persistVerdict(ref: PrRef, verdict: Verdict, body: string): boolean {
+export function persistVerdict(ref: PrRef, verdict: Verdict, body: string, outputDir?: string): boolean {
   try {
-    mkdirSync(reviewsDir(), { recursive: true });
+    mkdirSync(reviewsDir(outputDir), { recursive: true });
     const json = {
       ref,
       verdict,
       body,
       savedAt: new Date().toISOString(),
     };
-    writeFileSync(verdictFilePath(ref, "json"), JSON.stringify(json, null, 2));
-    writeFileSync(verdictFilePath(ref, "md"), body);
+    writeFileSync(verdictFilePath(ref, "json", outputDir), JSON.stringify(json, null, 2));
+    writeFileSync(verdictFilePath(ref, "md", outputDir), body);
     return true;
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);

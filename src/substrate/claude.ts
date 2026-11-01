@@ -1,6 +1,7 @@
 import { CLAUDE_EXTRACTORS } from "./json/extractors.ts";
 import { spawnSubstrateFor } from "./spawn.ts";
 import { buildSubstrateEnv } from "./env.ts";
+import { ReviewSetupError } from "../util/review-setup.ts";
 import type {
   Substrate,
   SubstrateRunOptions,
@@ -66,14 +67,19 @@ export class ClaudeSubstrate implements Substrate {
   // shell consistently wins over sage.config.json without surprising
   // anyone.
   get bin(): string {
-    return this.resolvedBin ?? process.env.CLAUDE_BIN ?? this.cfg.bin ?? "claude";
+    return this.resolvedBin ?? this.requestedBin;
+  }
+
+  private get requestedBin(): string {
+    return process.env.CLAUDE_BIN ?? this.cfg.bin ?? "claude";
   }
 
   async preflight(): Promise<void> {
+    this.resolvedBin = undefined;
     const env = buildSubstrateEnv(this);
-    const requested = process.env.CLAUDE_BIN ?? this.cfg.bin ?? "claude";
+    const requested = this.requestedBin;
     const bin = Bun.which(requested, { PATH: env.PATH ?? "" });
-    if (!bin) throw new Error(`Claude executable unavailable: ${requested}. Set CLAUDE_BIN to an executable absolute path.`);
+    if (!bin) throw new ReviewSetupError(`Claude executable unavailable: ${requested}. Set CLAUDE_BIN to an executable absolute path.`);
     try {
       const result = await spawnSubstrateFor({
         substrate: this, bin, args: ["--version"],
@@ -82,7 +88,7 @@ export class ClaudeSubstrate implements Substrate {
       if (result.exitCode !== 0) throw new Error(result.stderr || `exit ${result.exitCode}`);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`Claude preflight failed for ${bin}: ${detail}. Check executable access and CLAUDE_BIN.`);
+      throw new ReviewSetupError(`Claude preflight failed for ${bin}: ${detail}. Check executable access and CLAUDE_BIN.`);
     }
     this.resolvedBin = bin;
   }

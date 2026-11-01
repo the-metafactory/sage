@@ -24,14 +24,16 @@ function rateLimitedGh(): string {
 }
 
 describe("GitHub review posting under secondary rate limits", () => {
-  test("an inline-comment review is written once and surfaces the secondary rate limit", async () => {
-    const calls = rateLimitedGh();
-    await expect(postReview({
-      ref: { owner: "example", repo: "fixture", number: 7 },
-      event: "comment",
-      body: "fixture review",
-      comments: [{ path: "src/fixture.ts", line: 1, body: "fixture finding" }],
-    })).rejects.toThrow("secondary rate limit");
-    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["call"]);
-  });
+  for (const inline of [true, false]) {
+    test(`${inline ? "inline" : "summary-only"} review is written once and surfaces the secondary rate limit`, async () => {
+      const calls = rateLimitedGh();
+      await expect(postReview({
+        ref: { owner: "example", repo: "fixture", number: 7 },
+        event: "comment",
+        body: "fixture review",
+        ...(inline ? { comments: [{ path: "src/fixture.ts", line: 1, body: "fixture finding" }] } : {}),
+      })).rejects.toThrow("secondary rate limit");
+      expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["call"]);
+    });
+  }
 });
