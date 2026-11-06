@@ -174,6 +174,8 @@ describe("reviewPr", () => {
   test("the prior-round diff is filtered too", async () => {
     const compared: string[] = [];
     const { prompts } = await run("review:\n  exclude: ['src/generated.ts']\n", {
+      // A truncated file list: only the exclusion itself can remove this section.
+      pr: { ...pr, changedFiles: 10 },
       reviewSource: createInMemoryReviewSource({
         behavior: {
           kind: "ok",
@@ -191,6 +193,13 @@ describe("reviewPr", () => {
     expect(compared).toContain("old");
     expect(prompts.length).toBeGreaterThan(0);
     for (const prompt of prompts) expect(prompt).not.toContain("DELTA_GENERATED");
+  });
+
+  test("a PR touching only excluded files reaches no lens and names them", async () => {
+    const { result, prompts } = await run("review:\n  exclude: ['**']\n");
+    for (const prompt of prompts) expect(prompt).not.toContain("REVIEWED_CODE");
+    expect(result.verdict.excludedPaths).toHaveLength(3);
+    expect(renderVerdict(result.verdict)).toContain("3 file(s) excluded from review");
   });
 
   test("without config every lens reads the whole diff", async () => {

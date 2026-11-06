@@ -349,8 +349,11 @@ review:
 Patterns are `Bun.Glob` globs matched against repository-relative paths. Matching
 files leave the diff and file list that every lens reads, and the rendered verdict
 lists each one. Only the base branch's file counts, so a PR cannot exempt
-itself, and an invalid value fails the review. Excluded files get no review at all,
-so list only content that needs none.
+itself, and an invalid value fails the review. A rename is excluded only when both
+paths match. Git quotes a non-ASCII path in the diff header, and such a file stays
+reviewed even when it matches. Excluded files get no review at all, and a PR that
+touches nothing else can be approved with no code read, so list only content that
+needs none.
 
 The deterministic glossary scan checks Markdown prose and standalone source
 comment lines. It skips executable statements, identifiers, configuration keys
