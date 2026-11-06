@@ -336,6 +336,22 @@ Matching is exact and case-insensitive. Invalid configuration fails the review
 rather than silently suppressing findings. Inline `glossary-ignore` markers
 remain available for local exemptions.
 
+The same file keeps generated data and evidence folders out of review, so they
+cannot overflow a lens's prompt:
+
+```yaml
+review:
+  exclude:
+    - "src/generated-data.ts"
+    - "spikes/**/*evidence*/**"
+```
+
+Patterns are `Bun.Glob` globs matched against repository-relative paths. Matching
+files leave the diff and file list that every lens reads, and the rendered verdict
+lists each one. Only the base branch's file counts, so a pull request cannot exempt
+itself, and an invalid value fails the review. Excluded files get no review at all,
+so list only content that needs none.
+
 The deterministic glossary scan checks Markdown prose and standalone source
 comment lines. It skips executable statements, identifiers, configuration keys
 and generated data. Model lenses still read the source and glossary context;

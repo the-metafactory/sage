@@ -22,13 +22,20 @@ export function formatConvergenceLine(convergence: ConvergenceSummary): string {
  * string. Used by `reviewPr` (workflow.ts) before posting, and by
  * `sage review` (cli/index.ts) for stdout display.
  */
+function formatExcludedPaths(paths: readonly string[] = []): string {
+  if (paths.length === 0) return "";
+  const list = paths.map((path) => `- \`${path}\``).join("\n");
+  return `\n<details><summary>${paths.length} file(s) excluded from review by \`.sage.yaml\`</summary>\n\n${list}\n\n</details>\n`;
+}
+
 export function renderVerdict(verdict: Verdict, substrateLabel?: string): string {
   const convergence = verdict.convergence ?? summarizeConvergence(verdict.lenses);
   const label = convergence.status === "prose-only"
     ? `${verdict.decision} (prose only)`
     : verdict.decision;
   const convergenceLine = formatConvergenceLine(convergence);
-  const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n`;
+  const excluded = formatExcludedPaths(verdict.excludedPaths);
+  const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n${excluded}`;
   const sections = verdict.lenses.flatMap((lens) => {
     if (!lens.errored && lens.findings.length === 0) return [];
     const heading = lens.errored
