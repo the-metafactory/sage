@@ -348,7 +348,7 @@ review:
 
 Patterns are `Bun.Glob` globs matched against repository-relative paths. Matching
 files leave the diff and file list that every lens reads, and the rendered verdict
-lists each one. Only the base branch's file counts, so a pull request cannot exempt
+lists each one. Only the base branch's file counts, so a PR cannot exempt
 itself, and an invalid value fails the review. Excluded files get no review at all,
 so list only content that needs none.
 

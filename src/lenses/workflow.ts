@@ -189,7 +189,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
   const reviewExclude = await loadReviewExclude(opts.forge, opts.ref, pr.baseRefName);
   const exclusion = excludeFromDiff(diff, reviewExclude);
   diff = exclusion.diff;
-  pr = withoutExcludedFiles(pr, reviewExclude, exclusion.excludedPaths);
+  pr = withoutExcludedFiles(pr, exclusion.excludedPaths);
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
@@ -588,14 +588,10 @@ async function resolveClaimsScope(
   };
 }
 
-function withoutExcludedFiles(
-  pr: PrMetadata,
-  patterns: readonly string[],
-  excludedPaths: readonly string[],
-): PrMetadata {
-  if (patterns.length === 0) return pr;
-  const globs = patterns.map((pattern) => new Bun.Glob(pattern));
-  const files = pr.files.filter((file) => !globs.some((glob) => glob.match(file.path)));
+function withoutExcludedFiles(pr: PrMetadata, excludedPaths: readonly string[]): PrMetadata {
+  if (excludedPaths.length === 0) return pr;
+  const excluded = new Set(excludedPaths);
+  const files = pr.files.filter((file) => !excluded.has(file.path));
   return { ...pr, files, changedFiles: Math.max(0, pr.changedFiles - excludedPaths.length) };
 }
 

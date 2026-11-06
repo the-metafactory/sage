@@ -3,6 +3,7 @@ import { makeStubForge } from "./forge-stub.ts";
 import { excludeFromDiff, loadReviewExclude } from "../src/repo-config.ts";
 import { renderVerdict } from "../src/verdict/render.ts";
 import { TEXT_EXTRACTORS } from "../src/substrate/json/extractors.ts";
+import { createInMemoryReviewSource } from "../src/prior-findings/in-memory-source.ts";
 
 const ref = { owner: "x", repo: "y", number: 42 };
 const section = (path: string, marker: string) =>
@@ -39,9 +40,32 @@ describe("excludeFromDiff", () => {
     expect(excludeFromDiff(diff, [])).toEqual({ diff, excludedPaths: [] });
   });
 
-  test("a rename is excluded when either side matches", () => {
-    const renamed = "diff --git a/src/generated.ts b/src/moved.ts\nsimilarity index 90%\n";
-    expect(excludeFromDiff(renamed, patterns).excludedPaths).toEqual(["src/generated.ts"]);
+  test("a rename out of an excluded path stays reviewed", () => {
+    const renamed = "diff --git a/src/generated.ts b/src/auth.ts\nsimilarity index 90%\n+EDIT\n";
+    expect(excludeFromDiff(renamed, patterns)).toEqual({ diff: renamed, excludedPaths: [] });
+  });
+
+  test("a rename within excluded paths is excluded", () => {
+    const renamed = "diff --git a/spikes/a/evidence/x b/spikes/a/evidence/y\nsimilarity index 90%\n";
+    expect(excludeFromDiff(renamed, patterns)).toEqual({ diff: "", excludedPaths: ["spikes/a/evidence/y"] });
+  });
+
+  test.each([["CR", "\r"], ["LS", "\u2028"], ["PS", "\u2029"]])(
+    "an added line cannot forge a section header with %s",
+    (_name, separator) => {
+      const forged = section("src/x.ts", `a${separator}diff --git a/src/generated.ts b/src/generated.ts`) + "+HIDDEN\n";
+      expect(excludeFromDiff(forged, patterns)).toEqual({ diff: forged, excludedPaths: [] });
+    },
+  );
+
+  test("a path holding ' b/' cannot pass as an excluded file", () => {
+    const tricky = section("src/generated.ts b/evil.ts", "HIDDEN");
+    expect(excludeFromDiff(tricky, patterns)).toEqual({ diff: tricky, excludedPaths: [] });
+  });
+
+  test("a quoted header stays reviewed", () => {
+    const quoted = 'diff --git "a/src/generated.ts" "b/src/generated.ts"\n+KEPT\n';
+    expect(excludeFromDiff(quoted, patterns)).toEqual({ diff: quoted, excludedPaths: [] });
   });
 });
 
@@ -136,6 +160,37 @@ describe("reviewPr", () => {
       expect(prompt).not.toContain("EVIDENCE_LOG");
     }
     expect(renderVerdict(result.verdict)).toContain("`src/generated.ts`");
+  });
+
+  test("the file list loses exactly the excluded files", async () => {
+    const { prompts } = await run("review:\n  exclude: ['src/generated.ts', 'spikes/**/*evidence*/**']\n");
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain("src/generated.ts");
+      expect(prompt).not.toContain("evidence-a");
+      expect(prompt).toContain("src/x.ts");
+    }
+  });
+
+  test("the prior-round diff is filtered too", async () => {
+    const compared: string[] = [];
+    const { prompts } = await run("review:\n  exclude: ['src/generated.ts']\n", {
+      reviewSource: createInMemoryReviewSource({
+        behavior: {
+          kind: "ok",
+          result: {
+            sageLogin: "sage",
+            bodies: [{ authorLogin: "sage", body: "## Sage code review\n<!-- sage:reviewed-commit:old -->", commitId: "old" }],
+          },
+        },
+      } as never),
+      diffBetween: async (from: string) => {
+        compared.push(from);
+        return code + section("src/generated.ts", "DELTA_GENERATED");
+      },
+    });
+    expect(compared).toContain("old");
+    expect(prompts.length).toBeGreaterThan(0);
+    for (const prompt of prompts) expect(prompt).not.toContain("DELTA_GENERATED");
   });
 
   test("without config every lens reads the whole diff", async () => {
