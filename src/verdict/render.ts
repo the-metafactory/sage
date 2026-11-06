@@ -15,6 +15,12 @@ export function formatConvergenceLine(convergence: ConvergenceSummary): string {
   return `${counts}; ${provenance}${unavailable}${stopSignal}`;
 }
 
+function formatExcludedPaths(paths: readonly string[] = []): string {
+  if (paths.length === 0) return "";
+  const list = paths.map((path) => `- \`${path}\``).join("\n");
+  return `\n<details><summary>${paths.length} file(s) excluded from review by \`.sage.yaml\`</summary>\n\n${list}\n\n</details>\n`;
+}
+
 /**
  * Render a Verdict to the markdown body posted to the Forge (the
  * Review comment, in CONTEXT.md terms). Pure — takes a Verdict + an
@@ -28,7 +34,8 @@ export function renderVerdict(verdict: Verdict, substrateLabel?: string): string
     ? `${verdict.decision} (prose only)`
     : verdict.decision;
   const convergenceLine = formatConvergenceLine(convergence);
-  const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n`;
+  const excluded = formatExcludedPaths(verdict.excludedPaths);
+  const head = `## Sage code review — ${label}\n\n${verdict.summary}\n\n${convergenceLine}\n${excluded}`;
   const sections = verdict.lenses.flatMap((lens) => {
     if (!lens.errored && lens.findings.length === 0) return [];
     const heading = lens.errored

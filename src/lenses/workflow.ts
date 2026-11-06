@@ -1,4 +1,4 @@
-import { loadGlossaryIgnore } from "../repo-config.ts";
+import { excludeFromDiff, loadGlossaryIgnore, loadReviewExclude } from "../repo-config.ts";
 import type {
   ForgeBackend,
   InlineComment,
@@ -186,15 +186,19 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     );
     priorResult = await priorResultPromise;
   }
+  const reviewExclude = await loadReviewExclude(opts.forge, opts.ref, pr.baseRefName);
+  const exclusion = excludeFromDiff(diff, reviewExclude);
+  diff = exclusion.diff;
+  pr = withoutExcludedFiles(pr, exclusion.excludedPaths);
   // sage#107 — what changed since Sage last reviewed this PR. Fetched once and
   // used twice: as the review target for `delta`-scoped Lenses, and as the
   // previous-round surface marking below. Round 1 (no prior review) and any
   // Forge that cannot compare two commits both land on `diff` undefined, which
   // is the pre-#107 behavior in full.
-  const priorRound = onlyPrFiles(
+  const priorRound = withoutExcludedDiff(onlyPrFiles(
     await fetchPriorRoundDiff(opts.forge, opts.ref, pr.headRefOid, priorResult.latestReviewCommitId),
     pr,
-  );
+  ), reviewExclude);
 
   // Two contexts, deliberately separated. Applicability asks "does this Lens
   // have anything to say about the NEW work?" — so it reads the delta when
@@ -224,7 +228,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
       : cumulativeCtx;
   // sage#139 — the claims-checking Lens answers to its own delta: what changed
   // since IT last ran, which is not the last Review when a round skipped it.
-  const claimsScope = await resolveClaimsScope(opts, pr, priorResult, priorRound);
+  const claimsScope = await resolveClaimsScope(opts, pr, priorResult, priorRound, reviewExclude);
   const claimsApplicabilityCtx: ApplicabilityContext = claimsScope
     ? {
         pr: narrowToDelta(pr, claimsScope.diff),
@@ -338,6 +342,7 @@ export async function reviewPr(opts: ReviewOptions): Promise<ReviewResult> {
     ...decided,
     ...(checkedClaims !== undefined ? { checkedClaims } : {}),
     reviewedCommitId: pr.headRefOid,
+    ...(exclusion.excludedPaths.length > 0 ? { excludedPaths: exclusion.excludedPaths } : {}),
   };
   const body = renderVerdict(verdict, opts.substrate.displayName);
 
@@ -557,6 +562,7 @@ async function resolveClaimsScope(
   pr: PrMetadata,
   priorResult: PriorFindingsResult,
   priorRound: PriorRoundDiff,
+  reviewExclude: readonly string[],
 ): Promise<ClaimsScope | undefined> {
   const checked = priorResult.latestCheckedClaims;
   if (checked?.commitId === undefined) return undefined;
@@ -564,10 +570,10 @@ async function resolveClaimsScope(
   if (checked.commitId !== priorResult.latestReviewCommitId) {
     if (!opts.forge.diffBetween) return undefined;
     try {
-      diff = onlyPrFiles(
+      diff = withoutExcludedDiff(onlyPrFiles(
         { diff: await opts.forge.diffBetween(opts.ref, checked.commitId, pr.headRefOid), unavailable: false },
         pr,
-      ).diff;
+      ), reviewExclude).diff;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[workflow] claims comparison unavailable; the Oracle checks every claim: ${message}`);
@@ -580,6 +586,18 @@ async function resolveClaimsScope(
     diff,
     descriptionClaims: uncheckedClaims(pr.body, checked.claims ?? []),
   };
+}
+
+function withoutExcludedFiles(pr: PrMetadata, excludedPaths: readonly string[]): PrMetadata {
+  if (excludedPaths.length === 0) return pr;
+  const excluded = new Set(excludedPaths);
+  const files = pr.files.filter((file) => !excluded.has(file.path));
+  return { ...pr, files, changedFiles: Math.max(0, pr.changedFiles - excludedPaths.length) };
+}
+
+function withoutExcludedDiff(priorRound: PriorRoundDiff, patterns: readonly string[]): PriorRoundDiff {
+  if (priorRound.diff === undefined) return priorRound;
+  return { ...priorRound, diff: excludeFromDiff(priorRound.diff, patterns).diff };
 }
 
 /**

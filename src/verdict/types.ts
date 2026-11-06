@@ -38,4 +38,6 @@ export interface Verdict {
    * next round where Sage left off.
    */
   reviewedCommitId?: string;
+  /** Files `.sage.yaml` kept out of this Review; rendered so skipped code stays visible. */
+  excludedPaths?: string[];
 }
