@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildGhEnv } from "./env.ts";
+import { classifyGhApiFailure, GH_PREFLIGHT_ARGS, type GhApiOutcome } from "./preflight.ts";
 import { retryTransient } from "../../util/retry.ts";
 import { createGitHubReviewSource } from "../../prior-findings/github-source.ts";
 import { PrMetadataSchema } from "../types.ts";
@@ -360,14 +361,19 @@ export async function postReview(input: PostReviewInput): Promise<PostReviewResu
 export { parseSageReviewFindings };
 
 export async function ghAuthStatus(): Promise<AuthStatusResult> {
+  let outcome: GhApiOutcome;
   try {
-    const out = await runGh(["auth", "status"], { allowNonZero: true });
-    return { ok: out.exitCode === 0, output: out.stdout + out.stderr };
+    outcome = await runGh(GH_PREFLIGHT_ARGS, { allowNonZero: true });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, output: msg };
+    const stderr = err instanceof Error ? err.message : String(err);
+    outcome = { exitCode: GH_NEVER_EXITED, stdout: "", stderr };
   }
+  if (outcome.exitCode === 0) return { ok: true, output: "" };
+  const failure = classifyGhApiFailure(outcome);
+  return { ok: false, output: failure.detail, failure };
 }
+
+const GH_NEVER_EXITED = -1;
 
 export interface RunGhResult {
   stdout: string;

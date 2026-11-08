@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import packageJson from "../../package.json";
 import { cortexConfigPath, resolveDefaultPrincipal, resolveDefaultStack } from "../config.ts";
+import { renderPreflightFailure } from "../forge/github/preflight.ts";
 import { parsePrRef } from "../forge/parse.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
@@ -174,9 +175,13 @@ program
       const ref = parsePrRef(prRef, forgeSelection.kind);
       const auth = await forgeSelection.backend.authStatus();
       if (!auth.ok) {
-        const cliName = forgeSelection.kind === "gitlab" ? "glab" : "gh";
-        console.error(`${cliName} auth is not configured. Run \`${cliName} auth login\` first.`);
-        console.error(auth.output);
+        if (auth.failure) {
+          console.error(renderPreflightFailure(auth.failure));
+        } else {
+          const cliName = forgeSelection.kind === "gitlab" ? "glab" : "gh";
+          console.error(`${cliName} auth is not configured. Run \`${cliName} auth login\` first.`);
+          console.error(auth.output);
+        }
         process.exit(2);
       }
 

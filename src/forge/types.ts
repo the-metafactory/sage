@@ -167,9 +167,22 @@ export interface PriorReviewFinding {
   postedAt?: string;
 }
 
+export type ForgePreflightFailureKind = "auth" | "rate-limit" | "transient" | "unknown";
+
+export interface ForgePreflightFailure {
+  kind: ForgePreflightFailureKind;
+  httpStatus?: number;
+  /** ISO-8601; present only when the failed response said when the limit ends. */
+  resetAt?: string;
+  /** One line, bounded: safe to print above the machine-readable marker. */
+  detail: string;
+}
+
 export interface AuthStatusResult {
   ok: boolean;
   output: string;
+  /** Set by a backend that can classify its failure; absent on GitLab. */
+  failure?: ForgePreflightFailure;
 }
 
 /**
