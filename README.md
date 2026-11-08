@@ -324,6 +324,24 @@ consumers must treat it as a retry, never approval.
 Claude preflight failures and invalid or unwritable explicit output directories
 also exit **2**, before any verdict is produced.
 
+A failed GitHub preflight (`gh api / -i`) exits **2** before any verdict too, and
+its last stderr line tells a caller what failed without parsing prose:
+
+```text
+SAGE_PREFLIGHT_FAILURE {"kind":"rate-limit","http_status":403,"reset_at":"2026-11-08T21:00:00.000Z"}
+```
+
+| `kind` | Meaning | Caller |
+|---|---|---|
+| `auth` | HTTP 401, or `gh` found no credentials | Needs a person: `gh auth login` |
+| `rate-limit` | HTTP 429, or 403 with `retry-after`, `x-ratelimit-remaining: 0` or a rate-limit message | Wait, then retry |
+| `transient` | HTTP 5xx, a network error or a `gh` timeout | Retry with backoff |
+| `unknown` | Anything else, such as a 403 with no rate-limit evidence, or a missing `gh` | Needs a person |
+
+`http_status` is absent when no response arrived. `reset_at` is present only when
+the failed response says when the limit ends; otherwise choose your own wait. The
+GitLab preflight does not emit this line.
+
 Commit `.sage.yaml` on the target repository's base branch to exempt intentional
 aliases from both the deterministic glossary check and model glossary context:
 

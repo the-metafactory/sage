@@ -95,7 +95,7 @@ describe("review delivery regressions", () => {
     expect(child.stderr.toString()).toContain("Set CLAUDE_BIN");
     expect(child.stderr.toString()).not.toContain("lens substrate/extraction failed");
     expect(child.stdout.toString()).toBe("");
-    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["auth status"]);
+    expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(["api / -i"]);
   });
 
   test("CLI keeps default persistence best-effort and proceeds to authentication", () => {
@@ -108,7 +108,8 @@ describe("review delivery regressions", () => {
     });
     expect(child.exitCode).toBe(2);
     expect(child.stderr.toString()).toContain("continuing without guaranteed recovery files");
-    expect(child.stderr.toString()).toContain("gh auth is not configured");
+    expect(child.stderr.toString()).toContain("GitHub preflight failed");
+    expect(child.stderr.toString()).toContain('SAGE_PREFLIGHT_FAILURE {"kind":"unknown"}');
     expect(readFileSync(join(dir, ".config/sage/reviews"), "utf8")).toBe("keep");
   });
 
