@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] - 2026-11-08
+
+### Added
+
+- `review.exclude` in `.sage.yaml` on the base branch removes matching files from the diff and file list every lens reads, including the prior-round and claims diffs. The verdict lists each excluded file, and an invalid value fails the review. (#142)
+
+### Changed
+
+- A failed GitHub preflight now reports what failed instead of "gh auth is not configured". It still exits 2, and stderr ends with a `SAGE_PREFLIGHT_FAILURE` line whose kind is `auth`, `rate-limit`, `transient` or `unknown`. The GitLab preflight is unchanged. (#143, #144)
+
+### Fixed
+
+- Review launch and posting failures are recoverable. (#141)
+- The oracle checks only unchecked claims after the first run. (#139, #140)
+
 ## [0.3.0] - 2026-10-11
 
 ### Changed
