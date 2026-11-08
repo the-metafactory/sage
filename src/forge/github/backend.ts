@@ -360,17 +360,17 @@ export async function postReview(input: PostReviewInput): Promise<PostReviewResu
  */
 export { parseSageReviewFindings };
 
-export async function ghAuthStatus(): Promise<AuthStatusResult> {
+export async function ghAuthStatus(opts: { timeoutMs?: number } = {}): Promise<AuthStatusResult> {
   let outcome: GhApiOutcome;
   try {
-    outcome = await runGh(GH_PREFLIGHT_ARGS, { allowNonZero: true });
+    outcome = await runGh(GH_PREFLIGHT_ARGS, { allowNonZero: true, ...opts });
   } catch (err) {
     const stderr = err instanceof Error ? err.message : String(err);
     outcome = { exitCode: GH_NEVER_EXITED, stdout: "", stderr };
   }
   if (outcome.exitCode === 0) return { ok: true, output: "" };
   const failure = classifyGhApiFailure(outcome);
-  return { ok: false, output: failure.detail, failure };
+  return { ok: false, output: failure.message, failure };
 }
 
 const GH_NEVER_EXITED = -1;

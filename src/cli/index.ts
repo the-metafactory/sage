@@ -5,8 +5,8 @@ import { join } from "node:path";
 
 import packageJson from "../../package.json";
 import { cortexConfigPath, resolveDefaultPrincipal, resolveDefaultStack } from "../config.ts";
-import { renderPreflightFailure } from "../forge/github/preflight.ts";
 import { parsePrRef } from "../forge/parse.ts";
+import { renderPreflightFailure } from "../forge/preflight-failure.ts";
 import { selectForge } from "../forge/select.ts";
 import type { ForgeKind } from "../forge/types.ts";
 import {

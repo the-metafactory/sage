@@ -174,8 +174,8 @@ export interface ForgePreflightFailure {
   httpStatus?: number;
   /** ISO-8601; present only when the failed response said when the limit ends. */
   resetAt?: string;
-  /** One line, bounded: safe to print above the machine-readable marker. */
-  detail: string;
+  /** The backend's own advice for a person. Remote text in it is folded onto one line, so it cannot start a marker line. */
+  message: string;
 }
 
 export interface AuthStatusResult {

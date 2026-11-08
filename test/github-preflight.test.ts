@@ -3,6 +3,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { ghAuthStatus } from "../src/forge/github/backend.ts";
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -236,6 +238,31 @@ describe("sage review GitHub preflight", () => {
     const run = runReview({ stdout: response("200 OK", { "X-Ratelimit-Remaining": "0" }, "{}"), exit: 0 });
     expect(run.stderr).not.toContain(MARKER);
     expect(run.stderr).not.toContain(NOT_CONFIGURED);
+  });
+});
+
+describe("ghAuthStatus", () => {
+  const originalGh = process.env.GH_BIN;
+  afterEach(() => {
+    if (originalGh === undefined) delete process.env.GH_BIN;
+    else process.env.GH_BIN = originalGh;
+  });
+
+  test("a gh that hangs past the timeout is transient", async () => {
+    const gh = join(directory(), "gh");
+    writeFileSync(gh, "#!/bin/sh\nexec sleep 30\n");
+    chmodSync(gh, 0o755);
+    process.env.GH_BIN = gh;
+    const status = await ghAuthStatus({ timeoutMs: 100 });
+    expect(status.ok).toBe(false);
+    expect(status.failure?.kind).toBe("transient");
+    expect(status.failure?.message).toContain("timed out");
+  });
+
+  test("a gh that cannot start is unknown, not transient", async () => {
+    process.env.GH_BIN = join(directory(), "missing-gh");
+    const status = await ghAuthStatus();
+    expect(status.failure?.kind).toBe("unknown");
   });
 });
 

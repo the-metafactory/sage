@@ -14,13 +14,14 @@ const GH_AUTH_REQUIRED_EXIT = 4;
 const RATE_LIMIT_MESSAGE = /rate limit|abuse detection/i;
 const NETWORK_FAILURE_GO_TEXT = /timed out|i\/o timeout|handshake timeout|no such host|\bEOF\b/i;
 const DETAIL_MAX_CHARS = 300;
-const PREFLIGHT_FAILURE_MARKER = "SAGE_PREFLIGHT_FAILURE";
 
 export interface GhApiOutcome {
   exitCode: number;
   stdout: string;
   stderr: string;
 }
+
+type ClassifiedFailure = Omit<ForgePreflightFailure, "message"> & { detail: string };
 
 interface GhApiResponse {
   status: number;
@@ -88,7 +89,7 @@ function rateLimitResetAt(headers: Map<string, string>, nowMs: number): string |
   return reset === undefined ? undefined : new Date(reset * 1000).toISOString();
 }
 
-function classifyResponse(response: GhApiResponse, nowMs: number): ForgePreflightFailure {
+function classifyResponse(response: GhApiResponse, nowMs: number): ClassifiedFailure {
   const { status, headers, message } = response;
   const detail = singleLine(`HTTP ${status}: ${message}`);
   if (status === 401) return { kind: "auth", httpStatus: status, detail };
@@ -100,7 +101,7 @@ function classifyResponse(response: GhApiResponse, nowMs: number): ForgePrefligh
   return { kind: "unknown", httpStatus: status, detail };
 }
 
-function classifyWithoutResponse({ exitCode, stdout, stderr }: GhApiOutcome): ForgePreflightFailure {
+function classifyWithoutResponse({ exitCode, stdout, stderr }: GhApiOutcome): ClassifiedFailure {
   const text = stderr.trim() || stdout.trim();
   const detail = singleLine(text) || `gh exited ${exitCode} with no output`;
   if (exitCode === GH_AUTH_REQUIRED_EXIT) return { kind: "auth", detail };
@@ -108,13 +109,7 @@ function classifyWithoutResponse({ exitCode, stdout, stderr }: GhApiOutcome): Fo
   return { kind: "unknown", detail };
 }
 
-/** Classify a failed `gh api` from the failed response itself, never from a second request. */
-export function classifyGhApiFailure(outcome: GhApiOutcome, nowMs: number = Date.now()): ForgePreflightFailure {
-  const response = parseResponse(outcome.stdout);
-  return response ? classifyResponse(response, nowMs) : classifyWithoutResponse(outcome);
-}
-
-function humanMessage({ kind, detail, resetAt }: ForgePreflightFailure): string {
+function humanMessage({ kind, detail, resetAt }: ClassifiedFailure): string {
   switch (kind) {
     case "auth":
       return `gh auth is not configured. Run \`gh auth login\` first.\n${detail}`;
@@ -127,17 +122,10 @@ function humanMessage({ kind, detail, resetAt }: ForgePreflightFailure): string 
   }
 }
 
-/**
- * The human message, then the machine-readable marker as the LAST line, so it
- * survives a caller that keeps only the tail of stderr. Its fields are an
- * enum, an integer and a timestamp; only `detail` carries remote text, and
- * that is folded onto one line before it can reach the start of a line.
- */
-export function renderPreflightFailure(failure: ForgePreflightFailure): string {
-  const marker = JSON.stringify({
-    kind: failure.kind,
-    ...(failure.httpStatus !== undefined ? { http_status: failure.httpStatus } : {}),
-    ...(failure.resetAt !== undefined ? { reset_at: failure.resetAt } : {}),
-  });
-  return `${humanMessage(failure)}\n${PREFLIGHT_FAILURE_MARKER} ${marker}`;
+/** Classify a failed `gh api` from the failed response itself, never from a second request. */
+export function classifyGhApiFailure(outcome: GhApiOutcome, nowMs: number = Date.now()): ForgePreflightFailure {
+  const response = parseResponse(outcome.stdout);
+  const classified = response ? classifyResponse(response, nowMs) : classifyWithoutResponse(outcome);
+  const { detail: _detail, ...signal } = classified;
+  return { ...signal, message: humanMessage(classified) };
 }
