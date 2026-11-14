@@ -1,15 +1,15 @@
 /**
  * The `payload` of the `code-review` task envelope that `sage dispatch`
- * publishes. Sage is the sender only: cortex's `ReviewConsumer` owns the
- * receiving side and validates what arrives with its own resolver, so
+ * publishes. Sage is the Dispatcher only: cortex's `ReviewConsumer` owns
+ * the receiving side and validates what arrives with its own resolver, so
  * Sage keeps no receiver schema.
  */
 export type DispatchTaskPayload = {
-  /** Always set: the dispatcher builds the full PR or MR URL from the parsed ref. */
+  /** Always set: the Dispatcher builds the full PR URL from the parsed ref. */
   pr_url: string;
   /** Slash-joined owner/repo per cortex#237 §4.1 (sage#52). */
   repo: string;
-  /** Integer PR/MR number; pairs with `repo` (cortex#237 §4.1, sage#52). */
+  /** Integer PR number; pairs with `repo` (cortex#237 §4.1, sage#52). */
   pr?: number;
   /**
    * Label for the routing semantic. Receivers are selected by capability,
@@ -20,7 +20,7 @@ export type DispatchTaskPayload = {
   timeout_ms?: number;
   /**
    * Forge discriminator (sage#43). Omitted for GitHub so older receivers
-   * keep working; set for a GitLab MR so cortex routes to the GitLab backend.
+   * keep working; set for a GitLab PR so cortex routes to the GitLab backend.
    */
   forge?: "github" | "gitlab";
   /**

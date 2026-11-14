@@ -3,8 +3,8 @@ import { typeCheck, type Equal } from "./_type-utils.ts";
 import type { DispatchTaskPayload } from "../src/tasks/types.ts";
 
 /**
- * The payload `sage dispatch` sends. The receiving side belongs to cortex,
- * so these tests pin only the sender's type.
+ * The payload `sage dispatch` publishes. The receiving side belongs to
+ * cortex, so these tests pin only the Dispatcher's type.
  */
 
 describe("DispatchTaskPayload (sender narrowing)", () => {
