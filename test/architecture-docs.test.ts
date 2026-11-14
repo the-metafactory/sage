@@ -19,6 +19,7 @@ const stubPr = {
   isDraft: false,
   baseRefName: "main",
   headRefName: "feature/context",
+  headRefOid: "abc123",
   author: { login: "alice" },
   changedFiles: 1,
   additions: 3,

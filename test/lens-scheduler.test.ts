@@ -30,6 +30,7 @@ const stubPr = {
   isDraft: false,
   baseRefName: "main",
   headRefName: "f",
+  headRefOid: "abc123",
   author: { login: "a" },
   changedFiles: 1,
   additions: 1,

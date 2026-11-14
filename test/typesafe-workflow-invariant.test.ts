@@ -237,7 +237,7 @@ describe("review workflow TypeSafe authority boundary", () => {
           usage: { input_tokens: 50, output_tokens: 5 },
         }),
       },
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
 
     postCalls = 0;

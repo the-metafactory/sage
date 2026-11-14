@@ -23,6 +23,7 @@ function pr(files: Array<FileSpec>, body = ""): PrMetadata {
     isDraft: false,
     baseRefName: "main",
     headRefName: "feat",
+    headRefOid: "abc123",
     author: { login: "x" },
     changedFiles: files.length,
     additions: 0,
