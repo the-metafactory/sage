@@ -226,10 +226,13 @@ describe("glossary syntax regressions", () => {
       "#!/usr/bin/env node", "#host = 1;", "#include <node>",
     ]))).toEqual([]);
   });
-  test("still reports prose in Markdown and source comments", () => {
+  test("does not report plain words in Markdown prose or source comments", () => {
     for (const [path, text] of [["README.md", "The host starts a run."], ["src/worker.ts", "// The host starts a run."]]) {
-      expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toHaveLength(2);
+      expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toEqual([]);
     }
+  });
+  test("reports an alias in an exported name", () => {
+    expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["export function startRun(): void {}"]))).toHaveLength(1);
   });
   test("trailing comments inside executable lines remain outside the deterministic prose scan", () => {
     expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["work(); // The host starts a run."]))).toEqual([]);

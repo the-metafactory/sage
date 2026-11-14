@@ -373,8 +373,11 @@ reviewed even when it matches. Excluded files get no review at all, and a PR tha
 touches nothing else can be approved with no code read, so list only content that
 needs none.
 
-The deterministic glossary scan checks Markdown prose and standalone source
-comment lines. It skips executable statements, identifiers, configuration keys
-and generated data. Model lenses still read the source and glossary context;
-they assess terminology where an exact-word scan cannot establish its meaning.
-Markdown code spans and fenced examples remain excluded from prose matching.
+The deterministic glossary scan checks only the exported names that added
+lines of JavaScript and TypeScript files declare: the name after `export`, and
+the public members of an exported class, interface, type literal or enum whose
+opening line is in the same hunk. An alias matches as a whole word inside the
+name, so `owner` matches `setOwner` and `run` does not match `runner`. Prose,
+comments, local names and other languages are not scanned. Model lenses still
+read the source and glossary context; they assess terminology where a word
+match cannot establish its meaning.
