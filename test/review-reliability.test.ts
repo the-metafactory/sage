@@ -226,10 +226,9 @@ describe("glossary syntax regressions", () => {
       "#!/usr/bin/env node", "#host = 1;", "#include <node>",
     ]))).toEqual([]);
   });
-  test("does not report plain words in Markdown prose or source comments", () => {
-    for (const [path, text] of [["README.md", "The host starts a run."], ["src/worker.ts", "// The host starts a run."]]) {
-      expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toEqual([]);
-    }
+  test("still reports prose in Markdown, and no longer in source comments", () => {
+    expect(findGlossaryViolations(glossary, diff("README.md", ["The host starts a run."]))).toHaveLength(2);
+    expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["// The host starts a run."]))).toEqual([]);
   });
   test("reports an alias in an exported name", () => {
     expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["export function startRun(): void {}"]))).toHaveLength(1);

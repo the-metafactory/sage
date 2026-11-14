@@ -21,10 +21,11 @@ import type { Finding, LensReport } from "./types.ts";
  *      avoid list + citation, no full definitions) suitable for EVERY
  *      lens's stdin, not a 50KB CONTEXT.md dump.
  *   2. `findGlossaryViolations` — deterministic (no model call)
- *      `_Avoid_`-alias matches in the exported names that added lines
- *      of JS/TS files declare. Severity `nit`, so a hit never blocks.
- *      A `glossary-ignore: <alias>` marker in the hunk exempts an
- *      intentional alias (sage#128).
+ *      `_Avoid_`-alias matches on added lines, in Markdown prose and in
+ *      the exported names JS/TS files declare. Severity `nit`, so a hit
+ *      never blocks. Markdown code (fenced blocks, inline spans) is
+ *      skipped, and a `glossary-ignore: <alias>` marker in the hunk
+ *      exempts an intentional alias (sage#128).
  *
  * The term/alias parser (`parseGlossary`, `extractAvoidAliases`) mirrors
  * the parsing contract in `arc-skill-code-review`'s `skill/
@@ -213,19 +214,26 @@ If the diff introduces one of the listed Avoid aliases, prefer the canonical ter
 
 interface DiffHunk {
   path: string;
+  /** New-revision line number of the hunk's first line. */
+  start: number;
   /** Added and context lines in order — the hunk's view of the new revision. */
   lines: { added: boolean; lineNumber: number; text: string }[];
 }
 
-/** An exported name an added line declares, with the hunk's `glossary-ignore` exemptions. */
-interface DeclaredName {
+/** One place an added line could use an alias: a line of Markdown prose, or an exported name a source line declares. */
+interface Candidate {
   path: string;
   lineNumber: number;
-  name: string;
+  /** The exported name, for a source declaration; absent for Markdown prose. */
+  name?: string;
+  uses: (alias: string) => boolean;
   /** Lower-cased aliases exempted by a `glossary-ignore:` marker in this line's hunk. */
   ignored: ReadonlySet<string>;
 }
 
+const MARKDOWN_PATH_RE = /\.(?:md|mdx|markdown)$/i;
+// CommonMark fence: up to 3 spaces of indent, then 3+ backticks or tildes.
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const SOURCE_PATH_RE = /\.[cm]?[jt]sx?$/i;
 // The marker only counts after a `//`, `#`, `/*`, `<!--` or `--`
 // opener at line start or after whitespace, or after a `*` block
@@ -260,7 +268,7 @@ function parseHunks(diff: string): DiffHunk[] {
   let current: DiffHunk | undefined;
   let newLineNo = 0;
   const openHunk = (): DiffHunk => {
-    const hunk: DiffHunk = { path: currentPath, lines: [] };
+    const hunk: DiffHunk = { path: currentPath, start: newLineNo, lines: [] };
     hunks.push(hunk);
     return hunk;
   };
@@ -307,7 +315,83 @@ function braceDelta(text: string): number {
 }
 
 /**
- * Exported names that added lines of JS/TS files declare: the name after
+ * Which of a Markdown hunk's lines sit inside a fenced code block.
+ *
+ * A hunk only shows a window of the file, so its first fence may be the
+ * closer of a block opened above it. To lean toward flagging (a false
+ * positive has the `glossary-ignore` escape hatch; a false negative is
+ * invisible):
+ *   - a fence only counts once its parity is certain: the hunk starts at
+ *     new-file line 1, or an opener carries an info string (```ts — a
+ *     closer never does). Until then bare fences are ignored.
+ *   - in a hunk that starts mid-file, a block counts only when its
+ *     closer is also in the hunk. An unclosed "opener" may be the closer
+ *     of an outer block (e.g. ```` around a ```ts example).
+ * Residual miss: two misread outer closers inside one mid-file hunk can
+ * still pair up and hide the prose between them.
+ */
+function fencedLines(texts: readonly string[], startsAtTop: boolean): boolean[] {
+  const fenced = texts.map(() => false);
+  let certain = startsAtTop;
+  let open: { char: string; length: number; from: number } | undefined;
+
+  texts.forEach((raw, i) => {
+    const fence = raw.replace(/\r$/, "").match(FENCE_RE);
+    const marker = fence?.[1];
+    const info = (fence?.[2] ?? "").trim();
+    if (open) {
+      if (marker && marker[0] === open.char && marker.length >= open.length && info === "") {
+        fenced.fill(true, open.from, i + 1);
+        open = undefined;
+      }
+      return;
+    }
+    if (!marker) return;
+    // A backtick fence's info string may not contain a backtick.
+    if (marker[0] === "`" && info.includes("`")) return;
+    if (info !== "") certain = true;
+    if (certain) open = { char: marker[0] ?? "`", length: marker.length, from: i };
+  });
+
+  if (open && startsAtTop) fenced.fill(true, open.from);
+  return fenced;
+}
+
+/** Blank out Markdown inline code spans (`x`, ``x``) so names quoted as code don't match. */
+function stripInlineCode(text: string): string {
+  return text.replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => " ".repeat(span.length));
+}
+
+
+function isMarkdownPath(path: string): boolean {
+  return MARKDOWN_PATH_RE.test(path);
+}
+
+/**
+ * Added prose lines of a Markdown hunk. Fenced code blocks are skipped,
+ * inline code spans are blanked, and a marker inside a fenced block is
+ * quoted code and doesn't count.
+ */
+function proseCandidates(hunk: DiffHunk): Candidate[] {
+  const fenced = fencedLines(
+    hunk.lines.map((l) => l.text),
+    hunk.start <= 1,
+  );
+  const ignored = new Set<string>();
+  hunk.lines.forEach((l, i) => {
+    if (fenced[i]) return;
+    for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
+  });
+
+  return hunk.lines.flatMap((l, i) => {
+    if (!l.added || fenced[i]) return [];
+    const prose = stripInlineCode(l.text);
+    return [{ path: hunk.path, lineNumber: l.lineNumber, uses: (alias: string) => literallyAppears(alias, prose), ignored }];
+  });
+}
+
+/**
+ * Exported names that added lines of a JS/TS hunk declare: the name after
  * `export const|function|class|interface|type|enum|namespace`, and the
  * public members of an exported class, interface, type literal or enum
  * whose opening line is inside the same hunk.
@@ -317,41 +401,53 @@ function braceDelta(text: string): number {
  * literals and call statements. Re-exports (`export { a }`) are skipped
  * because the name is declared, and checked, where it is defined.
  */
-function declaredNames(diff: string): DeclaredName[] {
-  const names: DeclaredName[] = [];
+function nameCandidates(hunk: DiffHunk): Candidate[] {
+  const candidates: Candidate[] = [];
+  const ignored = new Set<string>();
+  for (const l of hunk.lines) for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
 
-  for (const hunk of parseHunks(diff)) {
-    if (!SOURCE_PATH_RE.test(hunk.path)) continue;
+  // Brace depth inside an exported member block; undefined outside one.
+  let depth: number | undefined;
+  for (const l of hunk.lines) {
+    const declare = (name: string): void => {
+      if (!l.added) return;
+      const nameWords = wordsOf(name);
+      candidates.push({
+        path: hunk.path,
+        lineNumber: l.lineNumber,
+        name,
+        uses: (alias) => nameUsesAlias(nameWords, alias),
+        ignored,
+      });
+    };
 
-    const ignored = new Set<string>();
-    for (const l of hunk.lines) for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
-
-    // Brace depth inside an exported member block; undefined outside one.
-    let depth: number | undefined;
-    for (const l of hunk.lines) {
-      const declare = (name: string): void => {
-        if (l.added) names.push({ path: hunk.path, lineNumber: l.lineNumber, name, ignored });
-      };
-
-      if (depth === undefined) {
-        const declaration = EXPORT_DECLARATION_RE.exec(l.text);
-        const kind = declaration?.[1]?.replace(/\s+/g, " ");
-        const name = declaration?.[2];
-        if (kind === undefined || name === undefined) continue;
-        declare(name);
-        const opened = braceDelta(l.text);
-        if (MEMBER_BLOCK_KINDS.has(kind) && opened > 0) depth = opened;
-        continue;
-      }
-
-      const member = depth === 1 && !HIDDEN_MEMBER_RE.test(l.text) ? MEMBER_RE.exec(l.text)?.[1] : undefined;
-      if (member !== undefined) declare(member);
-      depth += braceDelta(l.text);
-      if (depth <= 0) depth = undefined;
+    if (depth === undefined) {
+      const declaration = EXPORT_DECLARATION_RE.exec(l.text);
+      const kind = declaration?.[1]?.replace(/\s+/g, " ");
+      const name = declaration?.[2];
+      if (kind === undefined || name === undefined) continue;
+      declare(name);
+      const opened = braceDelta(l.text);
+      if (MEMBER_BLOCK_KINDS.has(kind) && opened > 0) depth = opened;
+      continue;
     }
+
+    const member = depth === 1 && !HIDDEN_MEMBER_RE.test(l.text) ? MEMBER_RE.exec(l.text)?.[1] : undefined;
+    if (member !== undefined) declare(member);
+    depth += braceDelta(l.text);
+    if (depth <= 0) depth = undefined;
   }
 
-  return names;
+  return candidates;
+}
+
+/** Every place the diff's added lines could use an alias, in diff order. Other file types are not scanned. */
+function candidatesOf(diff: string): Candidate[] {
+  return parseHunks(diff).flatMap((hunk) => {
+    if (isMarkdownPath(hunk.path)) return proseCandidates(hunk);
+    if (SOURCE_PATH_RE.test(hunk.path)) return nameCandidates(hunk);
+    return [];
+  });
 }
 
 /** Lower-cased words of an identifier or alias: `setOwner`, `SET_OWNER` and `set-owner` all give `set`, `owner`. */
@@ -394,13 +490,14 @@ interface AliasGroup {
   path: string;
   alias: string;
   lines: number[];
-  names: string[];
+  /** The exported name on the first line, for a source declaration. */
+  name: string | undefined;
   entries: GlossaryEntry[];
 }
 
 /** One Avoid-alias finding for `alias` in `path`, at its first declaring line, naming every canonical term it belongs to. */
 function buildViolation(group: AliasGroup): Finding {
-  const { path, alias, lines, names, entries: matched } = group;
+  const { path, alias, lines, name, entries: matched } = group;
   const line = lines[0] ?? 0;
   const more = lines.slice(1);
   const elsewhere =
@@ -428,7 +525,7 @@ function buildViolation(group: AliasGroup): Finding {
     severity: "nit",
     impact: "prose",
     title: `Avoid alias "${alias}" — use ${quoteTerms(terms, '"', " or ")}`,
-    rationale: `Exported name \`${names[0] ?? alias}\` uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, false)} in the same hunk.${elsewhere} ${citations}`,
+    rationale: `${name === undefined ? "Added line" : `Exported name \`${name}\``} uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk.${elsewhere} ${citations}`,
   };
 }
 
@@ -444,20 +541,21 @@ export function applyGlossaryIgnore(
 }
 
 /**
- * Deterministic (non-model) `_Avoid_`-alias violations in the exported
- * names that added lines of JS/TS files declare. Severity `nit`, impact
- * `prose`: a hit never blocks the merge gate.
+ * Deterministic (non-model) `_Avoid_`-alias violations on added diff
+ * lines, in two places: Markdown prose, and the exported names that
+ * JS/TS files declare. Severity `nit`, impact `prose`: a hit never
+ * blocks the merge gate, because an exact-word match cannot tell a
+ * domain term from the same word in plain English.
  *
- * Prose is deliberately not scanned. An exact-word match cannot tell a
- * domain term from the same word in plain English, and on cortex the
- * prose scan produced 2,291 findings of which two were real — both
- * exported names (`ExchangeLine.user`, `setOwner`), which that scan
- * never read. Model lenses still get the glossary excerpt and judge
- * wording in prose.
+ * Source comments, local names and other file types are not scanned.
+ * Before this, source was checked in comments only, so an alias in an
+ * exported name (`setOwner`) was never reported.
  *
+ *   - Markdown fenced code blocks and inline code spans are skipped —
+ *     quoted code (`spawn` from `node:child_process`) isn't prose.
  *   - One finding per (file, alias): an alias listed under several
  *     canonical terms is reported once, naming every term, at its first
- *     declaring line, with the file's other hits listed in the rationale.
+ *     added line, with the file's other hits listed in the rationale.
  *   - A `glossary-ignore: <alias>[, <alias>…]` marker after a `//`,
  *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
  *     the same hunk exempts those aliases there.
@@ -469,21 +567,17 @@ export function findGlossaryViolations(
   // Keyed `path\0alias`; Map order keeps findings in diff order.
   const byFileAlias = new Map<string, AliasGroup>();
 
-  for (const { path, lineNumber, name, ignored } of declaredNames(diff)) {
+  for (const { path, lineNumber, name, uses, ignored } of candidatesOf(diff)) {
     if (isTypeSafeBoundaryPath(path)) continue;
-    const nameWords = wordsOf(name);
 
     for (const entry of entries) {
       for (const alias of entry.avoid) {
         const key = alias.toLowerCase();
         if (ignored.has(key)) continue;
-        if (!nameUsesAlias(nameWords, alias)) continue;
+        if (!uses(alias)) continue;
         const fileKey = `${path}\0${key}`;
-        const group = byFileAlias.get(fileKey) ?? { path, alias, lines: [], names: [], entries: [] };
-        if (!group.lines.includes(lineNumber)) {
-          group.lines.push(lineNumber);
-          group.names.push(name);
-        }
+        const group = byFileAlias.get(fileKey) ?? { path, alias, lines: [], name, entries: [] };
+        if (!group.lines.includes(lineNumber)) group.lines.push(lineNumber);
         if (!group.entries.includes(entry)) group.entries.push(entry);
         byFileAlias.set(fileKey, group);
       }

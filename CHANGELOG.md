@@ -4,7 +4,7 @@
 
 ### Changed
 
-- The deterministic glossary check reads only exported names declared on added lines of JavaScript and TypeScript files, and no longer scans Markdown prose or source comments. An alias matches as a whole word inside a name (`owner` in `setOwner`). Findings stay non-blocking nits, and `glossary.ignore` and `glossary-ignore` markers still apply.
+- The deterministic glossary check now reads the exported names declared on added lines of JavaScript and TypeScript files, where an alias matches as a whole word inside a name (`owner` in `setOwner`). It no longer scans source comments. Markdown prose is checked as before. Findings stay non-blocking nits, and `glossary.ignore` and `glossary-ignore` markers still apply.
 
 ## [0.4.0] - 2026-11-08
 
