@@ -381,14 +381,13 @@ function isMarkdownPath(path: string): boolean {
 }
 
 /**
- * True when `alias` appears in `text` somewhere other than inside a
- * canonical term. A glossary's `_Avoid_` list is local to its term: where
- * `score` is an alias under one term and `Score` is a term of its own, or
- * `tier` is an alias and `Hull tier` a term, a word match on the canonical
- * wording says nothing.
+ * True when some hit lies outside every canonical term. A glossary's
+ * `_Avoid_` list is local to its term: where `score` is an alias under
+ * one term and `Score` is a term of its own, or `tier` is an alias and
+ * `Hull tier` a term, a word match on the canonical wording says nothing.
  */
-function proseUsesAlias(text: string, alias: string, termSpans: readonly Span[]): boolean {
-  return literalSpans(alias, text).some((span) => !termSpans.some((term) => isInside(span, term)));
+function hitsOutsideTerms(hits: readonly Span[], terms: readonly Span[]): boolean {
+  return hits.some((hit) => !terms.some((term) => isInside(hit, term)));
 }
 
 function proseCandidate(
@@ -399,7 +398,7 @@ function proseCandidate(
   ignored: ReadonlySet<string>,
 ): Candidate {
   const termSpans = terms.flatMap((term) => literalSpans(term, prose));
-  return { path: hunk.path, lineNumber, uses: (alias) => proseUsesAlias(prose, alias, termSpans), ignored };
+  return { path: hunk.path, lineNumber, uses: (alias) => hitsOutsideTerms(literalSpans(alias, prose), termSpans), ignored };
 }
 
 /**
@@ -469,8 +468,7 @@ function nameCandidates(hunk: DiffHunk, terms: readonly string[], ignored: Reado
         path: hunk.path,
         lineNumber: l.lineNumber,
         name,
-        uses: (alias) =>
-          wordRuns(nameWords, wordsOf(alias)).some((run) => !termRuns.some((term) => isInside(run, term))),
+        uses: (alias) => hitsOutsideTerms(wordRuns(nameWords, wordsOf(alias)), termRuns),
         ignored,
       });
     };
