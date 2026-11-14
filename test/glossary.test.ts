@@ -455,3 +455,92 @@ describe("buildGlossaryLensReport", () => {
     expect(report.summary).toContain("1 CONTEXT.md Avoid-alias violation");
   });
 });
+
+function sourceDiff(path: string, body: string, start = 1): string {
+  const lines = body.split("\n");
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -${start},0 +${start},${lines.length} @@\n${lines.join("\n")}\n`;
+}
+
+describe("findGlossaryViolations — exported names only", () => {
+  const entries = parseGlossary(FIXTURE_CONTEXT_MD);
+
+  test("repro: plain words in Markdown prose and source comments are not findings", () => {
+    expect(findGlossaryViolations(entries, sourceDiff("docs/bus.md", "+The sender hands a message to the handler."))).toEqual([]);
+    expect(findGlossaryViolations(entries, sourceDiff("src/bus.ts", "+// The sender hands a message to the handler."))).toEqual([]);
+  });
+
+  test("flags an alias used as a word in an exported declaration name, as a non-gating nit", () => {
+    const findings = findGlossaryViolations(entries, sourceDiff("src/bus.ts", " const x = 1;\n+export function resolveSender(): string {", 10));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ path: "src/bus.ts", line: 11, severity: "nit", impact: "prose" });
+    expect(findings[0]?.title).toBe('Avoid alias "sender" — use "Originator"');
+    expect(findings[0]?.rationale).toContain("`resolveSender`");
+    expect(findings[0]?.rationale).toContain("CONTEXT.md:20");
+  });
+
+  test("matches whole words inside camelCase, PascalCase and SCREAMING_SNAKE names", () => {
+    const flagged = (line: string) => findGlossaryViolations(entries, sourceDiff("src/a.ts", `+${line}`)).map((f) => f.title);
+    expect(flagged("export const dispatcherId = 1;")).toEqual(['Avoid alias "dispatcher" — use "Renderer"']);
+    expect(flagged("export class MessagePacket {}")).toHaveLength(2);
+    expect(flagged("export const DISPATCH_SOURCE = 1;")).toEqual(['Avoid alias "dispatch-source" — use "Originator"']);
+    expect(flagged("export const botany = 1;")).toEqual([]);
+    expect(flagged("export type Senders = string[];")).toEqual([]);
+  });
+
+  test("ignores local declarations, usages, re-exports and non-JS/TS files", () => {
+    const body = [
+      "+const sender = resolveOriginator();",
+      "+function handler() {}",
+      "+const detail = error.message;",
+      '+import { sender } from "./sender.ts";',
+      '+export { sender } from "./sender.ts";',
+    ].join("\n");
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", body))).toEqual([]);
+    expect(findGlossaryViolations(entries, sourceDiff("README.md", "+export function sender() {}"))).toEqual([]);
+    expect(findGlossaryViolations(entries, sourceDiff("tool.py", "+export function sender() {}"))).toEqual([]);
+  });
+
+  test("does NOT flag removed or context lines", () => {
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", "-export const sender = 1;\n export const packet = 2;\n+export const ok = 3;"))).toEqual([]);
+  });
+
+  test("flags public members of an exported interface, class or enum opened in the hunk", () => {
+    const body = [
+      " export interface ExchangeLine {",
+      "+  sender: string;",
+      "+  readonly packet?: number;",
+      "+  handler(): void;",
+      " }",
+      "+export class Bus {",
+      "+  private gateway = 1;",
+      "+  #plugin = 2;",
+      "+  publish(): void {",
+      "+    const connector = { executor: 1 };",
+      "+  }",
+      "+  static daemon = 3;",
+      "+}",
+    ].join("\n");
+    const aliases = findGlossaryViolations(entries, sourceDiff("src/a.ts", body)).map((f) => f.title.split('"')[1]);
+    expect(aliases).toEqual(["sender", "packet", "handler", "daemon"]);
+  });
+
+  test("a member line whose declaration is outside the hunk is not guessed at", () => {
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", "   id: string;\n+  sender: string;", 40))).toEqual([]);
+  });
+
+  test("one finding per (file, alias), naming every canonical term and the other lines", () => {
+    const body = "+export const botId = 1;\n+export const otherBot = 2;";
+    const findings = findGlossaryViolations(entries, `${sourceDiff("src/a.ts", body)}${sourceDiff("src/b.ts", body)}`);
+    expect(findings.map((f) => f.path)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(findings[0]?.title).toBe('Avoid alias "bot" — use "Assistant" or "Agent"');
+    expect(findings[0]?.rationale).toContain("Also on line 2.");
+  });
+
+  test("glossary-ignore in the same hunk exempts the alias; another hunk's marker does not", () => {
+    const exempt = sourceDiff("src/a.ts", "+// glossary-ignore: Sender, packet\n+export const sender = 1;\n+export const packet = 2;\n+export const handler = 3;");
+    expect(findGlossaryViolations(entries, exempt).map((f) => f.title.split('"')[1])).toEqual(["handler"]);
+    const other = `${sourceDiff("src/a.ts", "+// glossary-ignore: sender")}@@ -40,0 +41,1 @@\n+export const sender = 1;\n`;
+    expect(findGlossaryViolations(entries, other)).toHaveLength(1);
+    expect(findGlossaryViolations(entries, other)[0]?.line).toBe(41);
+  });
+});
