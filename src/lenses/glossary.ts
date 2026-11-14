@@ -461,7 +461,7 @@ function nameCandidates(hunk: DiffHunk, terms: readonly string[], ignored: Reado
   // Brace depth inside an exported member block; undefined outside one.
   let depth: number | undefined;
   for (const l of hunk.lines) {
-    const declare = (name: string): void => {
+    const record = (name: string): void => {
       if (!l.added) return;
       const nameWords = wordsOf(name);
       const termRuns = terms.flatMap((term) => wordRuns(nameWords, wordsOf(term)));
@@ -480,14 +480,14 @@ function nameCandidates(hunk: DiffHunk, terms: readonly string[], ignored: Reado
       const kind = declaration?.[1]?.replace(/\s+/g, " ");
       const name = declaration?.[2];
       if (kind === undefined || name === undefined) continue;
-      declare(name);
+      record(name);
       const opened = braceDelta(l.text);
       if (MEMBER_BLOCK_KINDS.has(kind) && opened > 0) depth = opened;
       continue;
     }
 
     const member = depth === 1 && !HIDDEN_MEMBER_RE.test(l.text) ? MEMBER_RE.exec(l.text)?.[1] : undefined;
-    if (member !== undefined) declare(member);
+    if (member !== undefined) record(member);
     depth += braceDelta(l.text);
     if (depth <= 0) depth = undefined;
   }
