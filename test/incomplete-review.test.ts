@@ -9,7 +9,7 @@ import { makeStubForge } from "./forge-stub.ts";
 
 const ref = { owner: "example", repo: "test", number: 1 };
 const pr = { number: 1, title: "fix", body: "", author: { login: "author" }, baseRefName: "main", headRefName: "fix", headRefOid: "abc123", changedFiles: 1, files: [{ path: "src/a.ts", additions: 1, deletions: 0 }] };
-const diff = "+++ b/src/a.ts\n@@ -0,0 +1 @@\n+export const spawnCommand = 1;\n";
+const diff = "+++ b/src/a.ts\n@@ -0,0 +1 @@\n+// Command and spawn\n";
 const substrate = {
   name: "pi" as const, displayName: "pi.dev", bin: "pi", jsonExtractors: TEXT_EXTRACTORS,
   envRequirements: { namespaces: [], keys: [] },

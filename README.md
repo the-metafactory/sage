@@ -373,12 +373,15 @@ reviewed even when it matches. Excluded files get no review at all, and a PR tha
 touches nothing else can be approved with no code read, so list only content that
 needs none.
 
-The deterministic glossary scan checks added lines in two places. In Markdown
-it reads prose and skips code spans and fenced examples. In JavaScript and
-TypeScript files it reads the exported names a line declares: the name after
-`export`, and the public members of an exported class, interface, type literal
-or enum whose opening line is in the same hunk. An alias matches a name as a
-whole word, so `owner` matches `setOwner` and `run` does not match `runner`.
-Source comments, local names and other file types are not scanned. Model lenses
-still read the source and glossary context; they assess terminology where a
-word match cannot establish its meaning.
+The deterministic glossary scan checks added lines in three places: Markdown
+prose, standalone source comment lines, and the exported names that JavaScript
+and TypeScript files declare. An exported name is the name after `export`, or a
+public member of an exported class, interface, type literal or enum whose
+opening line is in the same hunk. An alias matches a name as a whole word, so
+`owner` matches `setOwner` and `run` does not match `runner`. An alias inside a
+canonical term is not a hit: where `Score` is a term, `score` is not flagged,
+and `tier` is not flagged in "hull tier" where `Hull tier` is a term. The scan
+skips executable statements, local names, configuration keys and generated
+data. Model lenses still read the source and glossary context; they assess
+terminology where a word match cannot establish its meaning. Markdown code
+spans and fenced examples remain excluded from prose matching.

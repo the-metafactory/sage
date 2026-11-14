@@ -255,6 +255,11 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     expect(findings.map((f) => `${f.path}:${f.line}`)).toEqual(["docs/b.md:1"]);
   });
 
+  test("``` inside a non-Markdown file is not treated as a fence", () => {
+    const diff = hunkDiff("src/a.ts", 1, ["+// ```", "+// sender is the caller.", "+// ```"]);
+    expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([2]);
+  });
+
   test("Markdown inline code spans are skipped, prose on the same line is not", () => {
     const quoted = hunkDiff("docs/a.md", 1, ["+Uses `spawn` to fork."]);
     expect(findGlossaryViolations(seelite, quoted)).toEqual([]);
@@ -336,6 +341,13 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
     expect(findings[0]?.rationale).toContain("Also on line 3.");
   });
 
+  test("glossary-ignore after # works (Python, YAML, shell)", () => {
+    const flagged = hunkDiff("tools/a.py", 1, ["+# sender resolves the caller."]);
+    expect(findGlossaryViolations(fixture, flagged)).toHaveLength(1);
+    const exempt = hunkDiff("tools/a.py", 1, ["+# sender resolves the caller.", `+x = 1  # ${IGNORE} sender`]);
+    expect(findGlossaryViolations(fixture, exempt)).toEqual([]);
+  });
+
   test("glossary-ignore inside a Markdown fenced block is quoted code and does not count", () => {
     const diff = hunkDiff("docs/a.md", 1, ["+```html", `+<!-- ${IGNORE} Spawn -->`, "+```", "+Each Spawn waits."]);
     expect(findGlossaryViolations(seelite, diff).map((f) => f.line)).toEqual([4]);
@@ -376,11 +388,11 @@ function sourceDiff(path: string, body: string, start = 1): string {
 describe("findGlossaryViolations — exported names in source", () => {
   const entries = parseGlossary(FIXTURE_CONTEXT_MD);
 
-  test("repro: plain words in source comments are not findings; Markdown prose still is", () => {
-    expect(findGlossaryViolations(entries, sourceDiff("src/bus.ts", "+// The sender hands a message to the handler."))).toEqual([]);
-    const prose = findGlossaryViolations(entries, sourceDiff("docs/bus.md", "+The sender hands a message to the handler."));
-    expect(prose.map((f) => f.title.split('"')[1])).toEqual(["sender", "message", "handler"]);
-    expect(prose[0]?.rationale).toContain("Added line uses `sender`");
+  test("an exported name is checked next to the comment above it, in line order", () => {
+    const findings = findGlossaryViolations(entries, sourceDiff("src/bus.ts", "+// The packet is queued.\n+export const senderId = 1;"));
+    expect(findings.map((f) => `${f.line} ${f.title.split('"')[1]}`)).toEqual(["1 packet", "2 sender"]);
+    expect(findings[0]?.rationale).toContain("Added line uses `packet`");
+    expect(findings[1]?.rationale).toContain("Exported name `senderId` uses `sender`");
   });
 
   test("flags an alias used as a word in an exported declaration name, as a non-gating nit", () => {
@@ -455,5 +467,40 @@ describe("findGlossaryViolations — exported names in source", () => {
     const other = `${sourceDiff("src/a.ts", "+// glossary-ignore: sender")}@@ -40,0 +41,1 @@\n+export const sender = 1;\n`;
     expect(findGlossaryViolations(entries, other)).toHaveLength(1);
     expect(findGlossaryViolations(entries, other)[0]?.line).toBe(41);
+  });
+});
+
+describe("findGlossaryViolations — an alias inside a canonical term is not a hit", () => {
+  const entries = parseGlossary(`## Language
+
+**Score**:
+Points a run has earned.
+
+**Hull tier**:
+The strength class of a hull.
+
+**Rating**:
+A pilot's standing.
+_Avoid_: score, tier, score card
+`);
+  const aliases = (path: string, line: string) =>
+    findGlossaryViolations(entries, sourceDiff(path, `+${line}`)).map((f) => f.title.split('"')[1]);
+
+  test("prose and comments: the canonical wording passes, the bare alias is still flagged", () => {
+    expect(aliases("docs/a.md", "The score rises with each hull tier.")).toEqual([]);
+    expect(aliases("src/a.ts", "// The Score rises with each Hull Tier.")).toEqual([]);
+    expect(aliases("docs/a.md", "Reach tier 3 to dock.")).toEqual(["tier"]);
+    expect(aliases("docs/a.md", "The hull tier beats a lower tier.")).toEqual(["tier"]);
+  });
+
+  test("an alias longer than the term it contains is still flagged", () => {
+    expect(aliases("docs/a.md", "Hand in the score card.")).toEqual(["score card"]);
+  });
+
+  test("exported names follow the same rule", () => {
+    expect(aliases("src/a.ts", "export const hullTier = 1;")).toEqual([]);
+    expect(aliases("src/a.ts", "export const scoreTotal = 1;")).toEqual([]);
+    expect(aliases("src/a.ts", "export const tierIndex = 1;")).toEqual(["tier"]);
+    expect(aliases("src/a.ts", "export const scoreCard = 1;")).toEqual(["score card"]);
   });
 });
