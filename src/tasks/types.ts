@@ -1,124 +1,31 @@
-import { z } from "zod";
-
 /**
- * Canonical Zod schema for the `code-review` task envelope's `payload` field.
- *
- * One source of truth shared between both wire directions:
- * - Receiver — cortex's `ReviewConsumer` (post sage#40, sage runs in-process
- *   inside cortex) calls `TaskPayloadSchema.safeParse` on incoming envelopes;
- *   the inferred `ReviewTaskPayload` type drives `resolvePrRef` etc. before
- *   the injected `pipelineRunner` (sage's `reviewPr`) is invoked.
- * - `dispatcher.ts` (sender) — derives `DispatchTaskPayload` by narrowing
- *   `post` to `true` (per sage#8: the sender NEVER sends `post: false`;
- *   absence means "let the receiver-default decide").
- *
- * When the protocol gains a field (priority, labels, target_lens, etc.),
- * add it here once. Both sites pick it up automatically.
- *
- * Refinement: an envelope must carry EITHER a `pr_url` or the
- * `owner+repo+number` triple. The receiver's `resolvePrRef` handles both.
+ * The `payload` of the `code-review` task envelope that `sage dispatch`
+ * publishes. Sage is the Dispatcher only: cortex's `ReviewConsumer` owns
+ * the receiving side and validates what arrives with its own resolver, so
+ * Sage keeps no receiver schema.
  */
-/**
- * GitHub character set for org logins and repository names. Logins are
- * `[A-Za-z0-9]` plus single (non-consecutive) dashes — no leading,
- * trailing, or double dashes — capped at 39 chars; repo names
- * additionally allow `.` and `_` up to 100 chars. We use a narrow
- * safe-character regex because these values cross the NATS bus trust
- * boundary and are eventually rendered into operator-facing shell
- * hints (sage#16 review). Anything that's not a valid GitHub identifier
- * shouldn't reach the receiver in the first place.
- *
- * Owner regex enforces GitHub's actual "no consecutive hyphens" rule
- * via a positive lookahead — each `-` must be followed by another
- * alphanumeric.
- */
-const GH_OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
-// Repo names: alphanumeric, `_`, `-`, and `.` — but NO leading/trailing
-// `.` and NO consecutive `..`. `..` in particular is a path-traversal
-// vector if it ever reached on-disk filename construction
-// (sage#16 round-6 review). Positive-lookahead trick: every `.` must
-// be followed by a non-dot.
-const GH_REPO_RE = /^[A-Za-z0-9_-](?:[A-Za-z0-9_-]|\.(?=[A-Za-z0-9_-])){0,99}$/;
-
-export const TaskPayloadSchema = z
-  .object({
-    pr_url: z.string().url().optional(),
-    owner: z.string().regex(GH_OWNER_RE).max(39).optional(),
-    repo: z.string().regex(GH_REPO_RE).max(100).optional(),
-    number: z.number().int().positive().optional(),
-    post: z.boolean().optional(),
-    /**
-     * cortex#237 §4.1 — `pr` field, integer PR/MR number. Pairs with
-     * the cortex-spec `repo` field (slash-joined owner/repo). Sage
-     * dispatch emits this alongside the legacy `pr_url` + GitHub-shape
-     * `owner`/`number` triple so receivers built against either
-     * grammar work (sage#52).
-     */
-    pr: z.number().int().positive().optional(),
-    /**
-     * cortex#237 §4.1 — informational reviewer name. Cortex routes by
-     * capability, not by this field. Sage dispatch defaults to
-     * `"capability-dispatch"` to make the routing semantic visible.
-     */
-    reviewer: z.string().min(1).optional(),
-    /** Per-lens pi timeout. Falls back to receiver PI_TIMEOUT_MS / default. */
-    timeout_ms: z.number().int().positive().optional(),
-    /**
-     * Forge platform discriminator (sage#43, Phase 5). Additive
-     * optional field — receivers that don't yet route on this default
-     * to `"github"` (back-compat). When the dispatcher publishes a
-     * GitLab MR review task, this MUST be set so cortex routes through
-     * the GitLab backend; the per-segment validators above stay
-     * GitHub-shaped because `owner`/`repo` are not used on the GitLab
-     * path (the `pr_url` carries the full project path).
-     */
-    forge: z.enum(["github", "gitlab"]).optional(),
-  })
-  .refine((p) => Boolean(p.pr_url) || (Boolean(p.owner) && Boolean(p.repo) && Boolean(p.number)), {
-    message: "payload must contain either pr_url or (owner, repo, number)",
-  });
-
-/**
- * Inferred type for the receiver side. Matches what `safeParse` produces
- * after the refinement runs — all fields optional at the type level since
- * the refinement enforces the disjunction at runtime.
- */
-export type ReviewTaskPayload = z.infer<typeof TaskPayloadSchema>;
-
-/**
- * Sender-side narrowing of `ReviewTaskPayload`. Built via `Pick` (not
- * `Omit`) so the dispatcher type doesn't carry fields it never sends:
- *
- * - `pr_url` is REQUIRED (the dispatcher always knows the full URL — it
- *   constructs it from the parsed PR ref). The `owner/repo/number` alt is
- *   only used by webhooks-side producers, not this CLI's dispatcher, so
- *   those fields are deliberately absent here.
- * - `post` is `true | undefined`, never `false`. Sending an explicit
- *   `false` would clobber the bridge's `payload.post ?? cfg.postReviews`
- *   fallthrough (??-coalesce treats false as a value). See sage#8.
- *
- * Tradeoff vs `Omit<ReviewTaskPayload, "post" | "pr_url">`: future
- * protocol fields added to `TaskPayloadSchema` (e.g. `priority`, `labels`,
- * `target_lens`) do NOT auto-propagate here — they need an explicit add
- * to the `Pick` set. The shape-parity test in `test/payload.test.ts` is
- * ONE-DIRECTIONAL — it catches sender keys missing from the receiver,
- * NOT receiver keys missing from the sender. Adding a sender-side field
- * is therefore an explicit, manual choice. Precision > automatic
- * propagation for the dispatcher's tightly-scoped surface.
- *
- * MAINTAINER CHECKLIST when adding a protocol field:
- *   1. Add the field to `TaskPayloadSchema` above.
- *   2. If the dispatcher should send it, add the key to the `Pick` set
- *      below. The shape-parity test in `test/payload.test.ts` will fail
- *      if you do step 2 without step 1, but it will NOT fail if you skip
- *      step 2 — that direction is intentional.
- */
-export type DispatchTaskPayload = Pick<
-  ReviewTaskPayload,
-  "timeout_ms" | "forge" | "pr" | "reviewer"
-> & {
+export type DispatchTaskPayload = {
+  /** Always set: the Dispatcher builds the full PR URL from the parsed ref. */
   pr_url: string;
   /** Slash-joined owner/repo per cortex#237 §4.1 (sage#52). */
   repo: string;
+  /** Integer PR number; pairs with `repo` (cortex#237 §4.1, sage#52). */
+  pr?: number;
+  /**
+   * Label for the routing semantic. Receivers are selected by capability,
+   * not by this field; Sage dispatch defaults to `"capability-dispatch"`.
+   */
+  reviewer?: string;
+  /** Per-lens timeout. Falls back to the receiver's default. */
+  timeout_ms?: number;
+  /**
+   * Forge discriminator (sage#43). Omitted for GitHub so older receivers
+   * keep working; set for a GitLab PR so cortex routes to the GitLab backend.
+   */
+  forge?: "github" | "gitlab";
+  /**
+   * `true` or absent, never `false`. An explicit `false` would clobber the
+   * receiver's `payload.post ?? cfg.postReviews` fallthrough (sage#8).
+   */
   post?: true;
 };
