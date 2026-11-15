@@ -37,4 +37,4 @@ export type Equal<X, Y> =
 // without surfacing why; the disable + the comment above keep intent
 // visible if a future lint config tightens.
 // eslint-disable-next-line @typescript-eslint/no-empty-function
-export function typeCheck<T extends true>(): void {}
+export function typeCheck<_T extends true>(): void {}

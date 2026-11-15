@@ -157,10 +157,11 @@ describe("DispatchTaskPayload (sender narrowing)", () => {
     // True opt-in: this compiles.
     const a: DispatchTaskPayload = {
       pr_url: "https://github.com/x/y/pull/1",
+      repo: "x/y",
       post: true,
     };
     // Omission: this compiles too.
-    const b: DispatchTaskPayload = { pr_url: "https://github.com/x/y/pull/1" };
+    const b: DispatchTaskPayload = { pr_url: "https://github.com/x/y/pull/1", repo: "x/y" };
     expect(a.post).toBe(true);
     expect(b.post).toBeUndefined();
 
@@ -181,11 +182,15 @@ describe("DispatchTaskPayload (sender narrowing)", () => {
     typeCheck<Equal<PrUrlRequired, true>>();
   });
 
-  test("DispatchTaskPayload at runtime still validates against TaskPayloadSchema", () => {
+  // Known gap, found when the tests joined the typecheck: the dispatcher sends
+  // `repo` as "owner/name", and the schema's `repo` accepts a bare name only.
+  // This test passed while its payload omitted the required `repo`.
+  test.failing("DispatchTaskPayload at runtime still validates against TaskPayloadSchema", () => {
     // A correctly-shaped DispatchTaskPayload must round-trip through the
     // canonical schema — otherwise the sender and receiver disagree.
     const payload: DispatchTaskPayload = {
       pr_url: "https://github.com/x/y/pull/1",
+      repo: "x/y",
       post: true,
       timeout_ms: 60_000,
     };

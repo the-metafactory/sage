@@ -227,7 +227,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: successfulTransport(requests),
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
       now: () => new Date("2026-09-18T21:00:00.000Z"),
     });
 
@@ -345,7 +345,7 @@ describe("TypeSafe shadow observer", () => {
       corpus: manifest(),
       policy: boundedPolicy,
       transport: successfulTransport(requests),
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
 
     await observer.observe(crowdedInput);
@@ -371,7 +371,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: successfulTransport(requests),
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
 
     await observer.observe(erroredInput);
@@ -389,7 +389,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: successfulTransport(requests),
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
       repeatCount: 3,
       now: () => new Date("2026-09-18T21:00:00.000Z"),
     });
@@ -429,7 +429,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest("pending"),
       transport: { execute: async () => { calls++; return {}; } },
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
     await observer.observe(input);
     expect(calls).toBe(0);
@@ -443,7 +443,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: { execute: async () => { calls++; return {}; } },
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
     await observer.observe({
       ...input,
@@ -459,7 +459,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: { execute: async () => new Promise(() => undefined) },
-      sink: { write: (record) => timeoutRecords.push(record) },
+      sink: { write: (record) => { timeoutRecords.push(record); } },
       timeoutMs: 5,
     });
     await timeoutObserver.observe(input);
@@ -476,7 +476,7 @@ describe("TypeSafe shadow observer", () => {
           usage: { input_tokens: 1, output_tokens: 0 },
         }),
       },
-      sink: { write: (record) => malformedRecords.push(record) },
+      sink: { write: (record) => { malformedRecords.push(record); } },
     });
     await malformedObserver.observe(input);
     expect(malformedRecords[0]?.routing.status).toBe("failed");
@@ -489,7 +489,7 @@ describe("TypeSafe shadow observer", () => {
       mode: "shadow",
       corpus: manifest(),
       transport: successfulTransport([], 0.4),
-      sink: { write: (record) => records.push(record) },
+      sink: { write: (record) => { records.push(record); } },
     });
     await observer.observe(input);
     expect(records[0]?.routing.signals.every((signal) => signal.disposition === "low_confidence")).toBe(true);
