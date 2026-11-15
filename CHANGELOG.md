@@ -1,11 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-11-15
 
 ### Changed
 
-- The deterministic glossary check also reads the exported names declared on added lines of JavaScript and TypeScript files, where an alias matches as a whole word inside a name (`owner` in `setOwner`). Markdown prose and source comments are checked as before.
-- An alias inside a canonical term is no longer flagged: `score` where `Score` is itself a term, or `tier` in "hull tier" where `Hull tier` is a term.
+- The deterministic glossary check also reads the exported names declared on added lines of JavaScript and TypeScript files, where an alias matches as a whole word inside a name (`owner` in `setOwner`). Markdown prose and source comments are checked as before. (#149)
+- An alias inside a canonical term is no longer flagged: `score` where `Score` is itself a term, or `tier` in "hull tier" where `Hull tier` is a term. (#149)
+- The typecheck fails on unused locals and parameters and now covers `test/` and `scripts/`. (#150, #151)
+
+### Removed
+
+- `TaskPayloadSchema` and `ReviewTaskPayload`. Cortex validates the receiving side; `DispatchTaskPayload` stays, as a plain type. (#152)
 
 ## [0.4.0] - 2026-11-08
 
