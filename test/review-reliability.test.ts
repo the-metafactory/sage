@@ -231,6 +231,9 @@ describe("glossary syntax regressions", () => {
       expect(findGlossaryViolations(glossary, diff(path ?? "", [text ?? ""]))).toHaveLength(2);
     }
   });
+  test("reports an alias in an exported name", () => {
+    expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["export function startRun(): void {}"]))).toHaveLength(1);
+  });
   test("trailing comments inside executable lines remain outside the deterministic prose scan", () => {
     expect(findGlossaryViolations(glossary, diff("src/worker.ts", ["work(); // The host starts a run."]))).toEqual([]);
   });

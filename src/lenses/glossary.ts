@@ -20,11 +20,11 @@ import type { Finding, LensReport } from "./types.ts";
  *   1. `buildGlossaryContext` — a compact, diff-relevant excerpt (term +
  *      avoid list + citation, no full definitions) suitable for EVERY
  *      lens's stdin, not a 50KB CONTEXT.md dump.
- *   2. `findGlossaryViolations` — deterministic (no model call) exact
- *      `_Avoid_`-alias matches on ADDED diff lines. Severity `important`
- *      so a hit feeds `decideVerdict`'s changes-requested path the same
- *      way a model-authored finding would.
- *      Markdown code (fenced blocks, inline spans) is skipped, and a
+ *   2. `findGlossaryViolations` — deterministic (no model call)
+ *      `_Avoid_`-alias matches on added lines: in Markdown prose, in
+ *      standalone source comments, and in the exported names JS/TS
+ *      files declare. Severity `nit`, so a hit never blocks. Markdown
+ *      code (fenced blocks, inline spans) is skipped, and a
  *      `glossary-ignore: <alias>` marker in the hunk exempts an
  *      intentional alias (sage#128).
  *
@@ -157,11 +157,22 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Literal, case-insensitive containment check excluding identifier properties. */
+/** A half-open `[start, end)` range of characters in a line, or of words in a name. */
+type Span = readonly [start: number, end: number];
+
+function isInside(inner: Span, outer: Span): boolean {
+  return outer[0] <= inner[0] && inner[1] <= outer[1];
+}
+
+/** Where `needle` literally appears in `haystack`: case-insensitive, whole word, never an identifier property. */
+function literalSpans(needle: string, haystack: string): Span[] {
+  if (!needle) return [];
+  const pattern = new RegExp(`(?<![A-Za-z0-9_.])${escapeRegExp(needle)}(?![A-Za-z0-9_])`, "gi");
+  return [...haystack.matchAll(pattern)].map((match) => [match.index, match.index + match[0].length] as const);
+}
+
 function literallyAppears(needle: string, haystack: string): boolean {
-  if (!needle) return false;
-  const pattern = new RegExp(`(?<![A-Za-z0-9_.])${escapeRegExp(needle)}(?![A-Za-z0-9_])`, "i");
-  return pattern.test(haystack);
+  return literalSpans(needle, haystack).length > 0;
 }
 
 /**
@@ -213,16 +224,6 @@ If the diff introduces one of the listed Avoid aliases, prefer the canonical ter
   };
 }
 
-interface DiffAddedLine {
-  path: string;
-  lineNumber: number;
-  text: string;
-  /** True when the line sits inside a fenced code block of a Markdown file. */
-  inCodeFence: boolean;
-  /** Lower-cased aliases exempted by a `glossary-ignore:` marker in this line's hunk. */
-  ignored: ReadonlySet<string>;
-}
-
 interface DiffHunk {
   path: string;
   /** New-revision line number of the hunk's first line. */
@@ -231,27 +232,38 @@ interface DiffHunk {
   lines: { added: boolean; lineNumber: number; text: string }[];
 }
 
+/** One place an added line could use an alias: Markdown prose, a source comment, or an exported name a source line declares. */
+interface Candidate {
+  path: string;
+  lineNumber: number;
+  /** The exported name, for a source declaration; absent for prose and comments. */
+  name?: string;
+  uses: (alias: string) => boolean;
+  /** Lower-cased aliases exempted by a `glossary-ignore:` marker in this line's hunk. */
+  ignored: ReadonlySet<string>;
+}
+
 const MARKDOWN_PATH_RE = /\.(?:md|mdx|markdown)$/i;
 const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*\s|#(?:\s|$)|--\s)(.*)$/;
 // CommonMark fence: up to 3 spaces of indent, then 3+ backticks or tildes.
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const SOURCE_PATH_RE = /\.[cm]?[jt]sx?$/i;
 // The marker only counts after a `//`, `#`, `/*`, `<!--` or `--`
 // opener at line start or after whitespace, or after a `*` block
-// continuation at line start — so bare marker text in prose or a string
-// literal doesn't exempt anything. Not a tokenizer: a string that itself
-// holds an opener plus the marker (`"x // glossary-ignore: a"`) still
-// counts. The alias list runs to `-->`, `*/` or end of line. Comma-split
-// only (aliases may hold spaces).
+// continuation at line start — so bare marker text in a string literal
+// doesn't exempt anything. Not a tokenizer: a string that itself holds an
+// opener plus the marker (`"x // glossary-ignore: a"`) still counts. The
+// alias list runs to `-->`, `*/` or end of line. Comma-split only
+// (aliases may hold spaces).
 const IGNORE_MARKER_RE =
   /(?:^\s*\*|(?:^|\s)(?:\/\/+|#+|\/\*+|<!--|--))\s*glossary-ignore:\s*(.*?)\s*(?:-->|\*\/|$)/i;
-
-function isMarkdownPath(path: string): boolean {
-  return MARKDOWN_PATH_RE.test(path);
-}
-
-function proseOf(path: string, text: string): string {
-  return isMarkdownPath(path) ? text : COMMENT_LINE.exec(text)?.[1] ?? "";
-}
+const EXPORT_DECLARATION_RE =
+  /^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(const\s+enum|const|let|var|function\*?|class|interface|type|enum|namespace)\s+([A-Za-z_$][\w$]*)/;
+/** Declarations whose `{ … }` body lists members that are part of the exported name's surface. */
+const MEMBER_BLOCK_KINDS: ReadonlySet<string> = new Set(["class", "interface", "type", "enum", "const enum"]);
+const HIDDEN_MEMBER_RE = /^\s*(?:private|protected)\s|^\s*#/;
+const MEMBER_RE =
+  /^\s*(?:(?:public|static|readonly|abstract|override|async|declare|get|set)\s+)*([A-Za-z_$][\w$]*)[?!]?\s*(?:[:(<=,;]|$)/;
 
 function parseIgnoreMarker(text: string): string[] {
   const raw = text.match(IGNORE_MARKER_RE)?.[1];
@@ -260,6 +272,59 @@ function parseIgnoreMarker(text: string): string[] {
     .split(",")
     .map((s) => s.trim().replace(/^[`"']+|[`"'.;]+$/g, "").trim().toLowerCase())
     .filter((s) => s.length > 0);
+}
+
+/** Split a unified diff into hunks of new-revision (added + context) lines. Removed lines are dropped. */
+function parseHunks(diff: string): DiffHunk[] {
+  const hunks: DiffHunk[] = [];
+  let currentPath = "";
+  let current: DiffHunk | undefined;
+  let newLineNo = 0;
+  const openHunk = (): DiffHunk => {
+    const hunk: DiffHunk = { path: currentPath, start: newLineNo, lines: [] };
+    hunks.push(hunk);
+    return hunk;
+  };
+
+  for (const raw of diff.split("\n")) {
+    if (raw.startsWith("+++ ")) {
+      const m = raw.match(/^\+\+\+ (?:b\/)?(.+)$/);
+      currentPath = m?.[1] === undefined || m[1] === "/dev/null" ? "" : m[1];
+      current = undefined;
+      continue;
+    }
+    if (raw.startsWith("--- ")) continue;
+
+    const header = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (header?.[1]) {
+      newLineNo = parseInt(header[1], 10);
+      current = openHunk();
+      continue;
+    }
+
+    const added = raw.startsWith("+");
+    if (added || raw.startsWith(" ")) {
+      // Lines before any `@@` header (a bare `+line` snippet) form an implicit hunk.
+      current ??= openHunk();
+      current.lines.push({ added, lineNumber: newLineNo, text: raw.slice(1) });
+      newLineNo++;
+    }
+    // removed (`-`) line — new-revision counter doesn't advance.
+    // diff --git / index / mode lines etc — ignored, no counter effect.
+  }
+
+  return hunks;
+}
+
+/** Net `{`/`}` on a line, ignoring string literals and a trailing `//` comment. Approximate: not a tokenizer. */
+function braceDelta(text: string): number {
+  const code = text.replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "").replace(/\/\/.*$/, "");
+  let delta = 0;
+  for (const char of code) {
+    if (char === "{") delta++;
+    else if (char === "}") delta--;
+  }
+  return delta;
 }
 
 /**
@@ -305,94 +370,159 @@ function fencedLines(texts: readonly string[], startsAtTop: boolean): boolean[] 
   return fenced;
 }
 
-/** Split a unified diff into hunks of new-revision (added + context) lines. Removed lines are dropped. */
-function parseHunks(diff: string): DiffHunk[] {
-  const hunks: DiffHunk[] = [];
-  let currentPath = "";
-  let current: DiffHunk | undefined;
-  let newLineNo = 0;
-  const openHunk = (): DiffHunk => {
-    const hunk: DiffHunk = { path: currentPath, start: newLineNo, lines: [] };
-    hunks.push(hunk);
-    return hunk;
-  };
+/** Blank out Markdown inline code spans (`x`, ``x``) so names quoted as code don't match. */
+function stripInlineCode(text: string): string {
+  return text.replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => " ".repeat(span.length));
+}
 
-  for (const raw of diff.split("\n")) {
-    if (raw.startsWith("+++ ")) {
-      const m = raw.match(/^\+\+\+ (?:b\/)?(.+)$/);
-      currentPath = m?.[1] === undefined || m[1] === "/dev/null" ? "" : m[1];
-      current = undefined;
-      continue;
-    }
-    if (raw.startsWith("--- ")) continue;
 
-    const header = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-    if (header?.[1]) {
-      newLineNo = parseInt(header[1], 10);
-      current = openHunk();
-      continue;
-    }
-
-    const added = raw.startsWith("+");
-    if (added || raw.startsWith(" ")) {
-      // Lines before any `@@` header (a bare `+line` snippet) form an implicit hunk.
-      current ??= openHunk();
-      current.lines.push({ added, lineNumber: newLineNo, text: raw.slice(1) });
-      newLineNo++;
-    }
-    // removed (`-`) line — new-revision counter doesn't advance.
-    // diff --git / index / mode lines etc — ignored, no counter effect.
-  }
-
-  return hunks;
+function isMarkdownPath(path: string): boolean {
+  return MARKDOWN_PATH_RE.test(path);
 }
 
 /**
- * Every added line with its file + new-revision line number, Markdown
- * fence state, and the hunk's `glossary-ignore` exemptions. Context
- * lines feed fence state and markers; a marker inside a fenced block is
+ * True when some hit lies outside every canonical term. A glossary's
+ * `_Avoid_` list is local to its term: where `score` is an alias under
+ * one term and `Score` is a term of its own, or `tier` is an alias and
+ * `Hull tier` a term, a word match on the canonical wording says nothing.
+ */
+function hitsOutsideTerms(hits: readonly Span[], terms: readonly Span[]): boolean {
+  return hits.some((hit) => !terms.some((term) => isInside(hit, term)));
+}
+
+function proseCandidate(
+  hunk: DiffHunk,
+  lineNumber: number,
+  prose: string,
+  terms: readonly string[],
+  ignored: ReadonlySet<string>,
+): Candidate {
+  const termSpans = terms.flatMap((term) => literalSpans(term, prose));
+  return { path: hunk.path, lineNumber, uses: (alias) => hitsOutsideTerms(literalSpans(alias, prose), termSpans), ignored };
+}
+
+/**
+ * Added prose lines of a Markdown hunk. Fenced code blocks are skipped,
+ * inline code spans are blanked, and a marker inside a fenced block is
  * quoted code and doesn't count.
  */
-function parseAddedLines(diff: string): DiffAddedLine[] {
-  const added: DiffAddedLine[] = [];
+function markdownCandidates(hunk: DiffHunk, terms: readonly string[]): Candidate[] {
+  const fenced = fencedLines(
+    hunk.lines.map((l) => l.text),
+    hunk.start <= 1,
+  );
+  const ignored = new Set<string>();
+  hunk.lines.forEach((l, i) => {
+    if (fenced[i]) return;
+    for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
+  });
 
-  for (const hunk of parseHunks(diff)) {
-    const fenced = isMarkdownPath(hunk.path)
-      ? fencedLines(
-          hunk.lines.map((l) => l.text),
-          hunk.start <= 1,
-        )
-      : hunk.lines.map(() => false);
+  return hunk.lines.flatMap((l, i) =>
+    l.added && !fenced[i] ? [proseCandidate(hunk, l.lineNumber, stripInlineCode(l.text), terms, ignored)] : [],
+  );
+}
 
-    const ignored = new Set<string>();
-    hunk.lines.forEach((l, i) => {
-      if (fenced[i]) return;
-      for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
-    });
+/** Added standalone comment lines of a source hunk. A trailing comment after code is not read. */
+function commentCandidates(hunk: DiffHunk, terms: readonly string[], ignored: ReadonlySet<string>): Candidate[] {
+  return hunk.lines.flatMap((l) => {
+    const comment = l.added ? COMMENT_LINE.exec(l.text)?.[1] : undefined;
+    return comment === undefined ? [] : [proseCandidate(hunk, l.lineNumber, stripInlineCode(comment), terms, ignored)];
+  });
+}
 
-    hunk.lines.forEach((l, i) => {
+/** Start indexes of every run of `words` inside `nameWords`. */
+function wordRuns(nameWords: readonly string[], words: readonly string[]): Span[] {
+  if (words.length === 0) return [];
+  const runs: Span[] = [];
+  for (let at = 0; at + words.length <= nameWords.length; at++) {
+    if (words.every((word, i) => nameWords[at + i] === word)) runs.push([at, at + words.length]);
+  }
+  return runs;
+}
+
+/**
+ * Exported names that added lines of a JS/TS hunk declare: the name after
+ * `export const|function|class|interface|type|enum|namespace`, and the
+ * public members of an exported class, interface, type literal or enum
+ * whose opening line is inside the same hunk.
+ *
+ * An alias matches as a run of whole words — `owner` in `setOwner`, never
+ * `run` in `runner` — and, as in prose, not inside a canonical term.
+ *
+ * A member whose declaration starts above the hunk is not reported: a
+ * hunk does not say what encloses it, and guessing would flag object
+ * literals and call statements. Re-exports (`export { a }`) are skipped
+ * because the name is declared, and checked, where it is defined.
+ */
+function nameCandidates(hunk: DiffHunk, terms: readonly string[], ignored: ReadonlySet<string>): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  // Brace depth inside an exported member block; undefined outside one.
+  let depth: number | undefined;
+  for (const l of hunk.lines) {
+    const record = (name: string): void => {
       if (!l.added) return;
-      added.push({
+      const nameWords = wordsOf(name);
+      const termRuns = terms.flatMap((term) => wordRuns(nameWords, wordsOf(term)));
+      candidates.push({
         path: hunk.path,
         lineNumber: l.lineNumber,
-        text: l.text,
-        inCodeFence: fenced[i] ?? false,
+        name,
+        uses: (alias) => hitsOutsideTerms(wordRuns(nameWords, wordsOf(alias)), termRuns),
         ignored,
       });
-    });
+    };
+
+    if (depth === undefined) {
+      const declaration = EXPORT_DECLARATION_RE.exec(l.text);
+      const kind = declaration?.[1]?.replace(/\s+/g, " ");
+      const name = declaration?.[2];
+      if (kind === undefined || name === undefined) continue;
+      record(name);
+      const opened = braceDelta(l.text);
+      if (MEMBER_BLOCK_KINDS.has(kind) && opened > 0) depth = opened;
+      continue;
+    }
+
+    const member = depth === 1 && !HIDDEN_MEMBER_RE.test(l.text) ? MEMBER_RE.exec(l.text)?.[1] : undefined;
+    if (member !== undefined) record(member);
+    depth += braceDelta(l.text);
+    if (depth <= 0) depth = undefined;
   }
 
-  return added;
+  return candidates;
+}
+
+/**
+ * Every place the diff's added lines could use an alias, in diff order:
+ * Markdown prose, standalone comment lines of any other file, and the
+ * exported names of JS/TS files.
+ */
+function candidatesOf(diff: string, terms: readonly string[]): Candidate[] {
+  return parseHunks(diff).flatMap((hunk) => {
+    if (isMarkdownPath(hunk.path)) return markdownCandidates(hunk, terms);
+
+    const ignored = new Set<string>();
+    for (const l of hunk.lines) for (const alias of parseIgnoreMarker(l.text)) ignored.add(alias);
+    const comments = commentCandidates(hunk, terms, ignored);
+    if (!SOURCE_PATH_RE.test(hunk.path)) return comments;
+    return [...comments, ...nameCandidates(hunk, terms, ignored)].sort((a, b) => a.lineNumber - b.lineNumber);
+  });
+}
+
+/** Lower-cased words of an identifier or alias: `setOwner`, `SET_OWNER` and `set-owner` all give `set`, `owner`. */
+function wordsOf(text: string): string[] {
+  return text
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .split(/[^A-Za-z0-9]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => word.toLowerCase());
 }
 
 /** External TypeSafe contract paths use TypeSafe's vocabulary, not Sage's. */
 function isTypeSafeBoundaryPath(path: string): boolean {
   return /(?:^|[./-])typesafe(?:[./-]|$)/i.test(path);
-}
-
-/** Blank out Markdown inline code spans (`x`, ``x``) so names quoted as code don't match. */
-function stripInlineCode(text: string): string {
-  return text.replace(/(?<!`)(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, (span) => " ".repeat(span.length));
 }
 
 /** The exemption marker as an author should write it — shared by finding rationales and the lens-stdin excerpt. */
@@ -406,13 +536,18 @@ function quoteTerms(terms: readonly string[], quote: string, separator: string):
   return terms.map((t) => `${quote}${t}${quote}`).join(separator);
 }
 
-/** One Avoid-alias finding for `alias` in `path`, at its first added line, naming every canonical term it belongs to. */
-function buildViolation(
-  path: string,
-  lines: readonly number[],
-  alias: string,
-  matched: readonly GlossaryEntry[],
-): Finding {
+interface AliasGroup {
+  path: string;
+  alias: string;
+  lines: number[];
+  /** The exported name on the first line, for a source declaration. */
+  name: string | undefined;
+  entries: GlossaryEntry[];
+}
+
+/** One Avoid-alias finding for `alias` in `path`, at its first declaring line, naming every canonical term it belongs to. */
+function buildViolation(group: AliasGroup): Finding {
+  const { path, alias, lines, name, entries: matched } = group;
   const line = lines[0] ?? 0;
   const more = lines.slice(1);
   const elsewhere =
@@ -440,26 +575,10 @@ function buildViolation(
     severity: "nit",
     impact: "prose",
     title: `Avoid alias "${alias}" — use ${quoteTerms(terms, '"', " or ")}`,
-    rationale: `Added line uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk.${elsewhere} ${citations}`,
+    rationale: `${name === undefined ? "Added line" : `Exported name \`${name}\``} uses \`${alias}\`, a CONTEXT.md _Avoid_ alias for ${termPhrase}, or mark the alias as intentional with ${markerSyntax(alias, isMarkdownPath(path))} on this line or in the same hunk.${elsewhere} ${citations}`,
   };
 }
 
-/**
- * Deterministic (non-model) `_Avoid_`-alias violations on added diff
- * lines. Severity `nit`, impact `prose`: a hit is surfaced on every
- * review but never blocks the merge gate, because an exact-word match
- * cannot tell a domain term from the same word in plain English.
- *
- * sage#128 narrowing:
- *   - Markdown fenced code blocks and inline code spans are skipped —
- *     quoted code (`spawn` from `node:child_process`) isn't prose.
- *   - One finding per (file, alias): an alias listed under several
- *     canonical terms is reported once, naming every term, at its first
- *     added line, with the file's other hits listed in the rationale.
- *   - A `glossary-ignore: <alias>[, <alias>…]` marker after a `//`,
- *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
- *     the same hunk exempts those aliases there.
- */
 export function applyGlossaryIgnore(
   entries: readonly GlossaryEntry[],
   ignore: readonly string[],
@@ -471,44 +590,51 @@ export function applyGlossaryIgnore(
   }));
 }
 
+/**
+ * Deterministic (non-model) `_Avoid_`-alias violations on added diff
+ * lines, in three places: Markdown prose, standalone source comments,
+ * and the exported names that JS/TS files declare. Severity `nit`,
+ * impact `prose`: a hit never blocks the merge gate, because an
+ * exact-word match cannot tell a domain term from the same word in
+ * plain English.
+ *
+ *   - Markdown fenced code blocks and inline code spans are skipped —
+ *     quoted code (`spawn` from `node:child_process`) isn't prose.
+ *   - An alias inside a canonical term is not a hit: `score` is not
+ *     flagged where `Score` is itself a term, nor `tier` in `Hull tier`.
+ *   - One finding per (file, alias): an alias listed under several
+ *     canonical terms is reported once, naming every term, at its first
+ *     added line, with the file's other hits listed in the rationale.
+ *   - A `glossary-ignore: <alias>[, <alias>…]` marker after a `//`,
+ *     `#`, `/*`, `<!--` or `--` opener on any added or context line of
+ *     the same hunk exempts those aliases there.
+ */
 export function findGlossaryViolations(
   entries: readonly GlossaryEntry[],
   diff: string,
 ): Finding[] {
   // Keyed `path\0alias`; Map order keeps findings in diff order.
-  const byFileAlias = new Map<
-    string,
-    { path: string; alias: string; lines: number[]; entries: GlossaryEntry[] }
-  >();
+  const byFileAlias = new Map<string, AliasGroup>();
 
-  for (const { path, lineNumber, text, inCodeFence, ignored } of parseAddedLines(diff)) {
-    if (inCodeFence) continue;
+  const terms = entries.map((entry) => entry.term);
+  for (const { path, lineNumber, name, uses, ignored } of candidatesOf(diff, terms)) {
     if (isTypeSafeBoundaryPath(path)) continue;
-    const haystack = stripInlineCode(proseOf(path, text));
 
-    // Group by alias (case-insensitive) so one hit under N terms is one finding.
-    const hits = new Map<string, { alias: string; entries: GlossaryEntry[] }>();
     for (const entry of entries) {
       for (const alias of entry.avoid) {
         const key = alias.toLowerCase();
         if (ignored.has(key)) continue;
-        if (!literallyAppears(alias, haystack)) continue;
-        const hit = hits.get(key) ?? { alias, entries: [] };
-        if (!hit.entries.includes(entry)) hit.entries.push(entry);
-        hits.set(key, hit);
+        if (!uses(alias)) continue;
+        const fileKey = `${path}\0${key}`;
+        const group = byFileAlias.get(fileKey) ?? { path, alias, lines: [], name, entries: [] };
+        if (!group.lines.includes(lineNumber)) group.lines.push(lineNumber);
+        if (!group.entries.includes(entry)) group.entries.push(entry);
+        byFileAlias.set(fileKey, group);
       }
-    }
-
-    for (const [key, { alias, entries: matched }] of hits) {
-      const fileKey = `${path}\0${key}`;
-      const group = byFileAlias.get(fileKey) ?? { path, alias, lines: [], entries: [] };
-      group.lines.push(lineNumber);
-      for (const e of matched) if (!group.entries.includes(e)) group.entries.push(e);
-      byFileAlias.set(fileKey, group);
     }
   }
 
-  return [...byFileAlias.values()].map((g) => buildViolation(g.path, g.lines, g.alias, g.entries));
+  return [...byFileAlias.values()].map(buildViolation);
 }
 
 /** Wrap deterministic glossary findings as a code-synthesized LensReport, byte-shaped like a model-authored one so it flows through decideVerdict/renderVerdict unchanged. */

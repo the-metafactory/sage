@@ -163,83 +163,6 @@ describe("selectDiffRelevantEntries / buildGlossaryContext", () => {
   });
 });
 
-describe("findGlossaryViolations — deterministic, added-lines only", () => {
-  const entries = parseGlossary(FIXTURE_CONTEXT_MD);
-
-  test("flags an exact _Avoid_ alias on an added line as a non-gating prose nit", () => {
-    const diff = `diff --git a/src/bus.ts b/src/bus.ts
---- a/src/bus.ts
-+++ b/src/bus.ts
-@@ -10,2 +10,3 @@
- const x = 1;
-+// sender is the caller.
- const y = 2;
-`;
-    const findings = findGlossaryViolations(entries, diff);
-    expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({
-      path: "src/bus.ts",
-      line: 11,
-      severity: "nit",
-      impact: "prose",
-    });
-    expect(findings[0]?.title).toContain("sender");
-    expect(findings[0]?.rationale).toContain("Originator");
-    expect(findings[0]?.rationale).toContain("CONTEXT.md:20");
-  });
-
-  test("does NOT flag removed or context lines — added lines only", () => {
-    const diff = `diff --git a/src/bus.ts b/src/bus.ts
---- a/src/bus.ts
-+++ b/src/bus.ts
-@@ -1,3 +1,2 @@
--const sender = resolveOriginator();
- const packet = envelope;
-+const ok = 1;
-`;
-    expect(findGlossaryViolations(entries, diff)).toEqual([]);
-  });
-
-  test("no violations when the diff doesn't reference any avoid alias", () => {
-    const diff = `diff --git a/src/x.ts b/src/x.ts
---- a/src/x.ts
-+++ b/src/x.ts
-@@ -1,1 +1,2 @@
- const a = 1;
-+const b = 2;
-`;
-    expect(findGlossaryViolations(entries, diff)).toEqual([]);
-  });
-
-  test("does not reinterpret a standard property identifier as domain prose", () => {
-    const diff = `diff --git a/src/errors.ts b/src/errors.ts
---- a/src/errors.ts
-+++ b/src/errors.ts
-@@ -1,1 +1,2 @@
- const error = new Error();
-+const detail = error.message;
-`;
-    expect(findGlossaryViolations(entries, diff)).toEqual([]);
-  });
-
-  test("computes correct new-revision line numbers across multiple hunks", () => {
-    const diff = `diff --git a/a.ts b/a.ts
---- a/a.ts
-+++ b/a.ts
-@@ -1,1 +1,1 @@
--const old = 1;
-+// bot is the helper.
-@@ -20,1 +20,2 @@
- const kept = 1;
-+// gateway routes work.
-`;
-    const findings = findGlossaryViolations(entries, diff);
-    const byLine = Object.fromEntries(findings.map((f) => [f.line, f.title]));
-    expect(byLine[1]).toContain("bot");
-    expect(byLine[21]).toContain("gateway");
-  });
-});
-
 // The fixtures below use Avoid aliases on purpose, so this hunk opts out
 // of Sage's own glossary check. Fixture markers are built from IGNORE so
 // they never follow a `//` opener in this file and exempt it by accident.
@@ -362,19 +285,19 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("single-term title is unchanged from the pre-#128 format", () => {
-    const diff = hunkDiff("src/bus.ts", 1, ["+// sender is the caller."]);
+    const diff = hunkDiff("docs/bus.md", 1, ["+The sender is the caller."]);
     expect(findGlossaryViolations(fixture, diff)[0]?.title).toBe('Avoid alias "sender" — use "Originator"');
   });
 
   test("rationale names the exemption marker for the file type", () => {
     const md = findGlossaryViolations(seelite, hunkDiff("docs/a.md", 1, ["+Each Spawn waits."]));
     expect(md[0]?.rationale).toContain("<!-- glossary-ignore: Spawn -->");
-    const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+// sender is the caller."]));
+    const ts = findGlossaryViolations(fixture, hunkDiff("src/a.ts", 1, ["+export const sender = 1;"]));
     expect(ts[0]?.rationale).toContain("`// glossary-ignore: sender` (or `# …`) on this line");
   });
 
   test("glossary-ignore on the same line exempts the alias (marker text itself is not flagged)", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+const child = spawn(cmd); // ${IGNORE} spawn`]);
+    const diff = hunkDiff("docs/a.md", 1, [`+Each Spawn waits. <!-- ${IGNORE} Spawn -->`]);
     expect(findGlossaryViolations(seelite, diff)).toEqual([]);
   });
 
@@ -387,41 +310,42 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("glossary-ignore takes a comma list and is case-insensitive", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} SENDER, Bot`, "+// sender uses bot."]);
+    const diff = hunkDiff("docs/a.md", 1, [`+<!-- ${IGNORE} SENDER, Bot -->`, "+The sender uses a bot."]);
     expect(findGlossaryViolations(fixture, diff)).toEqual([]);
   });
 
   test("glossary-ignore for one alias does not exempt another", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+// ${IGNORE} sender`, "+// sender uses bot."]);
+    const diff = hunkDiff("docs/a.md", 1, [`+<!-- ${IGNORE} sender -->`, "+The sender uses a bot."]);
     const findings = findGlossaryViolations(fixture, diff);
     expect(findings.map((f) => f.title)).toEqual(['Avoid alias "bot" — use "Assistant" or "Agent"']);
   });
 
   test("glossary-ignore on a removed line does not count", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`-// ${IGNORE} sender`, "+// sender is the caller."]);
+    const diff = hunkDiff("docs/a.md", 1, [`-<!-- ${IGNORE} sender -->`, "+The sender is the caller."]);
     expect(findGlossaryViolations(fixture, diff)).toHaveLength(1);
   });
 
-  test("glossary-ignore inside a string literal does not exempt prose comments", () => {
-    const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+// sender is the caller."]);
+  test("glossary-ignore inside a string literal does not exempt an exported name", () => {
+    const diff = hunkDiff("src/a.ts", 1, [`+const s = "${IGNORE} sender";`, "+export const sender = 1;"]);
     const findings = findGlossaryViolations(fixture, diff);
-    // Only prose is scanned; a quoted marker cannot exempt the comment.
     expect(findings.map((f) => f.line)).toEqual([2]);
     expect(findings[0]?.rationale).not.toContain("Also on");
   });
 
   test("one finding per (file, alias): repeats in a file collapse, other files keep their own", () => {
     const diff =
-      hunkDiff("src/a.ts", 1, ["+// sender is the caller.", "+const x = 2;", "+// sender waits."]) +
-      hunkDiff("src/b.ts", 1, ["+// sender replies."]);
+      hunkDiff("docs/a.md", 1, ["+The sender is the caller.", "+Unrelated.", "+The sender waits."]) +
+      hunkDiff("docs/b.md", 1, ["+The sender replies."]);
     const findings = findGlossaryViolations(fixture, diff);
-    expect(findings.map((f) => `${f.path}:${f.line}`)).toEqual(["src/a.ts:1", "src/b.ts:1"]);
+    expect(findings.map((f) => `${f.path}:${f.line}`)).toEqual(["docs/a.md:1", "docs/b.md:1"]);
     expect(findings[0]?.rationale).toContain("Also on line 3.");
   });
 
   test("glossary-ignore after # works (Python, YAML, shell)", () => {
-    const diff = hunkDiff("tools/a.py", 1, [`+sender = resolve()  # ${IGNORE} sender`]);
-    expect(findGlossaryViolations(fixture, diff)).toEqual([]);
+    const flagged = hunkDiff("tools/a.py", 1, ["+# sender resolves the caller."]);
+    expect(findGlossaryViolations(fixture, flagged)).toHaveLength(1);
+    const exempt = hunkDiff("tools/a.py", 1, ["+# sender resolves the caller.", `+x = 1  # ${IGNORE} sender`]);
+    expect(findGlossaryViolations(fixture, exempt)).toEqual([]);
   });
 
   test("glossary-ignore inside a Markdown fenced block is quoted code and does not count", () => {
@@ -430,13 +354,13 @@ describe("findGlossaryViolations — sage#128 code awareness, dedupe, exemption"
   });
 
   test("glossary-ignore in another hunk does not apply", () => {
-    const diff = `diff --git a/src/a.ts b/src/a.ts
---- a/src/a.ts
-+++ b/src/a.ts
+    const diff = `diff --git a/docs/a.md b/docs/a.md
+--- a/docs/a.md
++++ b/docs/a.md
 @@ -1,1 +1,1 @@
-+// ${IGNORE} sender
++<!-- ${IGNORE} sender -->
 @@ -40,1 +40,1 @@
-+// sender is the caller.
++The sender is the caller.
 `;
     expect(findGlossaryViolations(fixture, diff).map((f) => f.line)).toEqual([40]);
   });
@@ -446,12 +370,137 @@ describe("buildGlossaryLensReport", () => {
   test("wraps findings as a code-synthesized LensReport shaped like a model-authored one", () => {
     const findings = findGlossaryViolations(
       parseGlossary(FIXTURE_CONTEXT_MD),
-      "+// sender is the caller.\n",
+      sourceDiff("src/bus.ts", "+export const sender = 1;"),
     );
     const report = buildGlossaryLensReport(findings);
     expect(report.lens).toBe("Glossary");
     expect(report.findings).toEqual(findings);
     expect(report.errored).toBeUndefined();
     expect(report.summary).toContain("1 CONTEXT.md Avoid-alias violation");
+  });
+});
+
+function sourceDiff(path: string, body: string, start = 1): string {
+  const lines = body.split("\n");
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -${start},0 +${start},${lines.length} @@\n${lines.join("\n")}\n`;
+}
+
+describe("findGlossaryViolations — exported names in source", () => {
+  const entries = parseGlossary(FIXTURE_CONTEXT_MD);
+
+  test("an exported name is checked next to the comment above it, in line order", () => {
+    const findings = findGlossaryViolations(entries, sourceDiff("src/bus.ts", "+// The packet is queued.\n+export const senderId = 1;"));
+    expect(findings.map((f) => `${f.line} ${f.title.split('"')[1]}`)).toEqual(["1 packet", "2 sender"]);
+    expect(findings[0]?.rationale).toContain("Added line uses `packet`");
+    expect(findings[1]?.rationale).toContain("Exported name `senderId` uses `sender`");
+  });
+
+  test("flags an alias used as a word in an exported declaration name, as a non-gating nit", () => {
+    const findings = findGlossaryViolations(entries, sourceDiff("src/bus.ts", " const x = 1;\n+export function resolveSender(): string {", 10));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ path: "src/bus.ts", line: 11, severity: "nit", impact: "prose" });
+    expect(findings[0]?.title).toBe('Avoid alias "sender" — use "Originator"');
+    expect(findings[0]?.rationale).toContain("`resolveSender`");
+    expect(findings[0]?.rationale).toContain("CONTEXT.md:20");
+  });
+
+  test("matches whole words inside camelCase, PascalCase and SCREAMING_SNAKE names", () => {
+    const flagged = (line: string) => findGlossaryViolations(entries, sourceDiff("src/a.ts", `+${line}`)).map((f) => f.title);
+    expect(flagged("export const dispatcherId = 1;")).toEqual(['Avoid alias "dispatcher" — use "Renderer"']);
+    expect(flagged("export class MessagePacket {}")).toHaveLength(2);
+    expect(flagged("export const DISPATCH_SOURCE = 1;")).toEqual(['Avoid alias "dispatch-source" — use "Originator"']);
+    expect(flagged("export const botany = 1;")).toEqual([]);
+    expect(flagged("export type Senders = string[];")).toEqual([]);
+  });
+
+  test("ignores local declarations, usages, re-exports and non-JS/TS files", () => {
+    const body = [
+      "+const sender = resolveOriginator();",
+      "+function handler() {}",
+      "+const detail = error.message;",
+      '+import { sender } from "./sender.ts";',
+      '+export { sender } from "./sender.ts";',
+    ].join("\n");
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", body))).toEqual([]);
+    expect(findGlossaryViolations(entries, sourceDiff("tool.py", "+export function sender() {}"))).toEqual([]);
+  });
+
+  test("does NOT flag removed or context lines", () => {
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", "-export const sender = 1;\n export const packet = 2;\n+export const ok = 3;"))).toEqual([]);
+  });
+
+  test("flags public members of an exported interface, class or enum opened in the hunk", () => {
+    const body = [
+      " export interface ExchangeLine {",
+      "+  sender: string;",
+      "+  readonly packet?: number;",
+      "+  handler(): void;",
+      " }",
+      "+export class Bus {",
+      "+  private gateway = 1;",
+      "+  #plugin = 2;",
+      "+  publish(): void {",
+      "+    const connector = { executor: 1 };",
+      "+  }",
+      "+  static daemon = 3;",
+      "+}",
+    ].join("\n");
+    const aliases = findGlossaryViolations(entries, sourceDiff("src/a.ts", body)).map((f) => f.title.split('"')[1]);
+    expect(aliases).toEqual(["sender", "packet", "handler", "daemon"]);
+  });
+
+  test("a member line whose declaration is outside the hunk is not guessed at", () => {
+    expect(findGlossaryViolations(entries, sourceDiff("src/a.ts", "   id: string;\n+  sender: string;", 40))).toEqual([]);
+  });
+
+  test("one finding per (file, alias), naming every canonical term and the other lines", () => {
+    const body = "+export const botId = 1;\n+export const otherBot = 2;";
+    const findings = findGlossaryViolations(entries, `${sourceDiff("src/a.ts", body)}${sourceDiff("src/b.ts", body)}`);
+    expect(findings.map((f) => f.path)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(findings[0]?.title).toBe('Avoid alias "bot" — use "Assistant" or "Agent"');
+    expect(findings[0]?.rationale).toContain("Also on line 2.");
+  });
+
+  test("glossary-ignore in the same hunk exempts the alias; another hunk's marker does not", () => {
+    const exempt = sourceDiff("src/a.ts", "+// glossary-ignore: Sender, packet\n+export const sender = 1;\n+export const packet = 2;\n+export const handler = 3;");
+    expect(findGlossaryViolations(entries, exempt).map((f) => f.title.split('"')[1])).toEqual(["handler"]);
+    const other = `${sourceDiff("src/a.ts", "+// glossary-ignore: sender")}@@ -40,0 +41,1 @@\n+export const sender = 1;\n`;
+    expect(findGlossaryViolations(entries, other)).toHaveLength(1);
+    expect(findGlossaryViolations(entries, other)[0]?.line).toBe(41);
+  });
+});
+
+describe("findGlossaryViolations — an alias inside a canonical term is not a hit", () => {
+  const entries = parseGlossary(`## Language
+
+**Score**:
+Points a run has earned.
+
+**Hull tier**:
+The strength class of a hull.
+
+**Rating**:
+A pilot's standing.
+_Avoid_: score, tier, score card
+`);
+  const aliases = (path: string, line: string) =>
+    findGlossaryViolations(entries, sourceDiff(path, `+${line}`)).map((f) => f.title.split('"')[1]);
+
+  test("prose and comments: the canonical wording passes, the bare alias is still flagged", () => {
+    expect(aliases("docs/a.md", "The score rises with each hull tier.")).toEqual([]);
+    expect(aliases("src/a.ts", "// The Score rises with each Hull Tier.")).toEqual([]);
+    expect(aliases("docs/a.md", "Reach tier 3 to dock.")).toEqual(["tier"]);
+    expect(aliases("docs/a.md", "The hull tier beats a lower tier.")).toEqual(["tier"]);
+  });
+
+  test("an alias longer than the term it contains is still flagged", () => {
+    expect(aliases("docs/a.md", "Hand in the score card.")).toEqual(["score card"]);
+  });
+
+  test("exported names follow the same rule", () => {
+    expect(aliases("src/a.ts", "export const hullTier = 1;")).toEqual([]);
+    expect(aliases("src/a.ts", "export const scoreTotal = 1;")).toEqual([]);
+    expect(aliases("src/a.ts", "export const tierIndex = 1;")).toEqual(["tier"]);
+    expect(aliases("src/a.ts", "export const scoreCard = 1;")).toEqual(["score card"]);
   });
 });
